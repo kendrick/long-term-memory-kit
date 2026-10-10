@@ -21,7 +21,9 @@ export type Command = {
   name: string;
   summary: string;
   options?: ParseArgsConfig["options"];
-  positionals?: { name: string; required: boolean }[];
+  // `variadic` is honored only on the last entry; earlier entries are ignored for it.
+  positionals?: { name: string; required: boolean; variadic?: true }[];
+  checkArgs?(positionals: string[]): string | undefined;
   run(ctx: CommandContext): Promise<0 | 1>;
 };
 
@@ -49,8 +51,9 @@ export async function run(
     return usageError(`ltm: unknown ${kind} '${head}'\nRun 'ltm --help' for usage.\n`);
   }
 
-  // Exit 2 is decided here, before the command runs, so a command's own
-  // failure (1) can never be confused with a usage error.
+  // Exit 2 is decided here, before the command runs (parseArgs, the positional
+  // count, and the command's checkArgs hook), so a command's own failure (1)
+  // can never be confused with a usage error.
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -71,9 +74,11 @@ export async function run(
     const missing = requiredArgs.slice(got).map((p) => `<${p.name}>`);
     return usageError(`ltm ${cmd.name}: missing argument ${missing.join(" ")}\n`);
   }
-  if (got > declared.length) {
+  if (got > declared.length && !declared.at(-1)?.variadic) {
     return usageError(`ltm ${cmd.name}: unexpected argument '${parsed.positionals[declared.length]}'\n`);
   }
+  const bad = cmd.checkArgs?.(parsed.positionals);
+  if (bad !== undefined) return usageError(`ltm ${cmd.name}: ${bad}\n`);
 
   let stdout = "";
   let stderr = "";

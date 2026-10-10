@@ -90,4 +90,67 @@ describe("run", () => {
     const r = await run({ ...base, argv: ["check", "x", "y"] }, [check]);
     expect(r.exitCode).toBe(2);
   });
+
+  describe("variadic positionals and checkArgs", () => {
+    const spy = (
+      positionals: Command["positionals"],
+      checkArgs?: Command["checkArgs"],
+    ) => {
+      const seen = { called: false, positionals: [] as string[] };
+      const cmd: Command = {
+        name: "stub",
+        summary: "stub",
+        positionals,
+        checkArgs,
+        async run(ctx) {
+          seen.called = true;
+          seen.positionals = ctx.positionals;
+          return 0;
+        },
+      };
+      return { cmd, seen };
+    };
+
+    test("required variadic needs at least one and then takes any number", async () => {
+      const { cmd, seen } = spy([{ name: "path", required: true, variadic: true }]);
+      const none = await run({ ...base, argv: ["stub"] }, [cmd]);
+      expect(none.exitCode).toBe(2);
+      expect(none.stderr).toContain("missing argument <path>");
+      expect(seen.called).toBe(false);
+
+      const many = await run({ ...base, argv: ["stub", "a", "b", "c"] }, [cmd]);
+      expect(many.exitCode).toBe(0);
+      expect(seen.positionals).toEqual(["a", "b", "c"]);
+    });
+
+    test("optional variadic accepts zero positionals", async () => {
+      const { cmd, seen } = spy([{ name: "f", required: false, variadic: true }]);
+      const r = await run({ ...base, argv: ["stub"] }, [cmd]);
+      expect(r.exitCode).toBe(0);
+      expect(seen.called).toBe(true);
+      expect(seen.positionals).toEqual([]);
+    });
+
+    test("non-variadic stub still rejects an extra positional", async () => {
+      const { cmd, seen } = spy([{ name: "p", required: true }]);
+      const r = await run({ ...base, argv: ["stub", "a", "b"] }, [cmd]);
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toContain("unexpected argument 'b'");
+      expect(seen.called).toBe(false);
+    });
+
+    test("checkArgs string is a usage error and run is never called", async () => {
+      const { cmd, seen } = spy(
+        [{ name: "f", required: false, variadic: true }],
+        (p) => (p.includes("x") ? "bad filter 'x'" : undefined),
+      );
+      const bad = await run({ ...base, argv: ["stub", "x"] }, [cmd]);
+      expect(bad).toEqual({ exitCode: 2, stdout: "", stderr: "ltm stub: bad filter 'x'\n" });
+      expect(seen.called).toBe(false);
+
+      const ok = await run({ ...base, argv: ["stub", "y"] }, [cmd]);
+      expect(ok.exitCode).toBe(0);
+      expect(seen.called).toBe(true);
+    });
+  });
 });
