@@ -21,9 +21,16 @@ export const query: Command = {
       ctx.err(`ltm query: no memory-bank.yaml in ${ctx.cwd} or any parent directory\n`);
       return 1;
     }
-    let config;
+    // checkArgs already rejected anything parseFilter refuses; the guard only narrows the type.
+    const filters = ctx.positionals
+      .map((a) => parseFilter(a))
+      .filter((f): f is Filter => f !== null);
+    let records;
     try {
-      config = loadConfig(root);
+      const config = loadConfig(root);
+      records = listRecords(config, (path, reason) => {
+        ctx.err(`ltm query: skipped ${path}: ${reason}\n`);
+      }).filter((r) => matches(r, filters));
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       // A null line (unreadable file, non-mapping config) has no position to print.
@@ -32,14 +39,6 @@ export const query: Command = {
       ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${message}\n`);
       return 1;
     }
-    // checkArgs already rejected anything parseFilter refuses; the guard only narrows the type.
-    const filters = ctx.positionals
-      .map((a) => parseFilter(a))
-      .filter((f): f is Filter => f !== null);
-    const records = listRecords(config, (path, reason) => {
-      ctx.err(`ltm query: skipped ${path}: ${reason}\n`);
-    }).filter((r) => matches(r, filters));
-
     if (ctx.values.json === true) {
       const rows = records.map((r) => ({
         path: r.path,

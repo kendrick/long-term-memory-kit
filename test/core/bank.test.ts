@@ -52,6 +52,28 @@ describe("loadConfig", () => {
     });
   });
 
+  test.each(["../outside", "/etc"])("folders.Decision '%s' outside the Bank root throws", async (value) => {
+    await withScratch(demoBank, async (dir) => {
+      await writeFile(join(dir, "memory-bank.yaml"), `schema: 1\nname: acme\nfolders:\n  Decision: ${value}\n`);
+      let caught: unknown;
+      try {
+        loadConfig(dir);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(ConfigError);
+      expect((caught as ConfigError).path).toBe(join(dir, "memory-bank.yaml"));
+      expect((caught as ConfigError).message).toContain("folders.Decision");
+    });
+  });
+
+  test("a folder equal to the Bank root is allowed", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await writeFile(join(dir, "memory-bank.yaml"), "schema: 1\nname: acme\nfolders:\n  Decision: .\n");
+      expect(loadConfig(dir).folders.Decision).toBe(".");
+    });
+  });
+
   test("unparseable YAML throws ConfigError carrying the line", async () => {
     await withScratch(demoBank, async (dir) => {
       // Line 2 is the bad one. No trailing newline: with one, yaml reports the line

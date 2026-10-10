@@ -191,4 +191,18 @@ describe("ltm query", () => {
       expect(r.stderr.slice(0, -1)).not.toContain("\n");
     });
   });
+
+  test("a folders override outside the Bank exits 1 with one config-path line", async () => {
+    await withScratch(demo, async (dir) => {
+      writeFileSync(join(dir, "memory-bank.yaml"), "schema: 1\nname: acme\nfolders:\n  Decision: ../outside\n");
+      const r = await ltm(dir, "query", "--json");
+      const cfg = join(dir, "memory-bank.yaml");
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr.startsWith(cfg)).toBe(true);
+      expect(r.stderr).toContain("folders.Decision");
+      expect(r.stderr.endsWith("\n")).toBe(true);
+      expect(r.stderr.slice(0, -1)).not.toContain("\n");
+    });
+  });
 });

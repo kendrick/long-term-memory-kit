@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse, YAMLParseError } from "yaml";
 
 export type MemoryType = "Decision" | "PolicyRule" | "Exception" | "Context";
@@ -55,8 +55,16 @@ export function findBank(cwd: string): string | null {
 export const isMapping = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
+export function isInside(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
 // Validation beyond "is it a YAML mapping" is `ltm validate`'s job (#9), so unknown
-// keys and non-string folder values are ignored here rather than rejected.
+// keys and non-string folder values are ignored here rather than rejected. The one
+// exception is a folder that escapes the Bank root: a cloned, untrusted Bank could
+// otherwise point `query --json` at files outside it and print their frontmatter,
+// and that can't wait for a separate validate run.
 export function loadConfig(root: string): BankConfig {
   const path = join(root, CONFIG_FILE);
   let text: string;
@@ -80,7 +88,11 @@ export function loadConfig(root: string): BankConfig {
   if (isMapping(override)) {
     for (const type of MEMORY_TYPES) {
       const v = override[type];
-      if (typeof v === "string") folders[type] = v;
+      if (typeof v !== "string") continue;
+      if (isAbsolute(v) || !isInside(root, resolve(root, v))) {
+        throw new ConfigError(path, null, `folders.${type} '${v}' is outside the Bank root`);
+      }
+      folders[type] = v;
     }
   }
   return { root, folders, raw };

@@ -1,6 +1,6 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, realpathSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
-import { MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
+import { ConfigError, isInside, MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
 import { parseRecordFile, RecordError, type ParsedRecord } from "./record.ts";
 
 export type Filter = { key: string; value: string };
@@ -12,22 +12,31 @@ export function parseFilter(arg: string): Filter | null {
   return { key: arg.slice(0, i), value: arg.slice(i + 1) };
 }
 
-function walkMarkdown(dir: string, into: string[]): void {
+const toRel = (root: string, abs: string): string => relative(root, abs).split(sep).join("/");
+
+function walkMarkdown(
+  dir: string,
+  into: string[],
+  root: string,
+  onSkip: (relPath: string, reason: string) => void,
+): void {
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
     // A Bank needn't have every type's folder; a missing one just holds no Records.
+    // Anything else (EACCES, EIO) would silently drop matches, so surface it.
+    if (code === "ENOENT" || code === "ENOTDIR") return;
+    onSkip(toRel(root, dir), (e as Error).message?.split("\n")[0] || code || "unreadable");
     return;
   }
   for (const e of entries) {
     const p = join(dir, e.name);
-    if (e.isDirectory()) walkMarkdown(p, into);
+    if (e.isDirectory()) walkMarkdown(p, into, root, onSkip);
     else if (e.isFile() && e.name.endsWith(".md")) into.push(p);
   }
 }
-
-const toRel = (root: string, abs: string): string => relative(root, abs).split(sep).join("/");
 
 export function listRecords(
   config: BankConfig,
@@ -40,7 +49,21 @@ export function listRecords(
     const folderAbs = resolve(config.root, config.folders[type]);
     const depth = folderAbs.length;
     const files: string[] = [];
-    walkMarkdown(folderAbs, files);
+    // Git keeps symlinks, so an in-Bank folder can still point outside it.
+    let real: string | null = null;
+    try {
+      real = realpathSync(folderAbs);
+    } catch {
+      // Missing folder: walkMarkdown treats it as empty.
+    }
+    if (real !== null && !isInside(realpathSync(config.root), real)) {
+      throw new ConfigError(
+        join(config.root, "memory-bank.yaml"),
+        null,
+        `folders.${type} '${config.folders[type]}' resolves outside the Bank root`,
+      );
+    }
+    walkMarkdown(folderAbs, files, config.root, onSkip);
     for (const abs of files) {
       const prev = owner.get(abs);
       if (!prev || depth > prev.depth) owner.set(abs, { type, depth });
