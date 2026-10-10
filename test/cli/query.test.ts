@@ -181,10 +181,14 @@ describe("ltm query", () => {
   test("a malformed memory-bank.yaml exits 1 with path:line: message", async () => {
     await withScratch(demo, async (dir) => {
       mkdirSync(join(dir, "sub"), { recursive: true });
-      writeFileSync(join(dir, "memory-bank.yaml"), "folders: [unclosed\n");
+      // Bad line is 2. No trailing newline: with one, yaml reports the line where it
+      // noticed the unclosed flow (3), not where it opened.
+      writeFileSync(join(dir, "memory-bank.yaml"), "schema: 1\nname: [unclosed");
       const r = await ltm(dir, "query");
       expect(r.exitCode).toBe(1);
-      expect(r.stderr).toMatch(/memory-bank\.yaml:\d+: /);
+      expect(r.stderr.startsWith(`${join(dir, "memory-bank.yaml")}:2: `)).toBe(true);
+      expect(r.stderr.endsWith("\n")).toBe(true);
+      expect(r.stderr.slice(0, -1)).not.toContain("\n");
     });
   });
 });

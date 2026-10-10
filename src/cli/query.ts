@@ -27,10 +27,15 @@ export const query: Command = {
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       // A null line (unreadable file, non-mapping config) has no position to print.
-      ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${e.message}\n`);
+      // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
+      const message = e.message.split("\n")[0];
+      ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${message}\n`);
       return 1;
     }
-    const filters = ctx.positionals.map((a) => parseFilter(a) as Filter);
+    // checkArgs already rejected anything parseFilter refuses; the guard only narrows the type.
+    const filters = ctx.positionals
+      .map((a) => parseFilter(a))
+      .filter((f): f is Filter => f !== null);
     const records = listRecords(config, (path, reason) => {
       ctx.err(`ltm query: skipped ${path}: ${reason}\n`);
     }).filter((r) => matches(r, filters));
