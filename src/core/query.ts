@@ -51,11 +51,26 @@ export function listRecords(
     const files: string[] = [];
     // Git keeps symlinks, so an in-Bank folder can still point outside it.
     let real: string | null = null;
+    let missing = false;
     try {
       real = realpathSync(folderAbs);
     } catch {
-      // Missing folder: walkMarkdown treats it as empty.
+      // realpath and readdir can disagree (Bun's realpath reads `\` as a separator), so a
+      // realpath failure on a readable folder can't be trusted as "missing".
+      try {
+        readdirSync(folderAbs);
+        throw new ConfigError(
+          join(config.root, "memory-bank.yaml"),
+          null,
+          `folders.${type} '${config.folders[type]}' can't be resolved to a path inside the Bank root`,
+        );
+      } catch (e) {
+        if (e instanceof ConfigError) throw e;
+        const code = (e as NodeJS.ErrnoException).code;
+        missing = code === "ENOENT" || code === "ENOTDIR";
+      }
     }
+    if (missing) continue;
     if (real !== null && !isInside(realpathSync(config.root), real)) {
       throw new ConfigError(
         join(config.root, "memory-bank.yaml"),

@@ -181,6 +181,31 @@ describe("listRecords folder safety", () => {
     }
   });
 
+  test("a folder named with a backslash that symlinks outside the Bank throws ConfigError", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "ltm-outside-"));
+    try {
+      await writeFile(join(outside, "leak-aaaaaaaaaa.md"), rec);
+      await withScratch(demoBank, async (dir) => {
+        // Bun's realpath reads `\` as a separator while readdir does not, so this name
+        // slipped past the containment check.
+        await symlink(outside, join(dir, "q\\z"));
+        let caught: unknown;
+        try {
+          listRecords(
+            { root: dir, folders: { ...defaultFolders, Decision: "q\\z" }, raw: {} },
+            () => {},
+          );
+        } catch (e) {
+          caught = e;
+        }
+        expect(caught).toBeInstanceOf(ConfigError);
+        expect((caught as ConfigError).message).toContain("folders.Decision");
+      });
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
   test.skipIf(process.getuid?.() === 0)("an unreadable type folder is reported and the rest still load", async () => {
     await withScratch(demoBank, async (dir) => {
       const locked = join(dir, "_memory/exceptions");
