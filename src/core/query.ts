@@ -1,6 +1,6 @@
-import { readdirSync, realpathSync } from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
-import { ConfigError, isInside, MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
+import { MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
 import { parseRecordFile, RecordError, type ParsedRecord } from "./record.ts";
 
 export type Filter = { key: string; value: string };
@@ -33,9 +33,54 @@ function walkMarkdown(
   }
   for (const e of entries) {
     const p = join(dir, e.name);
+    // Dirent carries lstat's answer, so a link is caught without a second lookup by path.
+    if (e.isSymbolicLink()) {
+      onSkip(toRel(root, p), "symlink, not followed");
+      continue;
+    }
+    // Bun may resolve a `\` name as a different path in readFileSync/readdirSync.
+    if (e.name.includes("\\")) {
+      onSkip(toRel(root, p), "name contains a backslash");
+      continue;
+    }
     if (e.isDirectory()) walkMarkdown(p, into, root, onSkip);
     else if (e.isFile() && e.name.endsWith(".md")) into.push(p);
   }
+}
+
+// Git keeps symlinks, so a cloned Bank can link a type folder or its parent outside the
+// root. Each component is lstat'd and no link is followed, because Bun 1.3.13's real-path
+// resolver reads `\` as a separator: for a literal entry `q\z` it throws ENOENT, or returns
+// `<bank>/q/z` when that dir exists, while readdir and Node see the link's target. A
+// containment check built on it can't be trusted.
+function folderIsWalkable(
+  root: string,
+  folderAbs: string,
+  onSkip: (relPath: string, reason: string) => void,
+): boolean {
+  const parts = relative(root, folderAbs).split(sep).filter((x) => x !== "");
+  let p = root;
+  for (let i = 0; i < parts.length; i++) {
+    p = join(p, parts[i]!);
+    const rel = parts.slice(0, i + 1).join("/");
+    let st;
+    try {
+      st = lstatSync(p);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      // Same rule as walkMarkdown: missing is silent, anything else would drop matches unseen.
+      if (code !== "ENOENT" && code !== "ENOTDIR") {
+        onSkip(rel, (e as Error).message?.split("\n")[0] || code || "unreadable");
+      }
+      return false;
+    }
+    if (st.isSymbolicLink()) {
+      onSkip(rel, "symlink, not followed");
+      return false;
+    }
+    if (!st.isDirectory()) return false;
+  }
+  return true;
 }
 
 export function listRecords(
@@ -45,40 +90,20 @@ export function listRecords(
   // A file under nested configured folders belongs to the deepest one, so keep the
   // owner with the longest folder path rather than whichever type walked it first.
   const owner = new Map<string, { type: MemoryType; depth: number }>();
+  // Types share parents (`_memory`) and may nest, so the same path can come up more than once.
+  const reported = new Set<string>();
+  const skip = (relPath: string, reason: string) => {
+    const key = `${relPath}\0${reason}`;
+    if (reported.has(key)) return;
+    reported.add(key);
+    onSkip(relPath, reason);
+  };
   for (const type of MEMORY_TYPES) {
     const folderAbs = resolve(config.root, config.folders[type]);
     const depth = folderAbs.length;
     const files: string[] = [];
-    // Git keeps symlinks, so an in-Bank folder can still point outside it.
-    let real: string | null = null;
-    let missing = false;
-    try {
-      real = realpathSync(folderAbs);
-    } catch {
-      // realpath and readdir can disagree (Bun's realpath reads `\` as a separator), so a
-      // realpath failure on a readable folder can't be trusted as "missing".
-      try {
-        readdirSync(folderAbs);
-        throw new ConfigError(
-          join(config.root, "memory-bank.yaml"),
-          null,
-          `folders.${type} '${config.folders[type]}' can't be resolved to a path inside the Bank root`,
-        );
-      } catch (e) {
-        if (e instanceof ConfigError) throw e;
-        const code = (e as NodeJS.ErrnoException).code;
-        missing = code === "ENOENT" || code === "ENOTDIR";
-      }
-    }
-    if (missing) continue;
-    if (real !== null && !isInside(realpathSync(config.root), real)) {
-      throw new ConfigError(
-        join(config.root, "memory-bank.yaml"),
-        null,
-        `folders.${type} '${config.folders[type]}' resolves outside the Bank root`,
-      );
-    }
-    walkMarkdown(folderAbs, files, config.root, onSkip);
+    if (!folderIsWalkable(config.root, folderAbs, skip)) continue;
+    walkMarkdown(folderAbs, files, config.root, skip);
     for (const abs of files) {
       const prev = owner.get(abs);
       if (!prev || depth > prev.depth) owner.set(abs, { type, depth });
@@ -93,7 +118,7 @@ export function listRecords(
       records.push(parseRecordFile(abs, rel, type));
     } catch (e) {
       if (!(e instanceof RecordError)) throw e;
-      onSkip(rel, e.message);
+      skip(rel, e.message);
     }
   }
   return records;

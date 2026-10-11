@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "../../src/cli/run.ts";
@@ -203,6 +211,118 @@ describe("ltm query", () => {
       expect(r.stderr).toContain("folders.Decision");
       expect(r.stderr.endsWith("\n")).toBe(true);
       expect(r.stderr.slice(0, -1)).not.toContain("\n");
+    });
+  });
+});
+
+describe("ltm query never reads outside the Bank", () => {
+  const SECRET = "OUTSIDE SECRET";
+  const rec = (id: string, title: string) =>
+    `---\nschema: 1\nid: ${id}\nmemory_type: Decision\nstatus: accepted\ntitle: ${title}\n---\nbody\n`;
+
+  // An outside dir holding a valid Record, so a followed link would print its title.
+  async function withOutside(fn: (outside: string) => Promise<void>): Promise<void> {
+    const outside = mkdtempSync(join(tmpdir(), "ltm-outside-"));
+    try {
+      writeFileSync(join(outside, "secret-oO0sS0eC01.md"), rec("oO0sS0eC01", SECRET));
+      mkdirSync(join(outside, "decisions"));
+      writeFileSync(join(outside, "decisions/secret-oO0sS0eC02.md"), rec("oO0sS0eC02", SECRET));
+      await fn(outside);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  }
+
+  const skipLine = (rel: string) => `ltm query: skipped ${rel}: symlink, not followed\n`;
+
+  // With a real q/z beside it, Bun's realpath of q\z returns q/z, so a realpath-based
+  // containment check passes while readdir follows the link outside.
+  test.each([false, true])("a: a folders value with a backslash exits 1 before any walk (real q/z: %p)", async (withQz) => {
+    await withOutside(async (outside) => {
+      await withScratch(demo, async (dir) => {
+        if (withQz) mkdirSync(join(dir, "q/z"), { recursive: true });
+        symlinkSync(outside, join(dir, "q\\z"));
+        writeFileSync(join(dir, "memory-bank.yaml"), 'schema: 1\nname: acme\nfolders:\n  Decision: "q\\\\z"\n');
+        const r = await ltm(dir, "query", "--json");
+        expect(r.stdout).not.toContain(SECRET);
+        expect(r.exitCode).toBe(1);
+        expect(r.stderr).toBe(
+          `${join(dir, "memory-bank.yaml")}: folders.Decision 'q\\z' contains a backslash\n`,
+        );
+      });
+    });
+  });
+
+  test("b: a q\\z symlink beside a real q/z lists only the in-Bank Record", async () => {
+    await withOutside(async (outside) => {
+      await withScratch(demo, async (dir) => {
+        mkdirSync(join(dir, "_memory/decisions/q/z"), { recursive: true });
+        writeFileSync(join(dir, "_memory/decisions/q/z/inbank-iI0nB0aN01.md"), rec("iI0nB0aN01", "In bank"));
+        symlinkSync(outside, join(dir, "_memory/decisions/q\\z"));
+        const r = await ltm(dir, "query", "--json");
+        expect(r.stdout).not.toContain(SECRET);
+        expect(r.exitCode).toBe(0);
+        const rows = JSON.parse(r.stdout) as { path: string }[];
+        expect(rows.map((x) => x.path)).toContain("_memory/decisions/q/z/inbank-iI0nB0aN01.md");
+        expect(r.stderr).toBe(skipLine("_memory/decisions/q\\z"));
+      });
+    });
+  });
+
+  test("c: a q\\z symlink inside a type folder is skipped and reported", async () => {
+    await withOutside(async (outside) => {
+      await withScratch(demo, async (dir) => {
+        symlinkSync(outside, join(dir, "_memory/decisions/q\\z"));
+        const r = await ltm(dir, "query", "--json");
+        expect(r.stdout).not.toContain(SECRET);
+        expect(r.exitCode).toBe(0);
+        expect(r.stderr).toBe(skipLine("_memory/decisions/q\\z"));
+      });
+    });
+  });
+
+  test("d: nested dir and .md file symlinks are skipped and reported", async () => {
+    await withOutside(async (outside) => {
+      await withScratch(demo, async (dir) => {
+        symlinkSync(outside, join(dir, "_memory/decisions/nested"));
+        symlinkSync(join(outside, "secret-oO0sS0eC01.md"), join(dir, "_memory/decisions/leak.md"));
+        const r = await ltm(dir, "query", "--json");
+        expect(r.stdout).not.toContain(SECRET);
+        expect(r.exitCode).toBe(0);
+        // readdir order isn't sorted, so compare the skip lines as a set.
+        expect(r.stderr.split(/(?<=\n)/).sort()).toEqual([
+          skipLine("_memory/decisions/leak.md"),
+          skipLine("_memory/decisions/nested"),
+        ]);
+      });
+    });
+  });
+
+  test("e: a symlinked type folder is skipped and reported", async () => {
+    await withOutside(async (outside) => {
+      await withScratch(demo, async (dir) => {
+        rmSync(join(dir, "_memory/decisions"), { recursive: true });
+        symlinkSync(outside, join(dir, "_memory/decisions"));
+        const r = await ltm(dir, "query", "--json");
+        expect(r.stdout).not.toContain(SECRET);
+        expect(r.exitCode).toBe(0);
+        expect(r.stderr).toBe(skipLine("_memory/decisions"));
+        expect((JSON.parse(r.stdout) as unknown[]).length).toBe(11);
+      });
+    });
+  });
+
+  test("e: a symlinked parent of the type folders is skipped and reported once", async () => {
+    await withOutside(async (outside) => {
+      await withScratch(demo, async (dir) => {
+        rmSync(join(dir, "_memory"), { recursive: true });
+        symlinkSync(outside, join(dir, "_memory"));
+        const r = await ltm(dir, "query", "--json");
+        expect(r.stdout).not.toContain(SECRET);
+        expect(r.exitCode).toBe(0);
+        expect(r.stderr).toBe(skipLine("_memory"));
+        expect(JSON.parse(r.stdout)).toEqual([]);
+      });
     });
   });
 });

@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ConfigError, type BankConfig } from "../../src/core/bank.ts";
+import { type BankConfig } from "../../src/core/bank.ts";
 import { listRecords, matches, parseFilter } from "../../src/core/query.ts";
 import type { ParsedRecord } from "../../src/core/record.ts";
 import { withScratch } from "../helpers/scratch.ts";
@@ -160,50 +160,56 @@ describe("listRecords", () => {
 describe("listRecords folder safety", () => {
   const rec = "---\nschema: 1\nid: x\nmemory_type: Decision\nstatus: accepted\ntitle: T\n---\nbody\n";
 
-  test("a type folder symlinked outside the Bank throws ConfigError", async () => {
+  test("a type folder symlinked outside the Bank is skipped and reported, not followed", async () => {
     const outside = await mkdtemp(join(tmpdir(), "ltm-outside-"));
     try {
       await writeFile(join(outside, "leak-aaaaaaaaaa.md"), rec);
       await withScratch(demoBank, async (dir) => {
         await rm(join(dir, "_memory/decisions"), { recursive: true });
         await symlink(outside, join(dir, "_memory/decisions"));
-        let caught: unknown;
-        try {
-          listRecords({ root: dir, folders: defaultFolders, raw: {} }, () => {});
-        } catch (e) {
-          caught = e;
-        }
-        expect(caught).toBeInstanceOf(ConfigError);
-        expect((caught as ConfigError).message).toContain("folders.Decision");
+        const skipped: [string, string][] = [];
+        const records = listRecords({ root: dir, folders: defaultFolders, raw: {} }, (p, r) =>
+          skipped.push([p, r]),
+        );
+        expect(skipped).toEqual([["_memory/decisions", "symlink, not followed"]]);
+        expect(records.some((r) => r.memoryType === "Decision")).toBe(false);
+        expect(records.length).toBe(11);
       });
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
   });
 
-  test("a folder named with a backslash that symlinks outside the Bank throws ConfigError", async () => {
+  test("a folder named with a backslash that symlinks outside the Bank is skipped, not followed", async () => {
     const outside = await mkdtemp(join(tmpdir(), "ltm-outside-"));
     try {
       await writeFile(join(outside, "leak-aaaaaaaaaa.md"), rec);
       await withScratch(demoBank, async (dir) => {
-        // Bun's realpath reads `\` as a separator while readdir does not, so this name
-        // slipped past the containment check.
+        // loadConfig rejects this value; listRecords must still hold without it.
         await symlink(outside, join(dir, "q\\z"));
-        let caught: unknown;
-        try {
-          listRecords(
-            { root: dir, folders: { ...defaultFolders, Decision: "q\\z" }, raw: {} },
-            () => {},
-          );
-        } catch (e) {
-          caught = e;
-        }
-        expect(caught).toBeInstanceOf(ConfigError);
-        expect((caught as ConfigError).message).toContain("folders.Decision");
+        const skipped: [string, string][] = [];
+        const records = listRecords(
+          { root: dir, folders: { ...defaultFolders, Decision: "q\\z" }, raw: {} },
+          (p, r) => skipped.push([p, r]),
+        );
+        expect(skipped).toEqual([["q\\z", "symlink, not followed"]]);
+        expect(records.some((r) => r.memoryType === "Decision")).toBe(false);
       });
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
+  });
+
+  test("a backslash-named entry that isn't a symlink is skipped and reported", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await writeFile(join(dir, "_memory/decisions/a\\b.md"), rec);
+      const skipped: [string, string][] = [];
+      const records = listRecords({ root: dir, folders: defaultFolders, raw: {} }, (p, r) =>
+        skipped.push([p, r]),
+      );
+      expect(skipped).toEqual([["_memory/decisions/a\\b.md", "name contains a backslash"]]);
+      expect(records.length).toBe(16);
+    });
   });
 
   test.skipIf(process.getuid?.() === 0)("an unreadable type folder is reported and the rest still load", async () => {

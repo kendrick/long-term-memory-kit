@@ -67,6 +67,22 @@ describe("loadConfig", () => {
     });
   });
 
+  test("a folders value containing a backslash throws", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await writeFile(join(dir, "memory-bank.yaml"), 'schema: 1\nname: acme\nfolders:\n  Decision: "q\\\\z"\n');
+      let caught: unknown;
+      try {
+        loadConfig(dir);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(ConfigError);
+      expect((caught as ConfigError).path).toBe(join(dir, "memory-bank.yaml"));
+      expect((caught as ConfigError).line).toBeNull();
+      expect((caught as ConfigError).message).toBe("folders.Decision 'q\\z' contains a backslash");
+    });
+  });
+
   test("a folder equal to the Bank root is allowed", async () => {
     await withScratch(demoBank, async (dir) => {
       await writeFile(join(dir, "memory-bank.yaml"), "schema: 1\nname: acme\nfolders:\n  Decision: .\n");

@@ -64,7 +64,8 @@ export function isInside(root: string, target: string): boolean {
 // keys and non-string folder values are ignored here rather than rejected. The one
 // exception is a folder that escapes the Bank root: a cloned, untrusted Bank could
 // otherwise point `query --json` at files outside it and print their frontmatter,
-// and that can't wait for a separate validate run.
+// and that can't wait for a separate validate run. A backslash is refused too: Bun's
+// fs reads it as a separator in some calls and not others, so one value can name two paths.
 export function loadConfig(root: string): BankConfig {
   const path = join(root, CONFIG_FILE);
   let text: string;
@@ -89,6 +90,9 @@ export function loadConfig(root: string): BankConfig {
     for (const type of MEMORY_TYPES) {
       const v = override[type];
       if (typeof v !== "string") continue;
+      if (v.includes("\\")) {
+        throw new ConfigError(path, null, `folders.${type} '${v}' contains a backslash`);
+      }
       if (isAbsolute(v) || !isInside(root, resolve(root, v))) {
         throw new ConfigError(path, null, `folders.${type} '${v}' is outside the Bank root`);
       }
