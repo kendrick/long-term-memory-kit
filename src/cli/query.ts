@@ -7,7 +7,7 @@ const scalar = (v: unknown): string | number | boolean | null =>
 
 export const query: Command = {
   name: "query",
-  summary: "List Records matching key=value filters (ANDed)",
+  summary: "List Records by key=value filters, --type, --facet, --status, or --text",
   options: {
     json: { type: "boolean" },
     type: { type: "string" },
@@ -37,16 +37,20 @@ export const query: Command = {
       .filter((f): f is Filter => f !== null);
     // multiple: true arrives as string[]; run.ts types every value as a scalar.
     const many = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) : []);
-    let records;
-    let fromFindBank = false;
+    let root;
     try {
-      fromFindBank = true;
-      const root = findBank(ctx.cwd);
-      fromFindBank = false;
-      if (root === null) {
-        ctx.err(`ltm query: no memory-bank.yaml in ${ctx.cwd} or any parent directory\n`);
-        return 1;
-      }
+      root = findBank(ctx.cwd);
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      ctx.err(`ltm query: ${e.path}: ${e.message.split("\n")[0]}\n`);
+      return 1;
+    }
+    if (root === null) {
+      ctx.err(`ltm query: no memory-bank.yaml in ${ctx.cwd} or any parent directory\n`);
+      return 1;
+    }
+    let records;
+    try {
       const config = loadConfig(root);
       records = selectRecords(
         listRecords(config, (path, reason) => {
@@ -63,10 +67,6 @@ export const query: Command = {
       );
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
-      if (fromFindBank) {
-        ctx.err(`ltm query: ${e.path}: ${e.message.split("\n")[0]}\n`);
-        return 1;
-      }
       // A null line (unreadable file, non-mapping config) has no position to print.
       // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
       const message = e.message.split("\n")[0];

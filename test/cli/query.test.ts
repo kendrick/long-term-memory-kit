@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -525,8 +526,20 @@ describe("ltm query options", () => {
       });
     });
 
-    test("a regular file with the same bytes reads normally, 16 Records with --all", async () => {
+    test("a regular file with the same bytes as the old target reads normally", async () => {
       await withScratch(demo, async (dir) => {
+        const cfg = join(dir, "memory-bank.yaml");
+        const bytes = readFileSync(cfg);
+        writeFileSync(join(dir, "real.yaml"), bytes);
+        replaceWithLink(dir, join(dir, "real.yaml"));
+        expect((await ltm(dir, "query")).exitCode).toBe(1);
+
+        rmSync(cfg);
+        writeFileSync(cfg, readFileSync(join(dir, "real.yaml")));
+        expect(lstatSync(cfg).isFile()).toBe(true);
+        expect(lstatSync(cfg).isSymbolicLink()).toBe(false);
+        expect(readFileSync(cfg).equals(bytes)).toBe(true);
+
         const r = await ltm(dir, "query", "--json", "--all");
         expect(r.exitCode).toBe(0);
         expect(JSON.parse(r.stdout)).toHaveLength(16);
