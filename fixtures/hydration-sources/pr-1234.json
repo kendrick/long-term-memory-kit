@@ -1,0 +1,5 @@
+{
+  "number": 1234,
+  "title": "Move session storage to PostgreSQL",
+  "body": "Moves session storage from Redis to PostgreSQL. Decision: we stop running a separate session cache, since the load does not justify a second datastore."
+}

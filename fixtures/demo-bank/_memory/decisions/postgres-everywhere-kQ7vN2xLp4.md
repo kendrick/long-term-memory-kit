@@ -11,6 +11,7 @@ supersedes: [mB3tR9wZe1]
 applies_to: [domain:commerce, system:data-platform]
 owners: [team:commerce-architecture]
 tags: [database, postgres]
+source_refs: [fixtures/hydration-sources/adr/0001-postgres.md]
 ---
 
 ## Context

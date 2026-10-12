@@ -1,0 +1,13 @@
+WEBVTT
+
+00:00:01.000 --> 00:00:08.000
+Dana: Billing wants to keep its own MySQL instance through the end of the quarter.
+
+00:00:08.500 --> 00:00:15.000
+Sam: We agreed on one engine. Everything new goes on PostgreSQL, no exceptions for new services.
+
+00:00:15.500 --> 00:00:24.000
+Dana: Fine, but the legacy invoice exporter can't migrate before December.
+
+00:00:24.500 --> 00:00:31.000
+Sam: Granted. The invoice exporter keeps MySQL until December 31, then it moves.
