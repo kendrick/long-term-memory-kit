@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkRecordText, checkUniqueIds, validateBank, type Finding } from "../../src/core/validate.ts";
+import { checkConfig, checkRecordText, checkUniqueIds, validateBank, type Finding } from "../../src/core/validate.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const valid = readFileSync(
@@ -310,6 +310,95 @@ describe("validateBank", () => {
       writeFileSync(join(dir, rel), lines.join("\n"));
       const fs = validateBank(dir, null, dir);
       expect(fs.map((f) => f.rule)).toEqual(["facet-prefix", "line-budget"]);
+    });
+  });
+});
+
+describe("checkConfig", () => {
+  const invalidDir = fileURLToPath(new URL("../../fixtures/invalid", import.meta.url));
+
+  test("the demo config gives no findings and loads", () => {
+    const { findings, config } = checkConfig(demoBank);
+    expect(findings).toEqual([]);
+    expect(config).not.toBeNull();
+  });
+
+  test("an unknown top-level key is one config-schema finding on that key's line", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const path = join(dir, "memory-bank.yaml");
+      const before = readFileSync(path, "utf8");
+      writeFileSync(path, `${before.trimEnd()}\ncolour: blue\n`);
+      const { findings, config } = checkConfig(dir);
+      expect(config).not.toBeNull();
+      expect(findings).toEqual([
+        {
+          file: "memory-bank.yaml",
+          line: before.trimEnd().split("\n").length + 1,
+          rule: "config-schema",
+          severity: "error",
+          key: "colour",
+          message: expect.any(String),
+        },
+      ]);
+    });
+  });
+
+  test("a missing required key is named, at line 1 since the file has no such line", async () => {
+    await withScratch(demoBank, async (dir) => {
+      writeFileSync(join(dir, "memory-bank.yaml"), "schema: 1\nname: acme\n");
+      const { findings } = checkConfig(dir);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!).toMatchObject({ rule: "config-schema", key: "facet_prefixes", line: 1 });
+    });
+  });
+
+  test("a nested error is reported against its top-level key's line", async () => {
+    await withScratch(demoBank, async (dir) => {
+      writeFileSync(
+        join(dir, "memory-bank.yaml"),
+        "schema: 1\nname: acme\nfacet_prefixes: [service]\ndoctor:\n  stale_confirmed_days: 0\n",
+      );
+      const { findings } = checkConfig(dir);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!).toMatchObject({ rule: "config-schema", key: "doctor", line: 4 });
+    });
+  });
+
+  test("unparseable YAML is one config-schema finding and no config", async () => {
+    await withScratch(demoBank, async (dir) => {
+      writeFileSync(join(dir, "memory-bank.yaml"), "name: [unclosed\n");
+      const { findings, config } = checkConfig(dir);
+      expect(config).toBeNull();
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!).toMatchObject({ file: "memory-bank.yaml", rule: "config-schema", key: null });
+    });
+  });
+
+  test("each invalid config fixture fails config-schema", async () => {
+    for (const name of ["config-extra-key", "consumers-key-newline"]) {
+      await withScratch(demoBank, async (dir) => {
+        copyFileSync(join(invalidDir, name, "memory-bank.yaml"), join(dir, "memory-bank.yaml"));
+        const { findings } = checkConfig(dir);
+        expect(findings.length).toBeGreaterThanOrEqual(1);
+        expect(findings.every((f) => f.rule === "config-schema" && f.file === "memory-bank.yaml")).toBe(true);
+      });
+    }
+  });
+
+  test("schema findings from a config that loads don't stop Record checks", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const path = join(dir, "memory-bank.yaml");
+      writeFileSync(path, `${readFileSync(path, "utf8").trimEnd()}\ncolour: blue\n`);
+      writeFileSync(join(dir, rel), replaceLine(valid, "status:", null));
+      expect(validateBank(dir, null, dir).map((f) => f.rule)).toEqual(["schema", "config-schema"]);
+    });
+  });
+
+  test("a config that won't load stops Record checks", async () => {
+    await withScratch(demoBank, async (dir) => {
+      writeFileSync(join(dir, "memory-bank.yaml"), "name: [unclosed\n");
+      writeFileSync(join(dir, rel), replaceLine(valid, "status:", null));
+      expect(validateBank(dir, null, dir).map((f) => f.rule)).toEqual(["config-schema"]);
     });
   });
 });

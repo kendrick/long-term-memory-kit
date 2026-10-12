@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { posix, relative, resolve, sep } from "node:path";
+import { join, posix, relative, resolve, sep } from "node:path";
 import Ajv2020Module, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import addFormatsModule from "ajv-formats";
 import { isMap, isScalar, isSeq, parseDocument, type Document, type Pair } from "yaml";
@@ -29,17 +29,22 @@ const FMT_ADDS = new Set(["id", "memory_type", "schema"]);
 const Ajv2020 = Ajv2020Module.default;
 const addFormats = addFormatsModule.default;
 
-let recordValidator: ValidateFunction | null = null;
-function recordSchema(): ValidateFunction {
-  if (recordValidator) return recordValidator;
+const compiled = new Map<string, ValidateFunction>();
+function compileSchema(file: string): ValidateFunction {
+  const hit = compiled.get(file);
+  if (hit) return hit;
   // Strict mode otherwise logs a warning to stderr on every run for $defs/scalar's
   // `type: [...]` union; the schema is out of scope to change, so allow just that.
   const ajv = new Ajv2020({ allErrors: true, allowUnionTypes: true });
   addFormats(ajv);
-  const schema = JSON.parse(readFileSync(new URL("../../schema/record.schema.json", import.meta.url), "utf8"));
-  recordValidator = ajv.compile(schema);
-  return recordValidator;
+  const schema = JSON.parse(readFileSync(new URL(`../../schema/${file}`, import.meta.url), "utf8"));
+  const validate = ajv.compile(schema);
+  compiled.set(file, validate);
+  return validate;
 }
+
+const recordSchema = (): ValidateFunction => compileSchema("record.schema.json");
+const configSchema = (): ValidateFunction => compileSchema("memory-bank.schema.json");
 
 const finding = (file: string, line: number, rule: Rule, key: string | null, message: string): Finding => ({
   file,
@@ -190,15 +195,28 @@ export function checkUniqueIds(ids: { file: string; line: number; id: string }[]
   return out;
 }
 
-// Config-schema findings are Task 2's (#9); this covers only what loadConfig itself refuses,
-// since without a config the type folders, and so every Record, are unknown.
 export function checkConfig(root: string): { findings: Finding[]; config: BankConfig | null } {
+  let config: BankConfig;
   try {
-    return { findings: [], config: loadConfig(root) };
+    config = loadConfig(root);
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e;
+    // Without a config the type folders, and so every Record, are unknown.
     return { findings: [finding(CONFIG_FILE, e.line ?? 1, "config-schema", null, firstLine(e.message))], config: null };
   }
+
+  const findings: Finding[] = [];
+  const validate = configSchema();
+  if (!validate(config.raw)) {
+    const src = readFileSync(join(root, CONFIG_FILE), "utf8");
+    // Config line 1 is the file's first line; Records start their frontmatter at line 2.
+    const keys = keyLines(parseDocument(src), src, 1);
+    for (const e of validate.errors ?? []) {
+      const key = errorKey(e);
+      findings.push(finding(CONFIG_FILE, key === null ? 1 : (keys.get(key)?.line ?? 1), "config-schema", key, e.message ?? e.keyword));
+    }
+  }
+  return { findings, config };
 }
 
 function sortFindings(fs: Finding[]): Finding[] {
