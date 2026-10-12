@@ -47,6 +47,15 @@ describe("run", () => {
     expect(r.stdout).toContain("beta");
   });
 
+  test("--help leaves out a hidden command, which still runs", async () => {
+    const hidden: Command = { ...stub("ghost"), hidden: true };
+    const r = await run({ ...base, argv: ["--help"] }, [stub("alpha"), hidden]);
+    expect(r.stdout).toContain("alpha");
+    expect(r.stdout).not.toContain("ghost");
+    const ran = await run({ ...base, argv: ["ghost"] }, [hidden]);
+    expect(ran.exitCode).toBe(0);
+  });
+
   test("empty argv prints help and exits 0", async () => {
     const r = await run({ ...base, argv: [] }, [stub("alpha")]);
     expect(r.exitCode).toBe(0);
@@ -151,6 +160,22 @@ describe("run", () => {
       const ok = await run({ ...base, argv: ["stub", "y"] }, [cmd]);
       expect(ok.exitCode).toBe(0);
       expect(seen.called).toBe(true);
+    });
+
+    test("checkArgs also receives the parsed option values", async () => {
+      const cmd: Command = {
+        name: "stub",
+        summary: "stub",
+        options: { type: { type: "string" } },
+        checkArgs: (_p, values) => (values.type === "Bogus" ? "unknown type 'Bogus'" : undefined),
+        async run() {
+          return 0;
+        },
+      };
+      const bad = await run({ ...base, argv: ["stub", "--type", "Bogus"] }, [cmd]);
+      expect(bad).toEqual({ exitCode: 2, stdout: "", stderr: "ltm stub: unknown type 'Bogus'\n" });
+      const ok = await run({ ...base, argv: ["stub", "--type", "Decision"] }, [cmd]);
+      expect(ok.exitCode).toBe(0);
     });
   });
 });

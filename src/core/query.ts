@@ -83,10 +83,14 @@ function folderIsWalkable(
   return true;
 }
 
-export function listRecords(
+export type RecordFile = { abs: string; rel: string; type: MemoryType };
+
+// The walk alone, unparsed, for callers like `ltm validate` that read each file's own
+// text and judge parse failures themselves rather than skipping them.
+export function listRecordFiles(
   config: BankConfig,
   onSkip: (relPath: string, reason: string) => void,
-): ParsedRecord[] {
+): RecordFile[] {
   // A file under nested configured folders belongs to the deepest one, so keep the
   // owner with the longest folder path rather than whichever type walked it first.
   const owner = new Map<string, { type: MemoryType; depth: number }>();
@@ -112,8 +116,22 @@ export function listRecords(
   const entries = [...owner].map(([abs, { type }]) => ({ abs, rel: toRel(config.root, abs), type }));
   // Plain code-unit comparison, not localeCompare, so order doesn't vary by locale.
   entries.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
+  return entries;
+}
+
+export function listRecords(
+  config: BankConfig,
+  onSkip: (relPath: string, reason: string) => void,
+): ParsedRecord[] {
+  const reported = new Set<string>();
+  const skip = (relPath: string, reason: string) => {
+    const key = `${relPath}\0${reason}`;
+    if (reported.has(key)) return;
+    reported.add(key);
+    onSkip(relPath, reason);
+  };
   const records: ParsedRecord[] = [];
-  for (const { abs, rel, type } of entries) {
+  for (const { abs, rel, type } of listRecordFiles(config, skip)) {
     try {
       records.push(parseRecordFile(abs, rel, type));
     } catch (e) {

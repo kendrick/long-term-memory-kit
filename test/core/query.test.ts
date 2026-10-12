@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type BankConfig } from "../../src/core/bank.ts";
-import { listRecords, matches, parseFilter } from "../../src/core/query.ts";
+import { listRecordFiles, listRecords, matches, parseFilter } from "../../src/core/query.ts";
 import type { ParsedRecord } from "../../src/core/record.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
@@ -90,6 +90,26 @@ describe("matches", () => {
     expect(matches(record, [{ key: "status", value: "accepted" }, { key: "tags", value: "events" }])).toBe(true);
     expect(matches(record, [{ key: "status", value: "accepted" }, { key: "tags", value: "nope" }])).toBe(false);
     expect(matches(record, [])).toBe(true);
+  });
+});
+
+describe("listRecordFiles", () => {
+  test("lists the same 16 paths as listRecords, typed by folder, without parsing", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const config: BankConfig = { root: dir, folders: defaultFolders, raw: {} };
+      // A file whose frontmatter won't parse is still a Record file; only parsing skips it.
+      await writeFile(join(dir, "_memory/decisions/broken-aA0aA0aA00.md"), "no frontmatter\n");
+      const skipped: string[] = [];
+      const files = listRecordFiles(config, (p) => skipped.push(p));
+      expect(skipped).toEqual([]);
+      expect(files).toHaveLength(17);
+      expect(files[3]).toEqual({
+        abs: join(dir, "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"),
+        rel: "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        type: "Decision",
+      });
+      expect(files[5]?.rel).toBe("_memory/decisions/broken-aA0aA0aA00.md");
+    });
   });
 });
 

@@ -23,14 +23,16 @@ export type Command = {
   options?: ParseArgsConfig["options"];
   // `variadic` is honored only on the last entry; earlier entries are ignored for it.
   positionals?: { name: string; required: boolean; variadic?: true }[];
-  checkArgs?(positionals: string[]): string | undefined;
+  checkArgs?(positionals: string[], values: CommandContext["values"]): string | undefined;
+  // A planned command holds its slot in commands.ts before it works; --help leaves it out.
+  hidden?: true;
   run(ctx: CommandContext): Promise<0 | 1>;
 };
 
 const usageError = (stderr: string): RunResult => ({ exitCode: 2, stdout: "", stderr });
 
 function helpText(commands: Command[]): string {
-  const lines = commands.map((c) => `  ${c.name}  ${c.summary}`);
+  const lines = commands.filter((c) => !c.hidden).map((c) => `  ${c.name}  ${c.summary}`);
   return ["Usage: ltm <command> [options]", ...lines].join("\n") + "\n";
 }
 
@@ -77,13 +79,14 @@ export async function run(
   if (got > declared.length && !declared.at(-1)?.variadic) {
     return usageError(`ltm ${cmd.name}: unexpected argument '${parsed.positionals[declared.length]}'\n`);
   }
-  const bad = cmd.checkArgs?.(parsed.positionals);
+  const values = parsed.values as CommandContext["values"];
+  const bad = cmd.checkArgs?.(parsed.positionals, values);
   if (bad !== undefined) return usageError(`ltm ${cmd.name}: ${bad}\n`);
 
   let stdout = "";
   let stderr = "";
   const exitCode = await cmd.run({
-    values: parsed.values as CommandContext["values"],
+    values,
     positionals: parsed.positionals,
     cwd: input.cwd,
     env: input.env,
