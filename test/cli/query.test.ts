@@ -214,6 +214,8 @@ describe("ltm query", () => {
       expect(r.stderr).toContain("folders.Decision");
       expect(r.stderr.endsWith("\n")).toBe(true);
       expect(r.stderr.slice(0, -1)).not.toContain("\n");
+      // Pins the line-less `<path>: <message>` form; the checks above let a changed separator through.
+      expect(r.stderr).toBe(`${cfg}: folders.Decision '../outside' is outside the Bank root\n`);
     });
   });
 });
