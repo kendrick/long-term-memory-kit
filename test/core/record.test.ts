@@ -96,4 +96,29 @@ describe("parseRecordFile", () => {
       expect((caught as RecordError).path).toBe("sub/plain.md");
     });
   });
+
+  test("a recursive alias throws RecordError: frontmatter can't be serialized (#37)", async () => {
+    await withTmp(async (dir) => {
+      await writeFile(join(dir, "cyc.md"), "---\ntitle: T\nextra: &x { self: *x }\n---\nbody\n");
+      let caught: unknown;
+      try {
+        parseRecordFile(join(dir, "cyc.md"), "d/cyc.md", "Decision");
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(RecordError);
+      expect((caught as RecordError).path).toBe("d/cyc.md");
+      expect((caught as RecordError).message.startsWith("frontmatter can't be serialized")).toBe(true);
+      expect((caught as RecordError).message).not.toContain("\n");
+    });
+  });
+
+  test("a non-recursive alias parses and resolves", async () => {
+    await withTmp(async (dir) => {
+      await writeFile(join(dir, "alias.md"), "---\na: &x 1\nb: *x\n---\n");
+      const r = parseRecordFile(join(dir, "alias.md"), "alias.md", "Decision");
+      expect(r.frontmatter.a).toBe(1);
+      expect(r.frontmatter.b).toBe(1);
+    });
+  });
 });

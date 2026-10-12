@@ -1,6 +1,7 @@
 import { lstatSync, readdirSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
+import { search } from "./recall.ts";
 import { parseRecordFile, RecordError, type ParsedRecord } from "./record.ts";
 
 export type Filter = { key: string; value: string };
@@ -158,4 +159,71 @@ export function matches(record: ParsedRecord, filters: Filter[]): boolean {
     if (!Object.hasOwn(record.frontmatter, key)) return false;
     return fieldMatches(record.frontmatter[key], value);
   });
+}
+
+export const RETIRED_STATUSES: readonly string[] = ["superseded", "deprecated", "rejected"];
+
+const isRetired = (r: ParsedRecord): boolean =>
+  typeof r.frontmatter.status === "string" && RETIRED_STATUSES.includes(r.frontmatter.status);
+
+export type QueryOptions = {
+  filters: Filter[];
+  type?: MemoryType;
+  statuses: string[];
+  facets: string[];
+  text?: string;
+  all: boolean;
+};
+
+// A string `applies_to` is a hand-edited one-entry list, and `null` is org-wide like a
+// missing key. Any other shape is malformed; reading that as org-wide would leak the
+// Record into every Facet.
+function appliesTo(r: ParsedRecord): string[] | "org-wide" | null {
+  const v = r.frontmatter.applies_to;
+  if (v === undefined || v === null) return "org-wide";
+  if (typeof v === "string") return [v];
+  if (!Array.isArray(v)) return null;
+  if (v.length === 0) return "org-wide";
+  return v.filter((x): x is string => typeof x === "string");
+}
+
+function inFacets(r: ParsedRecord, facets: string[]): boolean {
+  const scope = appliesTo(r);
+  if (scope === "org-wide") return true;
+  if (scope === null) return false;
+  return scope.some((f) => facets.includes(f));
+}
+
+// Selection order lives only here, so `ltm query` and `ltm mcp` (#19) can't drift apart.
+export function selectRecords(records: ParsedRecord[], opts: QueryOptions): ParsedRecord[] {
+  // Naming a retired status asks to see retired Records. The status checks below still
+  // apply, so `--status accepted` never lets a retired Record through.
+  const wantsRetired =
+    opts.all ||
+    opts.statuses.some((s) => RETIRED_STATUSES.includes(s)) ||
+    opts.filters.some((f) => f.key === "status" && RETIRED_STATUSES.includes(f.value));
+  let out = records.filter(
+    (r) =>
+      (wantsRetired || !isRetired(r)) &&
+      matches(r, opts.filters) &&
+      (opts.type === undefined || r.memoryType === opts.type) &&
+      (opts.statuses.length === 0 ||
+        (typeof r.frontmatter.status === "string" && opts.statuses.includes(r.frontmatter.status))) &&
+      (opts.facets.length === 0 || inFacets(r, opts.facets)),
+  );
+  if (opts.text !== undefined) out = search(out, opts.text).map((h) => h.record);
+  return out;
+}
+
+export function countFacets(records: ParsedRecord[], all: boolean): { facet: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const r of records) {
+    if (!all && isRetired(r)) continue;
+    const scope = appliesTo(r);
+    if (scope === "org-wide" || scope === null) continue;
+    for (const f of new Set(scope)) counts.set(f, (counts.get(f) ?? 0) + 1);
+  }
+  return [...counts]
+    .map(([facet, count]) => ({ facet, count }))
+    .sort((a, b) => (a.facet < b.facet ? -1 : a.facet > b.facet ? 1 : 0));
 }

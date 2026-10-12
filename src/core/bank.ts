@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse, YAMLParseError } from "yaml";
 
@@ -34,9 +34,22 @@ export class ConfigError extends Error {
 
 const CONFIG_FILE = "memory-bank.yaml";
 
+// A symlinked config lets a cloned, untrusted Bank point the CLI at a file outside
+// it (or at a parent Bank's config), so it's refused outright. Stopping instead of
+// continuing upward matters: skipping it would silently adopt a different Bank.
+function refuseSymlink(path: string): void {
+  let isLink = false;
+  try {
+    isLink = lstatSync(path).isSymbolicLink();
+  } catch {
+    return;
+  }
+  if (isLink) throw new ConfigError(path, null, "memory-bank.yaml is a symlink, not followed");
+}
+
 function isFile(p: string): boolean {
   try {
-    return statSync(p).isFile();
+    return lstatSync(p).isFile();
   } catch {
     return false;
   }
@@ -45,7 +58,9 @@ function isFile(p: string): boolean {
 export function findBank(cwd: string): string | null {
   let dir = resolve(cwd);
   for (;;) {
-    if (isFile(join(dir, CONFIG_FILE))) return dir;
+    const candidate = join(dir, CONFIG_FILE);
+    refuseSymlink(candidate);
+    if (isFile(candidate)) return dir;
     const parent = dirname(dir);
     if (parent === dir) return null;
     dir = parent;
@@ -68,6 +83,7 @@ export function isInside(root: string, target: string): boolean {
 // fs reads it as a separator in some calls and not others, so one value can name two paths.
 export function loadConfig(root: string): BankConfig {
   const path = join(root, CONFIG_FILE);
+  refuseSymlink(path);
   let text: string;
   try {
     text = readFileSync(path, "utf8");

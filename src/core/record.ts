@@ -64,5 +64,14 @@ export function parseRecordFile(absPath: string, relPath: string, memoryType: Me
     throw new RecordError(relPath, (e as Error).message.split("\n")[0] ?? "invalid YAML");
   }
   if (!isMapping(frontmatter)) throw new RecordError(relPath, "frontmatter is not a YAML mapping");
+  // A recursive alias (`x: &a { self: *a }`) parses to a cyclic object that crashes
+  // `--json` (#37). Refusing it here keeps every reader, `ltm mcp` included, from
+  // receiving a Record it can't send.
+  try {
+    JSON.stringify(frontmatter);
+  } catch (e) {
+    const first = (e as Error).message.split("\n")[0] || "unserializable";
+    throw new RecordError(relPath, `frontmatter can't be serialized: ${first}`);
+  }
   return { path: relPath, memoryType, frontmatter };
 }

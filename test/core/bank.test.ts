@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +32,55 @@ describe("findBank", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("symlinked memory-bank.yaml (#36)", () => {
+  const refusal = (dir: string) => ({
+    path: join(dir, "memory-bank.yaml"),
+    line: null,
+    message: "memory-bank.yaml is a symlink, not followed",
+  });
+
+  function caught(fn: () => unknown): unknown {
+    try {
+      fn();
+    } catch (e) {
+      return e;
+    }
+    return undefined;
+  }
+
+  test.each(["outside", "inside", "dangling"])("findBank throws on a %s symlink and never reaches a parent", async (kind) => {
+    await withScratch(demoBank, async (parent) => {
+      const child = join(parent, "nested");
+      mkdirSync(child);
+      const target =
+        kind === "outside" ? join(demoBank, "memory-bank.yaml") : kind === "inside" ? join(parent, "memory-bank.yaml") : join(child, "nope.yaml");
+      symlinkSync(target, join(child, "memory-bank.yaml"));
+      const e = caught(() => findBank(child));
+      expect(e).toBeInstanceOf(ConfigError);
+      expect({ path: (e as ConfigError).path, line: (e as ConfigError).line, message: (e as ConfigError).message }).toEqual(refusal(child));
+    });
+  });
+
+  test("loadConfig refuses a symlink the same way", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const real = join(dir, "real.yaml");
+      await writeFile(real, "schema: 1\nname: acme\n");
+      await rm(join(dir, "memory-bank.yaml"));
+      symlinkSync(real, join(dir, "memory-bank.yaml"));
+      const e = caught(() => loadConfig(dir));
+      expect(e).toBeInstanceOf(ConfigError);
+      expect({ path: (e as ConfigError).path, line: (e as ConfigError).line, message: (e as ConfigError).message }).toEqual(refusal(dir));
+    });
+  });
+
+  test("a regular file still resolves", async () => {
+    await withScratch(demoBank, async (dir) => {
+      expect(findBank(dir)).toBe(dir);
+      expect(loadConfig(dir).raw.name).toBe("acme");
+    });
   });
 });
 

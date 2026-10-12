@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type BankConfig } from "../../src/core/bank.ts";
-import { listRecordFiles, listRecords, matches, parseFilter } from "../../src/core/query.ts";
+import {
+  countFacets,
+  listRecordFiles,
+  listRecords,
+  matches,
+  parseFilter,
+  RETIRED_STATUSES,
+  selectRecords,
+  type QueryOptions,
+} from "../../src/core/query.ts";
 import type { ParsedRecord } from "../../src/core/record.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
@@ -250,5 +259,149 @@ describe("listRecords folder safety", () => {
         await chmod(locked, 0o755);
       }
     });
+  });
+});
+
+const opts = (o: Partial<QueryOptions>): QueryOptions => ({
+  filters: [],
+  statuses: [],
+  facets: [],
+  all: false,
+  ...o,
+});
+
+const MYSQL = "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md";
+
+describe("RETIRED_STATUSES", () => {
+  test("superseded, deprecated, rejected", () => {
+    expect([...RETIRED_STATUSES].sort()).toEqual(["deprecated", "rejected", "superseded"]);
+  });
+});
+
+describe("selectRecords on the demo bank", () => {
+  const load = (dir: string) => listRecords({ root: dir, folders: defaultFolders, raw: {} }, () => {});
+
+  test("retired Records hide unless asked for", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const records = load(dir);
+      const paths = (o: Partial<QueryOptions>) => selectRecords(records, opts(o)).map((r) => r.path);
+      expect(paths({ type: "Decision" })).not.toContain(MYSQL);
+      expect(paths({ type: "Decision", statuses: ["superseded"] })).toEqual([MYSQL]);
+      expect(paths({ type: "Decision", all: true })).toContain(MYSQL);
+      expect(paths({ type: "Decision", statuses: ["accepted"] })).not.toContain(MYSQL);
+      expect(paths({ type: "Decision", filters: [{ key: "status", value: "superseded" }] })).toEqual([MYSQL]);
+    });
+  });
+
+  test("--type alone gives the four non-retired Decisions, in path order", async () => {
+    await withScratch(demoBank, async (dir) => {
+      expect(selectRecords(load(dir), opts({ type: "Decision" })).map((r) => r.path)).toEqual([
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/adopt-opentelemetry-tracing-pL2sG4nVq0.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+      ]);
+    });
+  });
+});
+
+describe("selectRecords with literal Records", () => {
+  const r = (path: string, frontmatter: Record<string, unknown>, memoryType: ParsedRecord["memoryType"] = "Decision"): ParsedRecord => ({
+    path,
+    memoryType,
+    frontmatter,
+  });
+  const none = r("none.md", { status: "accepted" });
+  const empty = r("empty.md", { status: "accepted", applies_to: [] });
+  const commerce = r("commerce.md", { status: "accepted", applies_to: ["domain:commerce"] });
+  const payments = r("payments.md", { status: "accepted", applies_to: ["service:payments"] });
+  const str = r("string.md", { status: "accepted", applies_to: "service:order-service" });
+  const scoped = [none, empty, commerce, payments, str];
+
+  test("facets keep org-wide Records and any Record listing a given Facet", () => {
+    const got = selectRecords(scoped, opts({ facets: ["service:order-service", "domain:commerce"] }));
+    expect(got.map((x) => x.path)).toEqual(["none.md", "empty.md", "commerce.md", "string.md"]);
+  });
+
+  test("null applies_to is org-wide; any other non-list shape matches no Facet", () => {
+    const nul = r("null.md", { applies_to: null });
+    const obj = r("obj.md", { applies_to: { a: 1 } });
+    const num = r("num.md", { applies_to: 3 });
+    const got = selectRecords([nul, obj, num], opts({ facets: ["domain:commerce"] }));
+    expect(got.map((x) => x.path)).toEqual(["null.md"]);
+  });
+
+  test("applies_to=<facet> stays list containment, without the org-wide union", () => {
+    const f = [{ key: "applies_to", value: "domain:commerce" }];
+    expect(matches(none, f)).toBe(false);
+    expect(selectRecords(scoped, opts({ filters: f })).map((x) => x.path)).toEqual(["commerce.md"]);
+  });
+
+  test("statuses match any given value, only on a string status", () => {
+    const a = r("a.md", { status: "accepted" });
+    const p = r("p.md", { status: "proposed" });
+    const n = r("n.md", { status: 1 });
+    const m = r("m.md", {});
+    expect(selectRecords([a, p, n, m], opts({ statuses: ["accepted", "proposed"] })).map((x) => x.path)).toEqual([
+      "a.md",
+      "p.md",
+    ]);
+  });
+
+  test("a missing or non-string status is not retired", () => {
+    const m = r("m.md", {});
+    const n = r("n.md", { status: ["superseded"] });
+    const s = r("s.md", { status: "rejected" });
+    expect(selectRecords([m, n, s], opts({})).map((x) => x.path)).toEqual(["m.md", "n.md"]);
+  });
+
+  test("type uses the folder type", () => {
+    const d = r("d.md", { memory_type: "Context" }, "Decision");
+    const c = r("c.md", { memory_type: "Decision" }, "Context");
+    expect(selectRecords([d, c], opts({ type: "Decision" })).map((x) => x.path)).toEqual(["d.md"]);
+  });
+
+  test("text filters on title plus summary and orders by score", () => {
+    const one = r("a.md", { title: "redis", status: "accepted" });
+    const three = r("b.md", { title: "redis redis", summary: "redis", status: "accepted" });
+    const no = r("c.md", { title: "kafka", status: "accepted" });
+    const retired = r("d.md", { title: "redis redis redis redis", status: "superseded" });
+    expect(selectRecords([one, three, no, retired], opts({ text: "redis" })).map((x) => x.path)).toEqual([
+      "b.md",
+      "a.md",
+    ]);
+  });
+
+  test("text with no tokens adds no filter and keeps input order", () => {
+    const z = r("z.md", { title: "z" });
+    const a = r("a.md", {});
+    expect(selectRecords([z, a], opts({ text: "--" })).map((x) => x.path)).toEqual(["z.md", "a.md"]);
+  });
+});
+
+describe("countFacets", () => {
+  test("demo bank: counts non-retired Records, or all of them with all=true", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const records = listRecords({ root: dir, folders: defaultFolders, raw: {} }, () => {});
+      const live = new Map(countFacets(records, false).map((f) => [f.facet, f.count]));
+      expect(live.get("service:order-service")).toBe(3);
+      expect(live.get("domain:commerce")).toBe(8);
+      const all = new Map(countFacets(records, true).map((f) => [f.facet, f.count]));
+      expect(all.get("service:order-service")).toBe(3);
+      expect(all.get("domain:commerce")).toBe(10);
+    });
+  });
+
+  test("a Record counts once per distinct Facet; strings count, other entries don't; sorted", () => {
+    const records: ParsedRecord[] = [
+      { path: "a.md", memoryType: "Decision", frontmatter: { applies_to: ["domain:commerce", "domain:commerce", 7, null] } },
+      { path: "b.md", memoryType: "Decision", frontmatter: { applies_to: "service:a" } },
+      { path: "c.md", memoryType: "Decision", frontmatter: { applies_to: { x: 1 } } },
+      { path: "d.md", memoryType: "Decision", frontmatter: {} },
+    ];
+    expect(countFacets(records, false)).toEqual([
+      { facet: "domain:commerce", count: 1 },
+      { facet: "service:a", count: 1 },
+    ]);
   });
 });
