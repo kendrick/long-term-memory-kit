@@ -1,5 +1,5 @@
-import { ConfigError, findBank, loadConfig } from "../core/bank.ts";
-import { listRecords, matches, parseFilter, type Filter } from "../core/query.ts";
+import { ConfigError, findBank, loadConfig, MEMORY_TYPES, type MemoryType } from "../core/bank.ts";
+import { listRecords, parseFilter, selectRecords, type Filter } from "../core/query.ts";
 import type { Command } from "./run.ts";
 
 const scalar = (v: unknown): string | number | boolean | null =>
@@ -8,31 +8,65 @@ const scalar = (v: unknown): string | number | boolean | null =>
 export const query: Command = {
   name: "query",
   summary: "List Records matching key=value filters (ANDed)",
-  options: { json: { type: "boolean" } },
+  options: {
+    json: { type: "boolean" },
+    type: { type: "string" },
+    facet: { type: "string", multiple: true },
+    status: { type: "string", multiple: true },
+    text: { type: "string" },
+    all: { type: "boolean" },
+  },
   positionals: [{ name: "filter", required: false, variadic: true }],
   // Exit 2 has to come before run() so a malformed filter never reads the Bank.
-  checkArgs(positionals) {
+  checkArgs(positionals, values) {
     const bad = positionals.find((a) => parseFilter(a) === null);
-    return bad === undefined ? undefined : `invalid filter '${bad}' (expected key=value)`;
+    if (bad !== undefined) return `invalid filter '${bad}' (expected key=value)`;
+    const type = values.type;
+    if (typeof type === "string" && !(MEMORY_TYPES as readonly string[]).includes(type)) {
+      return `unknown memory type '${type}' (expected Decision, PolicyRule, Exception, or Context)`;
+    }
+    const badFacet = ((values.facet ?? []) as unknown as string[]).find(
+      (f) => f.indexOf(":") <= 0 || f.indexOf(":") === f.length - 1,
+    );
+    return badFacet === undefined ? undefined : `invalid facet '${badFacet}' (expected prefix:value)`;
   },
   async run(ctx) {
-    const root = findBank(ctx.cwd);
-    if (root === null) {
-      ctx.err(`ltm query: no memory-bank.yaml in ${ctx.cwd} or any parent directory\n`);
-      return 1;
-    }
     // checkArgs already rejected anything parseFilter refuses; the guard only narrows the type.
     const filters = ctx.positionals
       .map((a) => parseFilter(a))
       .filter((f): f is Filter => f !== null);
+    // multiple: true arrives as string[]; run.ts types every value as a scalar.
+    const many = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) : []);
     let records;
+    let fromFindBank = false;
     try {
+      fromFindBank = true;
+      const root = findBank(ctx.cwd);
+      fromFindBank = false;
+      if (root === null) {
+        ctx.err(`ltm query: no memory-bank.yaml in ${ctx.cwd} or any parent directory\n`);
+        return 1;
+      }
       const config = loadConfig(root);
-      records = listRecords(config, (path, reason) => {
-        ctx.err(`ltm query: skipped ${path}: ${reason}\n`);
-      }).filter((r) => matches(r, filters));
+      records = selectRecords(
+        listRecords(config, (path, reason) => {
+          ctx.err(`ltm query: skipped ${path}: ${reason}\n`);
+        }),
+        {
+          filters,
+          type: typeof ctx.values.type === "string" ? (ctx.values.type as MemoryType) : undefined,
+          statuses: many(ctx.values.status),
+          facets: many(ctx.values.facet),
+          text: typeof ctx.values.text === "string" ? ctx.values.text : undefined,
+          all: ctx.values.all === true,
+        },
+      );
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
+      if (fromFindBank) {
+        ctx.err(`ltm query: ${e.path}: ${e.message.split("\n")[0]}\n`);
+        return 1;
+      }
       // A null line (unreadable file, non-mapping config) has no position to print.
       // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
       const message = e.message.split("\n")[0];
@@ -47,6 +81,7 @@ export const query: Command = {
         status: scalar(r.frontmatter.status),
         title: scalar(r.frontmatter.title),
         summary: scalar(r.frontmatter.summary),
+        is_proposal: r.frontmatter.status === "proposed",
         frontmatter: r.frontmatter,
       }));
       ctx.out(`${JSON.stringify(rows, null, 2)}\n`);
@@ -55,7 +90,7 @@ export const query: Command = {
     for (const r of records) {
       const status = scalar(r.frontmatter.status);
       const title = scalar(r.frontmatter.title);
-      ctx.out(`${r.path}  ${r.memoryType}  ${status ?? ""}  ${title ?? ""}\n`);
+      ctx.out(`${r.path}  ${r.memoryType}  ${status ?? ""}  ${title ?? ""}${status === "proposed" ? "  (proposal)" : ""}\n`);
     }
     return 0;
   },

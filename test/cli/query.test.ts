@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse } from "yaml";
 import { run } from "../../src/cli/run.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
@@ -27,7 +28,7 @@ const MQ = "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md";
 describe("ltm query", () => {
   test("1: memory_type=Decision lists the same paths as grep", async () => {
     await withScratch(demo, async (dir) => {
-      const r = await ltm(dir, "query", "memory_type=Decision");
+      const r = await ltm(dir, "query", "--all", "memory_type=Decision");
       const g = spawnSync("grep", ["-rl", "^memory_type: Decision$", "_memory/decisions"], {
         cwd: dir,
         encoding: "utf8",
@@ -117,7 +118,7 @@ describe("ltm query", () => {
     });
   });
 
-  test("5: --json prints an array with all seven keys", async () => {
+  test("5: --json prints an array with all eight keys", async () => {
     await withScratch(demo, async (dir) => {
       const r = await ltm(dir, "query", "--json", "memory_type=Exception");
       expect(r.exitCode).toBe(0);
@@ -132,6 +133,7 @@ describe("ltm query", () => {
           "status",
           "title",
           "summary",
+          "is_proposal",
           "frontmatter",
         ]);
         expect(row.memory_type).toBe("Exception");
@@ -150,8 +152,8 @@ describe("ltm query", () => {
 
   test("7: finds the Bank from a subfolder; outside any Bank exits 1 naming the dir", async () => {
     await withScratch(demo, async (dir) => {
-      const fromRoot = await ltm(dir, "query", "memory_type=Decision");
-      const fromSub = await ltm(join(dir, "_memory/decisions"), "query", "memory_type=Decision");
+      const fromRoot = await ltm(dir, "query", "--all", "memory_type=Decision");
+      const fromSub = await ltm(join(dir, "_memory/decisions"), "query", "--all", "memory_type=Decision");
       expect(fromSub.exitCode).toBe(0);
       expect(paths(fromSub.stdout)).toEqual(paths(fromRoot.stdout));
       expect(paths(fromSub.stdout)).toHaveLength(5);
@@ -170,7 +172,7 @@ describe("ltm query", () => {
   test("a Record that won't parse is skipped on stderr and the exit stays 0", async () => {
     await withScratch(demo, async (dir) => {
       writeFileSync(join(dir, "_memory/decisions/broken-aaaaaaaaaa.md"), "no fences here\n");
-      const r = await ltm(dir, "query", "memory_type=Decision");
+      const r = await ltm(dir, "query", "--all", "memory_type=Decision");
       expect(r.exitCode).toBe(0);
       expect(r.stderr).toBe(
         "ltm query: skipped _memory/decisions/broken-aaaaaaaaaa.md: no frontmatter\n",
@@ -303,7 +305,7 @@ describe("ltm query never reads outside the Bank", () => {
       await withScratch(demo, async (dir) => {
         rmSync(join(dir, "_memory/decisions"), { recursive: true });
         symlinkSync(outside, join(dir, "_memory/decisions"));
-        const r = await ltm(dir, "query", "--json");
+        const r = await ltm(dir, "query", "--json", "--all");
         expect(r.stdout).not.toContain(SECRET);
         expect(r.exitCode).toBe(0);
         expect(r.stderr).toBe(skipLine("_memory/decisions"));
@@ -322,6 +324,212 @@ describe("ltm query never reads outside the Bank", () => {
         expect(r.exitCode).toBe(0);
         expect(r.stderr).toBe(skipLine("_memory"));
         expect(JSON.parse(r.stdout)).toEqual([]);
+      });
+    });
+  });
+});
+
+const rec = (id: string, extra: string[] = [], title = `T ${id}`) =>
+  [
+    "---",
+    "schema: 1",
+    `id: ${id}`,
+    "memory_type: Decision",
+    `title: ${title}`,
+    "status: accepted",
+    "date: 2026-10-12",
+    "summary: S.",
+    ...extra,
+    "---",
+    "",
+    "Body.",
+    "",
+  ].join("\n");
+const MYSQL = "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md";
+const OTEL = "_memory/decisions/adopt-opentelemetry-tracing-pL2sG4nVq0.md";
+const PG = "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md";
+
+describe("ltm query options", () => {
+  test("1: retired Records are hidden unless named or --all", async () => {
+    await withScratch(demo, async (dir) => {
+      const dflt = await ltm(dir, "query", "--type", "Decision");
+      const sup = await ltm(dir, "query", "--type", "Decision", "--status", "superseded");
+      const all = await ltm(dir, "query", "--type", "Decision", "--all");
+      const acc = await ltm(dir, "query", "--type", "Decision", "--status", "accepted");
+      expect(paths(dflt.stdout)).not.toContain(MYSQL);
+      expect(paths(sup.stdout)).toEqual([MYSQL]);
+      expect(paths(all.stdout)).toContain(MYSQL);
+      expect(paths(acc.stdout)).not.toContain(MYSQL);
+    });
+  });
+
+  test("2: --facet unions org-wide Records, and flips when applies_to is rewritten", async () => {
+    await withScratch(demo, async (dir) => {
+      const none = "_memory/decisions/no-scope-aaaaaaaaa1.md";
+      const com = "_memory/decisions/commerce-scope-aaaaaaa2.md";
+      const pay = "_memory/decisions/payments-scope-aaaaaaa3.md";
+      writeFileSync(join(dir, none), rec("aaaaaaaaa1"));
+      writeFileSync(join(dir, com), rec("aaaaaaaaa2", ["applies_to: [domain:commerce]"]));
+      writeFileSync(join(dir, pay), rec("aaaaaaaaa3", ["applies_to: [service:payments]"]));
+      const args = ["query", "--facet", "service:order-service", "--facet", "domain:commerce"];
+      const before = paths((await ltm(dir, ...args)).stdout);
+      expect(before).toContain(none);
+      expect(before).toContain(com);
+      expect(before).not.toContain(pay);
+
+      writeFileSync(join(dir, pay), rec("aaaaaaaaa3", ["applies_to: [service:order-service]"]));
+      expect(readFileSync(join(dir, pay), "utf8")).toContain("applies_to: [service:order-service]");
+      expect(paths((await ltm(dir, ...args)).stdout)).toContain(pay);
+    });
+  });
+
+  test("3: applies_to=value keeps containment, no org-wide union", async () => {
+    await withScratch(demo, async (dir) => {
+      const none = "_memory/decisions/no-scope-aaaaaaaaa1.md";
+      writeFileSync(join(dir, none), rec("aaaaaaaaa1"));
+      const r = await ltm(dir, "query", "applies_to=domain:commerce");
+      expect(r.exitCode).toBe(0);
+      expect(paths(r.stdout)).not.toContain(none);
+      expect(paths(r.stdout).length).toBeGreaterThan(0);
+    });
+  });
+
+  test("4: proposals get a (proposal) suffix and is_proposal in JSON", async () => {
+    await withScratch(demo, async (dir) => {
+      const r = await ltm(dir, "query", "--type", "Decision");
+      const marked = r.stdout.split("\n").filter((l) => l.endsWith("  (proposal)"));
+      expect(marked).toHaveLength(1);
+      expect(marked[0]!.startsWith(OTEL)).toBe(true);
+      const j = await ltm(dir, "query", "--json", "--type", "Decision");
+      const rows = JSON.parse(j.stdout) as { path: string; is_proposal: boolean }[];
+      expect(rows.length).toBeGreaterThan(1);
+      for (const row of rows) expect(row.is_proposal).toBe(row.path === OTEL);
+    });
+  });
+
+  test("5: --text matches title plus summary only, every token", async () => {
+    await withScratch(demo, async (dir) => {
+      const bodyOnly = "_memory/decisions/body-only-aaaaaaaa4.md";
+      writeFileSync(join(dir, bodyOnly), rec("aaaaaaaaa4").replace("Body.", "postgres postgres"));
+      const one = await ltm(dir, "query", "--text", "postgres");
+      expect(paths(one.stdout)).toContain(PG);
+      expect(paths(one.stdout)).not.toContain(bodyOnly);
+      const both = await ltm(dir, "query", "--text", "postgres mysql");
+      const listed = paths(both.stdout);
+      expect(listed.length).toBeGreaterThan(0);
+      for (const p of listed) {
+        const fm = parse(readFileSync(join(dir, p), "utf8").split("---\n")[1]!) as Record<string, unknown>;
+        const hay = `${fm.title ?? ""} ${fm.summary ?? ""}`.toLowerCase();
+        expect(hay).toContain("postgres");
+        expect(hay).toContain("mysql");
+      }
+    });
+  });
+
+  test("6: --text ranks the Record with more occurrences first", async () => {
+    await withScratch(demo, async (dir) => {
+      // Path order puts the one-occurrence Record first, so ranking has to reorder it.
+      const once = "_memory/decisions/a-redis-once-aaaaaa5.md";
+      const thrice = "_memory/decisions/b-redis-thrice-aaaa6.md";
+      writeFileSync(join(dir, once), rec("aaaaaaaaa5", [], "redis"));
+      writeFileSync(join(dir, thrice), rec("aaaaaaaaa6", [], "redis redis redis"));
+      const r = await ltm(dir, "query", "--text", "redis");
+      const listed = paths(r.stdout);
+      expect(listed.indexOf(thrice)).toBeGreaterThanOrEqual(0);
+      expect(listed.indexOf(thrice)).toBeLessThan(listed.indexOf(once));
+    });
+  });
+
+  test("7: a recall: key in memory-bank.yaml changes nothing", async () => {
+    await withScratch(demo, async (dir) => {
+      const before = await ltm(dir, "query", "--text", "postgres");
+      const cfg = join(dir, "memory-bank.yaml");
+      writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\nrecall: { backend: qmd }\n`);
+      expect(readFileSync(cfg, "utf8")).toContain("recall: { backend: qmd }");
+      const after = await ltm(dir, "query", "--text", "postgres");
+      expect(after).toEqual(before);
+      expect(before.stdout).not.toBe("");
+    });
+  });
+
+  test("9: an unknown --type or a colonless --facet exits 2", async () => {
+    await withScratch(demo, async (dir) => {
+      const t = await ltm(dir, "query", "--type", "Bogus");
+      expect(t.exitCode).toBe(2);
+      expect(t.stdout).toBe("");
+      const f = await ltm(dir, "query", "--facet", "nocolon");
+      expect(f.exitCode).toBe(2);
+      expect(f.stdout).toBe("");
+    });
+  });
+
+  test("11: unserializable frontmatter is skipped, not a crash (#37)", async () => {
+    await withScratch(demo, async (dir) => {
+      const mq = join(dir, MQ);
+      writeFileSync(mq, readFileSync(mq, "utf8").replace(/\n---\n/, "\nextra: &x { self: *x }\n---\n"));
+      expect(readFileSync(mq, "utf8")).toContain("extra: &x");
+      const pg = join(dir, PG);
+      writeFileSync(pg, readFileSync(pg, "utf8").replace(/\n---\n/, "\na: &y 1\nb: *y\n---\n"));
+      expect(readFileSync(pg, "utf8")).toContain("b: *y");
+      // --all: 16 Records minus the skipped one, with the two retired ones counted.
+      const r = await ltm(dir, "query", "--json", "--all");
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toContain(`ltm query: skipped ${MQ}:`);
+      const rows = JSON.parse(r.stdout) as { path: string }[];
+      expect(rows).toHaveLength(15);
+      expect(rows.map((x) => x.path)).toContain(PG);
+    });
+  });
+
+  describe("12: a symlinked memory-bank.yaml is refused (#36)", () => {
+    const refusal = (dir: string) =>
+      `ltm query: ${join(dir, "memory-bank.yaml")}: memory-bank.yaml is a symlink, not followed\n`;
+    const replaceWithLink = (dir: string, target: string) => {
+      rmSync(join(dir, "memory-bank.yaml"));
+      symlinkSync(target, join(dir, "memory-bank.yaml"));
+    };
+
+    test("outside file", async () => {
+      const outside = mkdtempSync(join(tmpdir(), "ltm-cfg-"));
+      try {
+        await withScratch(demo, async (dir) => {
+          const target = join(outside, "cfg.yaml");
+          writeFileSync(target, readFileSync(join(dir, "memory-bank.yaml")));
+          replaceWithLink(dir, target);
+          const r = await ltm(dir, "query");
+          expect(r.exitCode).toBe(1);
+          expect(r.stdout).toBe("");
+          expect(r.stderr).toBe(refusal(dir));
+        });
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+
+    test("file inside the Bank", async () => {
+      await withScratch(demo, async (dir) => {
+        writeFileSync(join(dir, "real.yaml"), readFileSync(join(dir, "memory-bank.yaml")));
+        replaceWithLink(dir, join(dir, "real.yaml"));
+        const r = await ltm(dir, "query");
+        expect(r.exitCode).toBe(1);
+        expect(r.stderr).toBe(refusal(dir));
+      });
+    });
+
+    test("dangling", async () => {
+      await withScratch(demo, async (dir) => {
+        replaceWithLink(dir, join(dir, "nowhere.yaml"));
+        const r = await ltm(dir, "query");
+        expect(r.exitCode).toBe(1);
+        expect(r.stderr).toBe(refusal(dir));
+      });
+    });
+
+    test("a regular file with the same bytes reads normally, 16 Records with --all", async () => {
+      await withScratch(demo, async (dir) => {
+        const r = await ltm(dir, "query", "--json", "--all");
+        expect(r.exitCode).toBe(0);
+        expect(JSON.parse(r.stdout)).toHaveLength(16);
       });
     });
   });
