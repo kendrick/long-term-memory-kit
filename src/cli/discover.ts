@@ -1,12 +1,64 @@
+import { statSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { ConfigError, findBank, loadConfig, type BankConfig } from "../core/bank.ts";
+import { discover as discoverEntries } from "../core/discover.ts";
 import type { Command } from "./run.ts";
 
-// Holds the slot until #18 lands; the lane that builds it replaces this file.
 export const discover: Command = {
   name: "discover",
   summary: "List Hydration source files under the given paths, with their kind and citations",
-  hidden: true,
+  options: { json: { type: "boolean" }, bank: { type: "string" } },
+  positionals: [{ name: "path", required: true, variadic: true }],
   async run(ctx) {
-    ctx.err("ltm discover: not implemented yet (see #18)\n");
-    return 1;
+    let bank: BankConfig | null = null;
+    try {
+      const flag = ctx.values.bank;
+      let root: string | null;
+      if (typeof flag === "string") {
+        root = resolve(ctx.cwd, flag);
+        let isFile = false;
+        try {
+          isFile = statSync(join(root, "memory-bank.yaml")).isFile();
+        } catch {
+          // Missing or unreadable reads the same to the caller: no Bank there.
+        }
+        if (!isFile) {
+          ctx.err(`ltm discover: --bank ${flag}: no memory-bank.yaml there\n`);
+          return 1;
+        }
+      } else {
+        root = findBank(ctx.cwd);
+      }
+      if (root !== null) bank = loadConfig(root);
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
+      const message = e.message.split("\n")[0];
+      ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${message}\n`);
+      return 1;
+    }
+
+    let failed = false;
+    const entries = discoverEntries(ctx.positionals, {
+      cwd: ctx.cwd,
+      bank,
+      onError(msg) {
+        failed = true;
+        ctx.err(`ltm discover: ${msg}\n`);
+      },
+      onSkip(path, reason) {
+        ctx.err(`ltm discover: skipped ${path}: ${reason}\n`);
+      },
+    });
+
+    if (ctx.values.json === true) {
+      ctx.out(`${JSON.stringify(entries, null, 2)}\n`);
+    } else {
+      for (const e of entries) {
+        const cited = e.cited_by !== null && e.cited_by.length > 0 ? `  (cited: ${e.cited_by.join(", ")})` : "";
+        ctx.out(`${e.kind}  ${e.path}  ${e.title}${cited}\n`);
+      }
+    }
+    return failed ? 1 : 0;
   },
 };
