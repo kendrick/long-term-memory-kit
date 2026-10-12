@@ -22,7 +22,7 @@ export type Finding = { file: string; line: number; rule: Rule; severity: "error
 
 const CONFIG_FILE = "memory-bank.yaml";
 const LINE_BUDGET = 20;
-const FMT_ADDS = new Set(["id", "memory_type", "schema"]);
+const KEYS_LTM_FMT_FILLS = new Set(["id", "memory_type", "schema"]);
 
 // Both packages are CJS, and TS under NodeNext types the default import as the whole
 // `module.exports`; each also sets `exports.default` to itself, so `.default` works at runtime too.
@@ -57,16 +57,17 @@ const finding = (file: string, line: number, rule: Rule, key: string | null, mes
 
 const firstLine = (s: string): string => s.split("\n")[0] ?? s;
 
-// `offset` is the file line holding the first character of `src`.
-function keyLines(doc: Document, src: string, offset: number): Map<string, { line: number; pair: Pair }> {
-  const out = new Map<string, { line: number; pair: Pair }>();
+type KeyLines = Map<string, { line: number; pair: Pair }>;
+
+function keyLines(doc: Document, src: string, srcStartLine: number): KeyLines {
+  const out: KeyLines = new Map();
   if (!isMap(doc.contents)) return out;
   for (const pair of doc.contents.items) {
     if (!isScalar(pair.key) || !pair.key.range) continue;
     const name = String(pair.key.value);
     if (out.has(name)) continue;
     const before = src.slice(0, pair.key.range[0]);
-    out.set(name, { line: offset + (before.match(/\n/g)?.length ?? 0), pair });
+    out.set(name, { line: srcStartLine + (before.match(/\n/g)?.length ?? 0), pair });
   }
   return out;
 }
@@ -80,89 +81,113 @@ function errorKey(e: ErrorObject): string | null {
   return seg === undefined || seg === "" ? null : decodePointer(seg);
 }
 
-type RecordResult = { findings: Finding[]; id: string | null; idLine: number };
+type Frontmatter = {
+  rel: string;
+  src: string;
+  closingLine: number;
+  keys: KeyLines;
+  data: Record<string, unknown>;
+  lineOf: (key: string | null) => number;
+};
 
-function analyzeRecord(rel: string, folderType: MemoryType, text: string, facetPrefixes: string[] | null): RecordResult {
-  const findings: Finding[] = [];
+// Parse failures are findings too, but every later check needs the parsed mapping, so
+// this one hands back either its findings or the Frontmatter, never both.
+function checkFrontmatter(rel: string, text: string): { findings: Finding[]; fm: Frontmatter | null } {
+  const fail = (line: number, message: string) => ({ findings: [finding(rel, line, "frontmatter", null, message)], fm: null });
   const split = splitFrontmatter(text);
-  if (!split) {
-    findings.push(
-      finding(rel, 1, "frontmatter", null, "no frontmatter block (expected --- on line 1 and a closing ---)"),
-    );
-    return { findings, id: null, idLine: 1 };
-  }
+  if (!split) return fail(1, "no frontmatter block (expected --- on line 1 and a closing ---)");
   const src = split.frontmatterLines.join("\n");
   const doc = parseDocument(src);
   const err = doc.errors[0];
-  if (err) {
-    findings.push(finding(rel, 1 + (err.linePos?.[0]?.line ?? 0), "frontmatter", null, firstLine(err.message)));
-    return { findings, id: null, idLine: 1 };
-  }
-  if (!isMap(doc.contents)) {
-    findings.push(finding(rel, 1, "frontmatter", null, "frontmatter is not a YAML mapping"));
-    return { findings, id: null, idLine: 1 };
-  }
+  if (err) return fail(1 + (err.linePos?.[0]?.line ?? 0), firstLine(err.message));
+  if (!isMap(doc.contents)) return fail(1, "frontmatter is not a YAML mapping");
   const keys = keyLines(doc, src, 2);
   const lineOf = (k: string | null): number => (k === null ? 1 : (keys.get(k)?.line ?? 1));
   const data = doc.toJS() as Record<string, unknown>;
+  return { findings: [], fm: { rel, src, closingLine: split.closingLine, keys, data, lineOf } };
+}
 
+function checkSchema({ rel, data, lineOf }: Frontmatter): Finding[] {
   const validate = recordSchema();
-  if (!validate(data)) {
-    for (const e of validate.errors ?? []) {
-      const key = errorKey(e);
-      let message = e.message ?? e.keyword;
-      if (e.keyword === "required" && key !== null && FMT_ADDS.has(key)) message += "; `ltm fmt` will add it";
-      findings.push(finding(rel, lineOf(key), "schema", key, message));
-    }
-  }
+  if (validate(data)) return [];
+  return (validate.errors ?? []).map((e) => {
+    const key = errorKey(e);
+    let message = e.message ?? e.keyword;
+    if (e.keyword === "required" && key !== null && KEYS_LTM_FMT_FILLS.has(key)) message += "; `ltm fmt` will add it";
+    return finding(rel, lineOf(key), "schema", key, message);
+  });
+}
 
+function checkCanonicalLists({ rel, src, keys }: Frontmatter): Finding[] {
+  const out: Finding[] = [];
   for (const [name, { line, pair }] of keys) {
     const v = pair.value;
     if (!isSeq(v)) continue;
     const multiline = v.range ? src.slice(v.range[0], v.range[1]).includes("\n") : false;
     if (v.flow && !multiline) continue;
     const items = v.items.filter(isScalar).map((i) => String(i.value)).join(", ");
-    findings.push(finding(rel, line, "canonical-list", name, `${name} must be a single-line list, e.g. \`${name}: [${items}]\``));
+    out.push(finding(rel, line, "canonical-list", name, `${name} must be a single-line list, e.g. \`${name}: [${items}]\``));
   }
+  return out;
+}
 
-  const closing = split.closingLine + 1;
-  if (closing > LINE_BUDGET) {
-    findings.push(finding(rel, closing, "line-budget", null, `frontmatter closes on line ${closing}; the budget is ${LINE_BUDGET}`));
-  }
+function checkLineBudget({ rel, closingLine }: Frontmatter): Finding[] {
+  const closing = closingLine + 1;
+  if (closing <= LINE_BUDGET) return [];
+  return [finding(rel, closing, "line-budget", null, `frontmatter closes on line ${closing}; the budget is ${LINE_BUDGET}`)];
+}
 
+function checkFolderType({ rel, data, lineOf }: Frontmatter, folderType: MemoryType): Finding[] {
   const written = data.memory_type;
-  if (typeof written === "string" && written !== folderType) {
-    findings.push(
-      finding(
-        rel,
-        lineOf("memory_type"),
-        "folder-type",
-        "memory_type",
-        `memory_type is '${written}' but the file is in the ${folderType} folder (${posix.dirname(rel)})`,
-      ),
-    );
-  }
+  if (typeof written !== "string" || written === folderType) return [];
+  return [
+    finding(
+      rel,
+      lineOf("memory_type"),
+      "folder-type",
+      "memory_type",
+      `memory_type is '${written}' but the file is in the ${folderType} folder (${posix.dirname(rel)})`,
+    ),
+  ];
+}
 
-  if (facetPrefixes) {
-    const known = new Set(facetPrefixes);
-    for (const key of ["applies_to", "owners"]) {
-      const list = data[key];
-      if (!Array.isArray(list)) continue;
-      for (const entry of list) {
-        if (typeof entry !== "string") continue;
-        const i = entry.indexOf(":");
-        if (i < 0) continue;
-        const prefix = entry.slice(0, i);
-        if (known.has(prefix)) continue;
-        findings.push(
-          finding(rel, lineOf(key), "facet-prefix", key, `'${entry}' uses prefix '${prefix}', which facet_prefixes doesn't list`),
-        );
-      }
+function checkFacetPrefixes({ rel, data, lineOf }: Frontmatter, known: ReadonlySet<string> | null): Finding[] {
+  if (!known) return [];
+  const out: Finding[] = [];
+  for (const key of ["applies_to", "owners"]) {
+    const list = data[key];
+    if (!Array.isArray(list)) continue;
+    for (const entry of list) {
+      if (typeof entry !== "string") continue;
+      const i = entry.indexOf(":");
+      if (i < 0) continue;
+      const prefix = entry.slice(0, i);
+      if (known.has(prefix)) continue;
+      out.push(finding(rel, lineOf(key), "facet-prefix", key, `'${entry}' uses prefix '${prefix}', which facet_prefixes doesn't list`));
     }
   }
+  return out;
+}
 
-  const id = typeof data.id === "string" ? data.id : null;
-  return { findings, id, idLine: lineOf("id") };
+type RecordResult = { findings: Finding[]; id: string | null; idLine: number };
+
+function analyzeRecord(
+  rel: string,
+  folderType: MemoryType,
+  text: string,
+  facetPrefixes: ReadonlySet<string> | null,
+): RecordResult {
+  const { findings, fm } = checkFrontmatter(rel, text);
+  if (!fm) return { findings, id: null, idLine: 1 };
+  findings.push(
+    ...checkSchema(fm),
+    ...checkCanonicalLists(fm),
+    ...checkLineBudget(fm),
+    ...checkFolderType(fm, folderType),
+    ...checkFacetPrefixes(fm, facetPrefixes),
+  );
+  const id = typeof fm.data.id === "string" ? fm.data.id : null;
+  return { findings, id, idLine: fm.lineOf("id") };
 }
 
 export function checkRecordText(
@@ -171,7 +196,7 @@ export function checkRecordText(
   text: string,
   facetPrefixes: string[] | null,
 ): { findings: Finding[]; id: string | null } {
-  const { findings, id } = analyzeRecord(rel, folderType, text, facetPrefixes);
+  const { findings, id } = analyzeRecord(rel, folderType, text, facetPrefixes && new Set(facetPrefixes));
   return { findings, id };
 }
 
@@ -258,7 +283,7 @@ export function validateBank(root: string, paths: string[] | null, cwd: string):
   }
 
   const raw = config.raw.facet_prefixes;
-  const prefixes = Array.isArray(raw) && raw.every((x) => typeof x === "string") ? (raw as string[]) : null;
+  const prefixes = Array.isArray(raw) && raw.every((x) => typeof x === "string") ? new Set(raw as string[]) : null;
 
   const ids: { file: string; line: number; id: string }[] = [];
   // Every Record is read even when paths are named: a duplicate id may live in a file nobody named.
