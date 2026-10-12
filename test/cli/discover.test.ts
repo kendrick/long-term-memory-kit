@@ -1,15 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import {
-  cpSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { lstatSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { run } from "../../src/cli/run.ts";
@@ -72,8 +63,7 @@ describe("ltm discover", () => {
   });
 
   test("3: four speaker lines are a document, five a transcript", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "ltm-discover-"));
-    try {
+    await withScratch(sources, async (dir) => {
       const lines = ["Ana: hi", "Ben: hello", "Ana: status?", "Ben: green", "Ana: ship it"];
       const file = join(dir, "talk.txt");
       writeFileSync(file, `${lines.slice(0, 4).join("\n")}\n`);
@@ -82,9 +72,7 @@ describe("ltm discover", () => {
       writeFileSync(file, `${lines.join("\n")}\n`);
       expect(readFileSync(file, "utf8").split("\n").filter((l) => l !== "")).toHaveLength(5);
       expect(kindOf((await ltm(dir, "discover", "talk.txt", "--json")).stdout, "talk.txt")).toBe("transcript");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    });
   });
 
   test("4: only source_refs counts as a citation", async () => {
@@ -117,16 +105,12 @@ describe("ltm discover", () => {
   });
 
   test("5: outside any Bank, cited_by is null on every entry", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "ltm-discover-"));
-    try {
-      cpSync(sources, dir, { recursive: true });
+    await withScratch(sources, async (dir) => {
       const r = await ltm(dir, "discover", ".", "--json");
       expect(r.exitCode).toBe(0);
       expect(rows(r.stdout)).toHaveLength(7);
       expect(rows(r.stdout).every((e) => e.cited_by === null)).toBe(true);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    });
   });
 
   test("6: discover leaves the repo byte-identical", async () => {
@@ -155,5 +139,37 @@ describe("ltm discover", () => {
     expect(line).toBeDefined();
     expect(line!.endsWith("  (cited: kQ7vN2xLp4)")).toBe(true);
     expect(line!.startsWith("adr  ")).toBe(true);
+  });
+
+  test("9: --bank at a directory with no memory-bank.yaml exits 1", async () => {
+    const r = await ltm(repo, "discover", "fixtures/hydration-sources", "--bank", "fixtures/hydration-sources");
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toBe("ltm discover: --bank fixtures/hydration-sources: no memory-bank.yaml there\n");
+    expect(r.stdout).toBe("");
+  });
+
+  test("10: a symlinked memory-bank.yaml reads as no config", async () => {
+    await withScratch(demo, async (bank) => {
+      const cfg = join(bank, "memory-bank.yaml");
+      renameSync(cfg, join(bank, "real.yaml"));
+      symlinkSync(join(bank, "real.yaml"), cfg);
+      expect(lstatSync(cfg).isSymbolicLink()).toBe(true);
+      const r = await ltm(repo, "discover", "fixtures/hydration-sources", "--bank", bank);
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toBe(`ltm discover: --bank ${bank}: no memory-bank.yaml there\n`);
+    });
+  });
+
+  test("11: an invalid memory-bank.yaml is a prefixed ConfigError, exit 1", async () => {
+    await withScratch(demo, async (bank) => {
+      const cfg = join(bank, "memory-bank.yaml");
+      writeFileSync(cfg, "schema: [unclosed\n");
+      expect(readFileSync(cfg, "utf8")).toBe("schema: [unclosed\n");
+      const r = await ltm(repo, "discover", "fixtures/hydration-sources", "--bank", bank);
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr.startsWith("ltm discover: ")).toBe(true);
+      expect(r.stderr).toContain(cfg);
+      expect(r.stdout).toBe("");
+    });
   });
 });

@@ -3,7 +3,8 @@ import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { citedBy, classify, discover, titleOf, type Aliases } from "../../src/core/discover.ts";
+import { citedBy, classify, discover, titleOf, type Aliases, type Entry } from "../../src/core/discover.ts";
+import { MEMORY_TYPES, type BankConfig } from "../../src/core/bank.ts";
 import type { ParsedRecord } from "../../src/core/record.ts";
 
 const none: Aliases = { Context: [], Decision: [] };
@@ -177,6 +178,38 @@ describe("discover", () => {
       const { entries, errors } = run(dir, ["nope", "a.md"]);
       expect(errors).toEqual(["nope: no such file or directory"]);
       expect(entries.map((e) => e.path)).toEqual(["a.md"]);
+    });
+  });
+
+  test("skips a name containing a backslash", async () => {
+    await scratch((dir) => {
+      writeFileSync(join(dir, "a.md"), "# A\n");
+      try {
+        writeFileSync(join(dir, "b\\c.md"), "# C\n");
+      } catch {
+        return;
+      }
+      const { entries, skips } = run(dir, ["."]);
+      expect(entries.map((e) => e.path)).toEqual(["a.md"]);
+      expect(skips).toContain("b\\c.md: name contains a backslash");
+    });
+  });
+
+  test("an alias list with a non-string member is ignored whole", async () => {
+    await scratch((dir) => {
+      mkdirSync(join(dir, "misc"));
+      mkdirSync(join(dir, "_memory"));
+      writeFileSync(join(dir, "misc/a.md"), "## Background\n\n## Decision\n");
+      const withAliases = (list: unknown[]): Entry[] => {
+        const bank: BankConfig = {
+          root: dir,
+          folders: Object.fromEntries(MEMORY_TYPES.map((t) => [t, "_memory"])) as BankConfig["folders"],
+          raw: { heading_aliases: { Context: list } },
+        };
+        return discover(["misc"], { cwd: dir, bank, onError: () => {}, onSkip: () => {} });
+      };
+      expect(withAliases(["Background"]).map((e) => e.kind)).toEqual(["adr"]);
+      expect(withAliases(["Background", 7]).map((e) => e.kind)).toEqual(["document"]);
     });
   });
 });

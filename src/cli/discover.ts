@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ConfigError, findBank, loadConfig, type BankConfig } from "../core/bank.ts";
 import { discover as discoverEntries } from "../core/discover.ts";
@@ -18,9 +18,9 @@ export const discover: Command = {
         root = resolve(ctx.cwd, flag);
         let isFile = false;
         try {
-          isFile = statSync(join(root, "memory-bank.yaml")).isFile();
+          isFile = lstatSync(join(root, "memory-bank.yaml")).isFile();
         } catch {
-          // Missing or unreadable reads the same to the caller: no Bank there.
+          // Missing, unreadable, or a symlink (lstat) all read the same: no Bank there.
         }
         if (!isFile) {
           ctx.err(`ltm discover: --bank ${flag}: no memory-bank.yaml there\n`);
@@ -34,7 +34,7 @@ export const discover: Command = {
       if (!(e instanceof ConfigError)) throw e;
       // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
       const message = e.message.split("\n")[0];
-      ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${message}\n`);
+      ctx.err(`ltm discover: ${e.path}${e.line === null ? "" : `:${e.line}`}: ${message}\n`);
       return 1;
     }
 

@@ -36,7 +36,7 @@ function headingsOf(text: string): Heading[] {
 }
 
 // "Context and Problem Statement" has to count as Context, so match on a word prefix.
-function counts(headings: Heading[], names: string[]): boolean {
+function hasHeading(headings: Heading[], names: string[]): boolean {
   const wanted = names.map((n) => n.toLowerCase());
   return headings.some((h) => {
     const t = h.text.toLowerCase();
@@ -63,7 +63,7 @@ export const CLASSIFIERS: readonly {
       if (f.ext !== ".md") return false;
       const dirs = f.rel.split("/").slice(0, -1);
       if (dirs.some((d) => d === "adr" || d === "adrs" || d === "decisions")) return true;
-      return counts(f.headings, ["Context", ...a.Context]) && counts(f.headings, ["Decision", ...a.Decision]);
+      return hasHeading(f.headings, ["Context", ...a.Context]) && hasHeading(f.headings, ["Decision", ...a.Decision]);
     },
   },
   { kind: "pr", test: (f) => f.ext === ".json" && isPrJson(f.text) },
@@ -80,7 +80,7 @@ export const CLASSIFIERS: readonly {
       if (f.ext !== ".md") return false;
       const h1 = f.headings.find((h) => h.level === 1);
       if (h1 && (h1.text.includes("PRD") || h1.text.toLowerCase().includes("product requirements"))) return true;
-      return counts(f.headings, ["Problem"]) && counts(f.headings, ["Requirements"]);
+      return hasHeading(f.headings, ["Problem"]) && hasHeading(f.headings, ["Requirements"]);
     },
   },
   { kind: "document", test: (f) => f.ext === ".md" || f.ext === ".txt" },
@@ -103,7 +103,7 @@ export function titleOf(relPath: string, kind: Kind, text: string): string {
       const fm: unknown = parse(split.frontmatterLines.join("\n"));
       if (isMapping(fm) && typeof fm.title === "string") return fm.title;
     } catch {
-      // Unparseable frontmatter falls through to the next rule.
+      // Bad YAML in a source must not hide the file; the H1 or basename still names it.
     }
   }
   if (kind === "pr") {
@@ -144,14 +144,14 @@ function aliasesOf(bank: BankConfig | null): Aliases {
   if (!isMapping(raw)) return out;
   for (const k of ["Context", "Decision"] as const) {
     const v = raw[k];
-    if (Array.isArray(v)) out[k] = v.filter((x): x is string => typeof x === "string");
+    // A mixed list is a config typo; honoring half of it would classify on a guess.
+    if (Array.isArray(v) && v.every((x) => typeof x === "string")) out[k] = v;
   }
   return out;
 }
 
 // A nested checkout's `.git` is a file, so any entry counts, not just a directory.
-function repoRootOf(absFile: string, cache: Map<string, string | null>): string | null {
-  const dir = dirname(absFile);
+function repoRootOf(dir: string, cache: Map<string, string | null>): string | null {
   if (cache.has(dir)) return cache.get(dir)!;
   let found: string | null = null;
   try {
@@ -159,7 +159,7 @@ function repoRootOf(absFile: string, cache: Map<string, string | null>): string 
     found = dir;
   } catch {
     const parent = dirname(dir);
-    if (parent !== dir) found = repoRootOf(join(parent, "x"), cache);
+    if (parent !== dir) found = repoRootOf(parent, cache);
   }
   cache.set(dir, found);
   return found;
@@ -191,6 +191,11 @@ export function discover(
     for (const d of dirents) {
       const p = join(dir, d.name);
       if (d.name.startsWith(".")) continue;
+      // Bun may resolve a `\` name as a different path in readFileSync/readdirSync.
+      if (d.name.includes("\\")) {
+        onSkip(toRel(p), "name contains a backslash");
+        continue;
+      }
       if (d.isSymbolicLink()) {
         onSkip(toRel(p), "symlink, not followed");
         continue;
@@ -240,7 +245,7 @@ export function discover(
     if (kind === null) continue;
     let cited: string[] | null = null;
     if (records) {
-      const root = repoRootOf(abs, repoRoots);
+      const root = repoRootOf(dirname(abs), repoRoots);
       cited = citedBy(rel, root === null ? null : relative(root, abs).split(sep).join("/"), records);
     }
     entries.push({ path: rel, kind, title: titleOf(rel, kind, text), bytes, cited_by: cited });
