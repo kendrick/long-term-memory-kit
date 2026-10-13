@@ -210,7 +210,8 @@ function headingAliases(raw: unknown): HeadingAliases {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
   for (const name of Object.keys(SECTIONS) as Section[]) {
     const v = (raw as Record<string, unknown>)[name];
-    if (Array.isArray(v)) out[name] = v.filter((x): x is string => typeof x === "string");
+    // A mixed list is a config typo; honoring half of it would classify on a guess.
+    if (Array.isArray(v) && v.every((x) => typeof x === "string")) out[name] = v as string[];
   }
   return out;
 }
@@ -218,17 +219,23 @@ function headingAliases(raw: unknown): HeadingAliases {
 // Headings inside a fenced code block are sample text, not structure.
 function headingTexts(body: string): Set<string> {
   const out = new Set<string>();
-  let fence: string | null = null;
-  for (const line of body.split("\n")) {
-    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
-    if (f) {
-      if (fence === null) fence = f[0]!;
-      else if (f[0] === fence) fence = null;
+  // CommonMark: a closer repeats the opener's character at least as many times; an unclosed fence runs to EOF.
+  let fence: { char: string; len: number } | null = null;
+  for (const raw of body.split("\n")) {
+    const line = raw.replace(/\r$/, "");
+    if (fence) {
+      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line)?.[1];
+      if (close && close[0] === fence.char && close.length >= fence.len) fence = null;
       continue;
     }
-    if (fence !== null) continue;
-    const h = /^ {0,3}#{1,6}(?:[ \t]+(.*))?$/.exec(line.replace(/\r$/, ""));
-    if (h) out.add((h[1] ?? "").trim().toLowerCase());
+    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (open && !(open[1]![0] === "`" && open[2]!.includes("`"))) {
+      fence = { char: open[1]![0]!, len: open[1]!.length };
+      continue;
+    }
+    const h = /^ {0,3}#{1,6}(?:[ \t]+(.*))?$/.exec(line);
+    // An ATX closing sequence is a run of # after a space or tab at the end of the line.
+    if (h) out.add((h[1] ?? "").replace(/(^|[ \t]+)#+[ \t]*$/, "").trim().toLowerCase());
   }
   return out;
 }
@@ -398,7 +405,7 @@ function checkBrightLine(nodes: Node[]): Finding[] {
     const scope = n.fm.data.applies_to;
     const only = Array.isArray(scope) && scope.length === 1 ? scope[0] : undefined;
     if (typeof only !== "string" || !only.startsWith("service:")) continue;
-    if (stringList(n.fm.data.related).some((r) => policyIds.has(r.slice(r.lastIndexOf("::") + 2)))) continue;
+    if (stringList(n.fm.data.related).some((r) => policyIds.has(r.includes("::") ? r.slice(r.lastIndexOf("::") + 2) : r))) continue;
     out.push(
       finding(
         n.file,
@@ -440,7 +447,7 @@ export function checkConfig(root: string): { findings: Finding[]; config: BankCo
   try {
     config = loadConfig(root);
   } catch (e) {
-    // The ReferenceError branch covers a loadConfig that lets yaml's alias-limit error through unwrapped; anything else is a bug, not a bad config.
+    // The ReferenceError branch covers loadConfig builds that don't yet wrap yaml's alias-limit error; anything else is a bug, not a bad config.
     if (!(e instanceof ConfigError) && !(e instanceof ReferenceError)) throw e;
     // Without a config, every Record's type folder is unknown.
     const line = e instanceof ConfigError ? (e.line ?? 1) : 1;

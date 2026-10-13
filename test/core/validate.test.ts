@@ -724,6 +724,14 @@ describe("warnings, Ajv collapse, and the folder-type path", () => {
       });
     });
 
+    test("a bare PolicyRule id in related (no ::) clears the warning", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const text = edit(dir, exceptionRel, (t) => replaceLine(t, "related:", "related: [cA9wE6uJr3]"));
+        expect(text).toContain("related: [cA9wE6uJr3]");
+        expect(only(validateBankReport(dir, null, dir).findings, "bright-line")).toEqual([]);
+      });
+    });
+
     test("a domain: scope alone, or service: plus domain:, does not warn", async () => {
       for (const scope of ["[domain:commerce]", "[service:order-service, domain:commerce]"]) {
         await withScratch(demoBank, async (dir) => {
@@ -777,6 +785,32 @@ describe("warnings, Ajv collapse, and the folder-type path", () => {
         edit(dir, decisionRel, (t) => replaceLine(t, "## Consequences", "```\n## Consequences\n```"));
         const fs = only(validateBankReport(dir, null, dir).findings, "body-sections");
         expect(fs.map((f) => f.message)).toEqual(["Decision body has no Consequences heading"]);
+      });
+    });
+
+    test("a heading inside a longer fence stays hidden after an inner shorter fence line", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const text = edit(dir, decisionRel, (t) => replaceLine(t, "## Context", "````\n```\n## Context\n````"));
+        expect(text).toContain("````\n```\n## Context\n````");
+        const fs = only(validateBankReport(dir, null, dir).findings, "body-sections");
+        expect(fs.map((f) => f.message)).toEqual(["Decision body has no Context heading"]);
+      });
+    });
+
+    test("a heading_aliases list holding a non-string is ignored whole", async () => {
+      await withScratch(demoBank, async (dir) => {
+        edit(dir, decisionRel, (t) => replaceLine(t, "## Context", "## Background"));
+        edit(dir, "memory-bank.yaml", (t) => `${t.endsWith("\n") ? t : `${t}\n`}heading_aliases: { Context: [Background, 3] }\n`);
+        const fs = only(validateBankReport(dir, null, dir).findings, "body-sections");
+        expect(fs.map((f) => f.message)).toEqual(["Decision body has no Context heading"]);
+      });
+    });
+
+    test("a heading with a closing # sequence counts", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const text = edit(dir, decisionRel, (t) => replaceLine(t, "## Context", "## Context ##"));
+        expect(text).toContain("## Context ##");
+        expect(only(validateBankReport(dir, null, dir).findings, "body-sections")).toEqual([]);
       });
     });
 
