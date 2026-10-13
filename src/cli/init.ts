@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import pkg from "../../package.json" with { type: "json" };
 import { ConfigError, loadConfig, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
@@ -57,23 +57,46 @@ function hasPrettierKey(dir: string, file: string, parse: (t: string) => unknown
   }
 }
 
-// The file whose Prettier config would win over, or stand in for, a .prettierrc.json that
-// init owns; null when .prettierrc.json is the one Prettier will read.
-function prettierBlocker(dir: string): { file: string; why: string } | null {
+// Why a .prettierrc.json that init owns would lose to, or be unsafe to write beside, another
+// config in dir; null when .prettierrc.json is the one Prettier will read there.
+function prettierBlocker(dir: string): string | null {
   for (const { file, parse } of KEYED_PRETTIER) {
-    if (hasPrettierKey(dir, file, parse)) return { file, why: `${file} has a prettier key; add the _memory override there by hand` };
+    if (hasPrettierKey(dir, file, parse)) return `${file} has a prettier key; add the _memory override there by hand`;
   }
   const hasJson = existsSync(join(dir, ".prettierrc.json"));
   // .prettierrc outranks .prettierrc.json; every other name ranks below it.
   if (existsSync(join(dir, ".prettierrc"))) {
-    const why = hasJson
+    return hasJson
       ? ".prettierrc is read before .prettierrc.json; add the _memory override to it by hand"
-      : ".prettierrc is not .prettierrc.json; add the _memory override by hand";
-    return { file: ".prettierrc", why };
+      : "init can't tell .prettierrc's format; add the _memory override by hand";
   }
   if (hasJson) return null;
   const other = OTHER_PRETTIER.find((f) => existsSync(join(dir, f)));
-  return other === undefined ? null : { file: other, why: `${other} is not JSON; add the _memory override by hand` };
+  if (other === undefined) return null;
+  return other === ".prettierrc.json5"
+    ? "init can't safely edit .prettierrc.json5; add the _memory override by hand"
+    : `${other} is not JSON; add the _memory override by hand`;
+}
+
+// Prettier searches up to the filesystem root, but the walk stops at the repo root: a
+// personal dotfile like ~/.prettierrc must not change what a Bank commits, or init would
+// give different files to each developer and to CI. No .git above dir (or in dir) means no walk.
+function ancestorPrettierConfig(dir: string): string | null {
+  if (existsSync(join(dir, ".git"))) return null;
+  const ups: string[] = [];
+  for (let up = dirname(dir); ; up = dirname(up)) {
+    ups.push(up);
+    if (existsSync(join(up, ".git"))) break;
+    if (dirname(up) === up) return null;
+  }
+  for (const up of ups) {
+    for (const { file, parse } of KEYED_PRETTIER) {
+      if (hasPrettierKey(up, file, parse)) return join(up, file);
+    }
+    const found = [".prettierrc", ".prettierrc.json", ...OTHER_PRETTIER].find((f) => existsSync(join(up, f)));
+    if (found !== undefined) return join(up, found);
+  }
+  return null;
 }
 
 type RecordSchema = { properties: Record<string, { description?: string }>; required: string[] };
@@ -127,9 +150,10 @@ const loadPrefixPattern = (): RegExp =>
   ));
 
 function prefixProblem(values: string[]): string | undefined {
+  const pattern = loadPrefixPattern();
   const seen = new Set<string>();
   for (const v of values) {
-    if (!loadPrefixPattern().test(v)) return `--facet-prefix '${v}' doesn't match ${loadPrefixPattern().source}`;
+    if (!pattern.test(v)) return `--facet-prefix '${v}' doesn't match ${pattern.source}`;
     if (seen.has(v)) return `--facet-prefix '${v}' is given twice`;
     seen.add(v);
   }
@@ -324,9 +348,15 @@ export const init: Command = {
     }
 
     const formatters: { rel: string; template: string }[] = [{ rel: ".oxfmtrc.json", template: "oxfmtrc.json" }];
-    const blocker = prettierBlocker(dir);
+    let blocker = prettierBlocker(dir);
+    if (blocker === null && !existsSync(join(dir, ".prettierrc.json"))) {
+      const above = ancestorPrettierConfig(dir);
+      if (above !== null) {
+        blocker = `${relative(dir, above)} would be shadowed by a new .prettierrc.json here; add the _memory override to it by hand`;
+      }
+    }
     if (blocker === null) formatters.unshift({ rel: ".prettierrc.json", template: "prettierrc.json" });
-    else ctx.err(`ltm init: warning: ${blocker.why} (see templates/formatters/prettierrc.json)\n`);
+    else ctx.err(`ltm init: warning: ${blocker} (see templates/formatters/prettierrc.json)\n`);
     for (const { rel, template } of formatters) {
       const abs = join(dir, rel);
       if (!writable(abs)) continue;

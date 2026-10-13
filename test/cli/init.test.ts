@@ -182,7 +182,26 @@ describe("ltm init edges", () => {
   const WARN = (f: string) =>
     `ltm init: warning: ${f} is not JSON; add the _memory override by hand (see templates/formatters/prettierrc.json)\n`;
 
-  test.each(["prettier.config.mjs", ".prettierrc.toml", ".prettierrc.json5", ".prettierrc.cjs", "prettier.config.ts"])(
+  test("a .prettierrc.json5 is described as unsafe to edit, not as non-JSON", async () => {
+    writeFileSync(join(dir, ".prettierrc.json5"), "x\n");
+    const r = await init();
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBe(
+      "ltm init: warning: init can't safely edit .prettierrc.json5; add the _memory override by hand (see templates/formatters/prettierrc.json)\n",
+    );
+    expect(existsSync(join(dir, ".prettierrc.json"))).toBe(false);
+  });
+
+  test("a bare .prettierrc with no .prettierrc.json says init can't tell its format", async () => {
+    writeFileSync(join(dir, ".prettierrc"), "semi: false\n");
+    const r = await init();
+    expect(r.stderr).toBe(
+      "ltm init: warning: init can't tell .prettierrc's format; add the _memory override by hand (see templates/formatters/prettierrc.json)\n",
+    );
+    expect(existsSync(join(dir, ".prettierrc.json"))).toBe(false);
+  });
+
+  test.each(["prettier.config.mjs", ".prettierrc.toml", ".prettierrc.cjs", "prettier.config.ts"])(
     "an existing %s means no .prettierrc.json is created, with a warning and exit 0",
     async (file) => {
       writeFileSync(join(dir, file), "x\n");
@@ -235,12 +254,91 @@ describe("ltm init edges", () => {
   });
 
   test("a package.json prettier key shadows an existing .prettierrc.json, so init warns and skips it", async () => {
-    writeFileSync(join(dir, "package.json"), '{ "prettier": {} , "x": 1 }\n'.replace('{}', '{ "semi": true }'));
+    writeFileSync(join(dir, "package.json"), '{ "prettier": { "semi": true }, "x": 1 }\n');
     writeFileSync(join(dir, ".prettierrc.json"), '{ "semi": false }\n');
     const r = await init();
     expect(r.exitCode).toBe(0);
     expect(r.stderr).toContain("package.json");
     expect(read(".prettierrc.json")).toBe('{ "semi": false }\n');
+  });
+
+  describe("a Prettier config in an ancestor of the Bank", () => {
+    const prettierBin = join(import.meta.dir, "../../node_modules/.bin/prettier");
+    const findConfig = (cwd: string) =>
+      spawnSync(prettierBin, ["--find-config-path", "a.ts"], { cwd, encoding: "utf8" });
+    let bank: string;
+    const initBank = () => run({ argv: ["init", bank], cwd: tmp, env: {} });
+
+    beforeEach(() => {
+      bank = join(tmp, "mono", "bank");
+      mkdirSync(bank, { recursive: true });
+      // The walk stops at the repo root, so mono is the project and nothing above it is read.
+      mkdirSync(join(tmp, "mono", ".git"));
+    });
+
+    test("would be shadowed by a new .prettierrc.json, so init warns and writes none", async () => {
+      writeFileSync(join(tmp, "mono", "prettier.config.mjs"), "export default { semi: false };\n");
+      const r = await initBank();
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe(
+        "ltm init: warning: ../prettier.config.mjs would be shadowed by a new .prettierrc.json here; add the _memory override to it by hand (see templates/formatters/prettierrc.json)\n",
+      );
+      expect(existsSync(join(bank, ".prettierrc.json"))).toBe(false);
+      expect(findConfig(bank).stdout.trim()).toBe("../prettier.config.mjs");
+    });
+
+    test("a package.json prettier key counts, and one without the key does not", async () => {
+      writeFileSync(join(tmp, "mono", "package.json"), '{ "prettier": { "semi": false } }\n');
+      expect((await initBank()).stderr).toContain("../package.json would be shadowed");
+      expect(existsSync(join(bank, ".prettierrc.json"))).toBe(false);
+      writeFileSync(join(tmp, "mono", "package.json"), '{ "name": "x" }\n');
+      const r = await initBank();
+      expect(r.stderr).toBe("");
+      expect(existsSync(join(bank, ".prettierrc.json"))).toBe(true);
+    });
+
+    test("an existing .prettierrc.json in the Bank is still merged, quietly", async () => {
+      writeFileSync(join(tmp, "mono", "prettier.config.mjs"), "export default {};\n");
+      writeFileSync(join(bank, ".prettierrc.json"), '{ "semi": false }\n');
+      const r = await initBank();
+      expect(r.stderr).toBe("");
+      expect(JSON.parse(readFileSync(join(bank, ".prettierrc.json"), "utf8")).semi).toBe(false);
+    });
+
+    test("a config above the repo root is ignored, so init writes .prettierrc.json quietly", async () => {
+      const repo = join(tmp, "outer", "repo");
+      mkdirSync(join(repo, ".git"), { recursive: true });
+      mkdirSync(join(repo, "bank"));
+      writeFileSync(join(tmp, "outer", ".prettierrc"), "semi: false\n");
+      const r = await run({ argv: ["init", join(repo, "bank")], cwd: tmp, env: {} });
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe("");
+      expect(existsSync(join(repo, "bank", ".prettierrc.json"))).toBe(true);
+    });
+
+    test("with no .git anywhere, an ancestor config is not consulted", async () => {
+      const loose = join(tmp, "loose");
+      mkdirSync(join(loose, "bank"), { recursive: true });
+      writeFileSync(join(loose, ".prettierrc"), "semi: false\n");
+      const r = await run({ argv: ["init", join(loose, "bank")], cwd: tmp, env: {} });
+      expect(r.stderr).toBe("");
+      expect(existsSync(join(loose, "bank", ".prettierrc.json"))).toBe(true);
+    });
+
+    test("a .git file (linked worktree) marks the repo root too", async () => {
+      rmSync(join(tmp, "mono", ".git"), { recursive: true });
+      writeFileSync(join(tmp, "mono", ".git"), "gitdir: elsewhere\n");
+      writeFileSync(join(tmp, "mono", "prettier.config.mjs"), "export default {};\n");
+      expect((await initBank()).stderr).toContain("../prettier.config.mjs would be shadowed");
+    });
+
+    test("control: with no config in the repo, it gets .prettierrc.json", async () => {
+      // The walk ends at mono's .git, so a config in a real ancestor of the OS temp dir can't reach this.
+      const r = await initBank();
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe("");
+      expect(existsSync(join(bank, ".prettierrc.json"))).toBe(true);
+    });
   });
 
   test("a bad --facet-prefix is a usage error naming the value, and nothing is written", async () => {

@@ -217,12 +217,26 @@ describe("duplicate and stray markers", () => {
   const endFirst = `${END}\n${block}`;
 
   test.each([
-    ["two complete blocks", twoBlocks],
-    ["a second begin after a complete block", `${block}${BEGIN(v)}\nhalf\n`],
-    ["an end marker after the block", strayEnd],
-    ["an end marker with no begin", endFirst],
-  ])("replaceRegion throws on %s", (_name, file) => {
-    expect(() => replaceRegion(file, region, v)).toThrow();
+    ["two complete blocks", twoBlocks, "2 ltm:generated begin markers and 2 end markers; leave one block"],
+    ["a second begin after a complete block", `${block}${BEGIN(v)}\nhalf\n`, "2 ltm:generated begin markers and 1 end marker; leave one block"],
+    ["an end marker after the block", strayEnd, "1 ltm:generated begin marker and 2 end markers; leave one block"],
+    ["an end marker with no begin", `${END}\n`, "an ltm:generated end marker with no begin marker"],
+    ["an end marker before the begin", `${END}\n${BEGIN(v)}\n`, "an ltm:generated end marker before the begin marker"],
+    ["a begin with no end", `${BEGIN(v)}\nhalf\n`, "the ltm:generated begin marker has no matching end marker"],
+  ])("replaceRegion throws on %s, naming the case without a version", (_name, file, message) => {
+    expect(() => replaceRegion(file, region, v)).toThrow(new Error(message));
+  });
+
+  test("the message names the marker family, not the current version, for a file from another version", () => {
+    const old = `${BEGIN("0.0.1")}\n\nx\n${END}\n${BEGIN("0.0.1")}\n\nx\n${END}\n`;
+    let message = "";
+    try {
+      replaceRegion(old, region, v);
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toBe("2 ltm:generated begin markers and 2 end markers; leave one block");
+    expect(message).not.toContain(v);
   });
 
   test("readRegion returns null on two blocks and on a stray end, so --check calls them stale", () => {

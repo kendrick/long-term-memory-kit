@@ -97,7 +97,7 @@ export function renderAgentsRegion(
 type Span =
   | { beginStart: number; beginEnd: number; endStart: number }
   | { beginStart: number; endStart: null }
-  | "malformed";
+  | { malformed: string };
 
 // Slices by offset so everything outside the markers comes back byte for byte.
 // Scans the whole file: stopping at the first end marker would let a second block, left
@@ -115,11 +115,14 @@ function findMarkers(text: string): Span | null {
     start = nl + 1;
   }
   if (begins.length === 0 && ends.length === 0) return null;
-  if (begins.length > 1 || ends.length > 1) return "malformed";
+  const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  if (begins.length > 1 || ends.length > 1) {
+    return { malformed: `${count(begins.length, "ltm:generated begin marker")} and ${count(ends.length, "end marker")}; leave one block` };
+  }
   const begin = begins[0];
-  if (begin === undefined) return "malformed";
+  if (begin === undefined) return { malformed: "an ltm:generated end marker with no begin marker" };
   if (ends.length === 0) return { beginStart: begin.start, endStart: null };
-  if (ends[0]! < begin.end) return "malformed";
+  if (ends[0]! < begin.end) return { malformed: "an ltm:generated end marker before the begin marker" };
   return { beginStart: begin.start, beginEnd: begin.end, endStart: ends[0]! };
 }
 
@@ -132,7 +135,7 @@ export function normalizeRegion(region: string): string {
 
 export function readRegion(fileText: string): string | null {
   const span = findMarkers(fileText);
-  if (span === null || span === "malformed" || span.endStart === null) return null;
+  if (span === null || "malformed" in span || span.endStart === null) return null;
   return normalizeRegion(fileText.slice(span.beginEnd, span.endStart));
 }
 
@@ -147,8 +150,8 @@ export function replaceRegion(fileText: string | null, region: string, version: 
     const gap = fileText.endsWith("\n\n") ? "" : fileText.endsWith("\n") ? "\n" : "\n\n";
     return `${fileText}${gap}${block}`;
   }
-  if (span === "malformed") throw new Error(`duplicate or stray ${END} / ${BEGIN(version)} markers; leave one generated block`);
+  if ("malformed" in span) throw new Error(span.malformed);
   // Appending here would leave two begin markers, and readRegion would pair the stray one with the new end.
-  if (span.endStart === null) throw new Error(`${BEGIN(version)} has no matching ${END}`);
+  if (span.endStart === null) throw new Error("the ltm:generated begin marker has no matching end marker");
   return `${fileText.slice(0, span.beginStart)}${BEGIN(version)}\n${inner}${fileText.slice(span.endStart)}`;
 }
