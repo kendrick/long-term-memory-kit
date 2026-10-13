@@ -175,6 +175,19 @@ describe("ltm discover", () => {
     });
   });
 
+  test("12: without --bank, a symlinked memory-bank.yaml above cwd is a ConfigError, exit 1", async () => {
+    await withScratch(demo, async (bank) => {
+      const cfg = join(bank, "memory-bank.yaml");
+      renameSync(cfg, join(bank, "real.yaml"));
+      symlinkSync("real.yaml", cfg);
+      expect(lstatSync(cfg).isSymbolicLink()).toBe(true);
+      const r = await ltm(join(bank, "_memory"), "discover", ".");
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toBe(`ltm discover: ${cfg}: memory-bank.yaml is a symlink, not followed\n`);
+      expect(r.stdout).toBe("");
+    });
+  });
+
   test("the folder rule sees the enclosing adr directory from inside it", async () => {
     const r = await ltm(join(sources, "adr"), "discover", ".", "--json");
     expect(r.exitCode).toBe(0);
