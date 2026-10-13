@@ -391,9 +391,10 @@ describe("resolveBankFlag", () => {
     expect(resolveBankFlag("~", repo, env).root).toBe(home);
   });
 
-  test("~ with HOME unset throws ConfigError naming --bank", () => {
+  test("~ with HOME unset throws ConfigError naming --bank once", () => {
     const e = configErrorOf(() => resolveBankFlag("~/banks/acme", repo, { LTM_CONFIG: configPath }));
-    expect(e.message).toContain("--bank '~/banks/acme' needs HOME, which is not set");
+    expect(e.path).toBe("--bank");
+    expect(e.message).toBe("'~/banks/acme' needs HOME, which is not set");
   });
 
   test("~user/x is not expanded, matching user-config paths", () => {
@@ -405,5 +406,12 @@ describe("resolveBankFlag", () => {
     writeFileSync(configPath, "banks:\n  ~x: { path: ~/banks/acme }\n");
     const b = resolveBankFlag("~x", repo, env);
     expect(b.root).toBe(join(home, "banks", "acme"));
+  });
+
+  // These names would expand, so only the lookup-before-expansion order lets them win.
+  test.each(["~", "~/banks/acme"])("a user-config Bank named %p resolves by name, not under HOME", (name) => {
+    const other = makeBank("other");
+    writeFileSync(configPath, `banks:\n  "${name}": { path: ${other} }\n`);
+    expect(resolveBankFlag(name, repo, env).root).toBe(other);
   });
 });

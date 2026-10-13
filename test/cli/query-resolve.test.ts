@@ -228,6 +228,14 @@ describe("ltm query from a Consumer repo", () => {
     }
   });
 
+  test("--bank ~/x with HOME unset names --bank once", async () => {
+    // Absolute paths only: a `~/` path in the user config would fail on HOME first.
+    writeFileSync(configPath, `banks:\n  acme: { path: ${join(home, "banks", "acme")} }\n`);
+    const r = await run({ argv: ["query", "--bank=~/banks/acme"], cwd: repo, env: { LTM_CONFIG: configPath } });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr.trim().split("\n")).toEqual(["ltm query: --bank: '~/banks/acme' needs HOME, which is not set"]);
+  });
+
   test("inside a Bank, a user config changes nothing", async () => {
     const inBank = join(home, "banks", "acme");
     for (const args of [["--all"], ["--json", "--all"], ["--type", "Exception"], ["--text", "redis"]]) {
