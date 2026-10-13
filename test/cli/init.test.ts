@@ -19,6 +19,7 @@ import { parse } from "yaml";
 import pkg from "../../package.json" with { type: "json" };
 import { defaultCommands } from "../../src/cli/commands.ts";
 import { run } from "../../src/cli/run.ts";
+import { BEGIN, END } from "../../src/core/init.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 let tmp: string;
@@ -176,6 +177,96 @@ describe("ltm init edges", () => {
     );
     expect(existsSync(join(dir, ".prettierrc.json"))).toBe(false);
     expect(read(".prettierrc.yaml")).toBe("semi: false\n");
+  });
+
+  const WARN = (f: string) =>
+    `ltm init: warning: ${f} is not JSON; add the _memory override by hand (see templates/formatters/prettierrc.json)\n`;
+
+  test.each(["prettier.config.mjs", ".prettierrc.toml", ".prettierrc.json5", ".prettierrc.cjs", "prettier.config.ts"])(
+    "an existing %s means no .prettierrc.json is created, with a warning and exit 0",
+    async (file) => {
+      writeFileSync(join(dir, file), "x\n");
+      const r = await init();
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe(WARN(file));
+      expect(existsSync(join(dir, ".prettierrc.json"))).toBe(false);
+      expect(read(file)).toBe("x\n");
+    },
+  );
+
+  test("a package.json prettier key means no .prettierrc.json, and package.json is untouched", async () => {
+    const pj = '{ "name": "x", "prettier": { "semi": false } }\n';
+    writeFileSync(join(dir, "package.json"), pj);
+    const r = await init();
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBe(
+      "ltm init: warning: package.json has a prettier key; add the _memory override there by hand (see templates/formatters/prettierrc.json)\n",
+    );
+    expect(existsSync(join(dir, ".prettierrc.json"))).toBe(false);
+    expect(read("package.json")).toBe(pj);
+  });
+
+  test("a package.json without a prettier key still gets .prettierrc.json", async () => {
+    writeFileSync(join(dir, "package.json"), '{ "name": "x" }\n');
+    const r = await init();
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(existsSync(join(dir, ".prettierrc.json"))).toBe(true);
+  });
+
+  test("a .prettierrc is read before .prettierrc.json, so init warns and leaves the JSON file alone", async () => {
+    writeFileSync(join(dir, ".prettierrc"), "semi: false\n");
+    writeFileSync(join(dir, ".prettierrc.json"), '{ "semi": true }\n');
+    const r = await init();
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toContain(".prettierrc");
+    expect(r.stderr).toContain("warning");
+    expect(read(".prettierrc.json")).toBe('{ "semi": true }\n');
+  });
+
+  test("a .prettierrc.json beside a lower-precedence config is still merged, quietly", async () => {
+    writeFileSync(join(dir, "prettier.config.mjs"), "x\n");
+    writeFileSync(join(dir, ".prettierrc.json"), '{ "semi": false }\n');
+    const r = await init();
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(JSON.parse(read(".prettierrc.json")).semi).toBe(false);
+    expect(JSON.parse(read(".prettierrc.json")).overrides).toHaveLength(1);
+  });
+
+  test("a package.json prettier key shadows an existing .prettierrc.json, so init warns and skips it", async () => {
+    writeFileSync(join(dir, "package.json"), '{ "prettier": {} , "x": 1 }\n'.replace('{}', '{ "semi": true }'));
+    writeFileSync(join(dir, ".prettierrc.json"), '{ "semi": false }\n');
+    const r = await init();
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toContain("package.json");
+    expect(read(".prettierrc.json")).toBe('{ "semi": false }\n');
+  });
+
+  test("a bad --facet-prefix is a usage error naming the value, and nothing is written", async () => {
+    for (const bad of ["", "Svc", "a_b", "a.b", "-a", "1a", "a b"]) {
+      const r = await init(`--facet-prefix=${bad}`);
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toContain(`'${bad}'`);
+      expect(walk(dir)).toEqual([]);
+    }
+  });
+
+  test("a repeated --facet-prefix is a usage error and nothing is written", async () => {
+    const r = await init("--facet-prefix", "svc", "--facet-prefix", "svc");
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain("'svc'");
+    expect(walk(dir)).toEqual([]);
+  });
+
+  test("two generated blocks in one file exit 1 naming it, and the other files are still written", async () => {
+    const two = `${BEGIN(pkg.version)}\n\nold\n${END}\n\n${BEGIN(pkg.version)}\n\nold\n${END}\n`;
+    writeFileSync(join(dir, "AGENTS.md"), two);
+    const r = await init();
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/^ltm init: AGENTS\.md: /);
+    expect(read("AGENTS.md")).toBe(two);
+    expect(existsSync(join(dir, "CLAUDE.md"))).toBe(true);
   });
 
   test("an existing CODEOWNERS.example is never overwritten", async () => {
@@ -336,6 +427,17 @@ describe("ltm init --check", () => {
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toBe(".github/copilot-instructions.md\n");
       expect(hashes(d)).toEqual(before);
+    });
+  });
+
+  test("a file with two generated blocks is stale", async () => {
+    await withScratch(demoBank, async (d) => {
+      await at(d);
+      const text = readFileSync(join(d, "CLAUDE.md"), "utf8");
+      writeFileSync(join(d, "CLAUDE.md"), `${text}\n${text}`);
+      const r = await at(d, "--check");
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("CLAUDE.md\n");
     });
   });
 

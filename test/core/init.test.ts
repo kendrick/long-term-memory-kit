@@ -209,3 +209,25 @@ describe("readRegion", () => {
     expect(readRegion("# just notes\n")).toBeNull();
   });
 });
+
+describe("duplicate and stray markers", () => {
+  const block = `${BEGIN(v)}\n\n${region}\n${END}\n`;
+  const twoBlocks = `${block}\nmiddle\n\n${block}`;
+  const strayEnd = `${block}\nmiddle\n${END}\n`;
+  const endFirst = `${END}\n${block}`;
+
+  test.each([
+    ["two complete blocks", twoBlocks],
+    ["a second begin after a complete block", `${block}${BEGIN(v)}\nhalf\n`],
+    ["an end marker after the block", strayEnd],
+    ["an end marker with no begin", endFirst],
+  ])("replaceRegion throws on %s", (_name, file) => {
+    expect(() => replaceRegion(file, region, v)).toThrow();
+  });
+
+  test("readRegion returns null on two blocks and on a stray end, so --check calls them stale", () => {
+    expect(readRegion(twoBlocks)).toBeNull();
+    expect(readRegion(strayEnd)).toBeNull();
+    expect(readRegion(endFirst)).toBeNull();
+  });
+});

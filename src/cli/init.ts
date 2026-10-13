@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { parse as parseYaml } from "yaml";
 import pkg from "../../package.json" with { type: "json" };
 import { ConfigError, loadConfig, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
 import { canonicalScalar } from "../core/canonical.ts";
@@ -17,7 +18,63 @@ import type { Command } from "./run.ts";
 
 const CONFIG_FILE = "memory-bank.yaml";
 const MEMORY_GLOB = "_memory/**/*.md";
-const NON_JSON_PRETTIER = [".prettierrc", ".prettierrc.yaml", ".prettierrc.yml", "prettier.config.js", ".prettierrc.js"];
+// Every config file Prettier 3 searches that is not .prettierrc.json, from its own
+// config-searcher. Each one is either read before .prettierrc.json or would be shadowed by
+// a new one, so init writes no .prettierrc.json while any of them exists.
+const OTHER_PRETTIER = [
+  ".prettierrc",
+  ".prettierrc.yml",
+  ".prettierrc.yaml",
+  ".prettierrc.json5",
+  ".prettierrc.js",
+  "prettier.config.js",
+  ".prettierrc.ts",
+  "prettier.config.ts",
+  ".prettierrc.mjs",
+  "prettier.config.mjs",
+  ".prettierrc.mts",
+  "prettier.config.mts",
+  ".prettierrc.cjs",
+  "prettier.config.cjs",
+  ".prettierrc.cts",
+  "prettier.config.cts",
+  ".prettierrc.toml",
+];
+// Prettier reads these two before .prettierrc.json, but only when they carry a `prettier` key.
+const KEYED_PRETTIER = [
+  { file: "package.json", parse: (t: string): unknown => JSON.parse(t) },
+  { file: "package.yaml", parse: (t: string): unknown => parseYaml(t) },
+];
+
+function hasPrettierKey(dir: string, file: string, parse: (t: string) => unknown): boolean {
+  const abs = join(dir, file);
+  if (!existsSync(abs)) return false;
+  try {
+    const doc = parse(readFileSync(abs, "utf8"));
+    return typeof doc === "object" && doc !== null && Boolean((doc as { prettier?: unknown }).prettier);
+  } catch {
+    return false; // Prettier ignores an unparseable manifest too.
+  }
+}
+
+// The file whose Prettier config would win over, or stand in for, a .prettierrc.json that
+// init owns; null when .prettierrc.json is the one Prettier will read.
+function prettierBlocker(dir: string): { file: string; why: string } | null {
+  for (const { file, parse } of KEYED_PRETTIER) {
+    if (hasPrettierKey(dir, file, parse)) return { file, why: `${file} has a prettier key; add the _memory override there by hand` };
+  }
+  const hasJson = existsSync(join(dir, ".prettierrc.json"));
+  // .prettierrc outranks .prettierrc.json; every other name ranks below it.
+  if (existsSync(join(dir, ".prettierrc"))) {
+    const why = hasJson
+      ? ".prettierrc is read before .prettierrc.json; add the _memory override to it by hand"
+      : ".prettierrc is not .prettierrc.json; add the _memory override by hand";
+    return { file: ".prettierrc", why };
+  }
+  if (hasJson) return null;
+  const other = OTHER_PRETTIER.find((f) => existsSync(join(dir, f)));
+  return other === undefined ? null : { file: other, why: `${other} is not JSON; add the _memory override by hand` };
+}
 
 type RecordSchema = { properties: Record<string, { description?: string }>; required: string[] };
 
@@ -54,6 +111,27 @@ function folderProblem(value: string): string | undefined {
   const norm = normalize(path);
   if (isAbsolute(path) || norm === ".." || norm.startsWith(`..${sep}`)) {
     return `--folder '${value}': path is outside the Bank root`;
+  }
+  return undefined;
+}
+
+let prefixPattern: RegExp | undefined;
+// Read from the schema so this can't drift from what ltm validate enforces.
+const loadPrefixPattern = (): RegExp =>
+  (prefixPattern ??= new RegExp(
+    (
+      JSON.parse(readFileSync(new URL("../../schema/memory-bank.schema.json", import.meta.url), "utf8")) as {
+        properties: { facet_prefixes: { items: { pattern: string } } };
+      }
+    ).properties.facet_prefixes.items.pattern,
+  ));
+
+function prefixProblem(values: string[]): string | undefined {
+  const seen = new Set<string>();
+  for (const v of values) {
+    if (!loadPrefixPattern().test(v)) return `--facet-prefix '${v}' doesn't match ${loadPrefixPattern().source}`;
+    if (seen.has(v)) return `--facet-prefix '${v}' is given twice`;
+    seen.add(v);
   }
   return undefined;
 }
@@ -141,7 +219,7 @@ export const init: Command = {
       const problem = folderProblem(v);
       if (problem !== undefined) return problem;
     }
-    return undefined;
+    return prefixProblem(stringList(values["facet-prefix"]));
   },
   async run(ctx) {
     const dir = resolve(ctx.cwd, ctx.positionals[0] ?? ".");
@@ -246,13 +324,9 @@ export const init: Command = {
     }
 
     const formatters: { rel: string; template: string }[] = [{ rel: ".oxfmtrc.json", template: "oxfmtrc.json" }];
-    const nonJson = NON_JSON_PRETTIER.find((f) => existsSync(join(dir, f)));
-    if (nonJson === undefined) formatters.unshift({ rel: ".prettierrc.json", template: "prettierrc.json" });
-    else {
-      ctx.err(
-        `ltm init: warning: ${nonJson} is not JSON; add the _memory override by hand (see templates/formatters/prettierrc.json)\n`,
-      );
-    }
+    const blocker = prettierBlocker(dir);
+    if (blocker === null) formatters.unshift({ rel: ".prettierrc.json", template: "prettierrc.json" });
+    else ctx.err(`ltm init: warning: ${blocker.why} (see templates/formatters/prettierrc.json)\n`);
     for (const { rel, template } of formatters) {
       const abs = join(dir, rel);
       if (!writable(abs)) continue;
