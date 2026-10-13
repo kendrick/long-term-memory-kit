@@ -38,6 +38,7 @@ jobs:
           bun-version: 1.3.13
       - run: bun install --frozen-lockfile
       - run: bash scripts/check-formatters.sh
+      - run: bash scripts/regen-reflowed.sh && git diff --exit-code fixtures/reflowed
       # Exit 1 alone could come from the quoted-title Record, so the grep also requires the long-list break. Exit 2 (broken setup) still fails.
       - name: check-formatters.sh --no-overrides fails as expected
         run: |

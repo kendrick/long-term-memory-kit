@@ -1,0 +1,5 @@
+schema: 1
+name: acme
+facet_prefixes: [service, domain, system, team, platform]
+consumers:
+  acme/order-service: [service:order-service, domain:commerce]
