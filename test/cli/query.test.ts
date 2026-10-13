@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
+  cpSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -569,6 +571,40 @@ describe("ltm query and an alias-bombed config (#43)", () => {
       expect(r.stderr).toContain("alias");
       expect(r.stderr.endsWith("\n")).toBe(true);
       expect(r.stderr.slice(0, -1)).not.toContain("\n");
+    });
+  });
+});
+
+describe("ltm query from a symlinked _memory (#45)", () => {
+  // Spawned, not run(): only a real child gets the OS's physical cwd, which is
+  // the condition that keeps the Bank walk from climbing back in through the link.
+  test("exits 1 naming the physical path, never finding the Bank", async () => {
+    await withScratch(demo, async (bank) => {
+      const outside = mkdtempSync(join(tmpdir(), "ltm-outside-"));
+      const home = mkdtempSync(join(tmpdir(), "ltm-home-"));
+      try {
+        cpSync(join(bank, "_memory"), join(outside, "_memory"), { recursive: true });
+        rmSync(join(bank, "_memory"), { recursive: true });
+        symlinkSync(join(outside, "_memory"), join(bank, "_memory"));
+        const cwd = join(bank, "_memory/decisions");
+
+        // Scratch HOME, no config vars: a developer's own config must not resolve a Bank.
+        const { LTM_CONFIG: _c, XDG_CONFIG_HOME: _x, ...base } = process.env;
+        const r = spawnSync("bun", [new URL("../../src/cli/bin.ts", import.meta.url).pathname, "query"], {
+          cwd,
+          encoding: "utf8",
+          env: { ...base, HOME: home },
+        });
+
+        expect(r.status).toBe(1);
+        expect(r.stdout).toBe("");
+        const line = r.stderr.split("\n")[0]!;
+        expect(line.startsWith("ltm query: no Bank for this repo;")).toBe(true);
+        expect(line).toContain(realpathSync(cwd));
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+        rmSync(home, { recursive: true, force: true });
+      }
     });
   });
 });
