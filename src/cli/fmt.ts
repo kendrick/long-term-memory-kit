@@ -1,12 +1,126 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { relative, resolve, sep } from "node:path";
+import { parse } from "yaml";
+import { ConfigError, findBank, isInside, isMapping, loadConfig, type BankConfig } from "../core/bank.ts";
+import { formatRecordText } from "../core/fmt.ts";
+import { listRecordFiles, type RecordFile } from "../core/query.ts";
+import { splitFrontmatter } from "../core/record.ts";
 import type { Command } from "./run.ts";
 
-// Holds the slot until #8 lands; the lane that builds it replaces this file.
+const toPosix = (p: string): string => p.split(sep).join("/");
+
+// A Record whose frontmatter won't parse still gets formatted (or refused) on its own
+// turn; here it just contributes no id, since it has none we could trust.
+function existingId(text: string): string | null {
+  const split = splitFrontmatter(text);
+  if (!split) return null;
+  try {
+    const data: unknown = parse(split.frontmatterLines.join("\n"));
+    return isMapping(data) && typeof data.id === "string" ? data.id : null;
+  } catch {
+    return null;
+  }
+}
+
+function statusAliases(config: BankConfig): string[] {
+  const aliases = isMapping(config.raw.heading_aliases) ? config.raw.heading_aliases.Status : undefined;
+  return Array.isArray(aliases) && aliases.every((a) => typeof a === "string") ? (aliases as string[]) : [];
+}
+
 export const fmt: Command = {
   name: "fmt",
   summary: "Rewrite Record frontmatter canonically, leaving the body byte-identical",
-  hidden: true,
+  options: { check: { type: "boolean" } },
+  positionals: [{ name: "path", required: false, variadic: true }],
   async run(ctx) {
-    ctx.err("ltm fmt: not implemented yet (see #8)\n");
-    return 1;
+    let root: string | null;
+    try {
+      root = findBank(ctx.cwd);
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      ctx.err(`ltm fmt: ${e.path}: ${e.message.split("\n")[0]}\n`);
+      return 1;
+    }
+    if (root === null) {
+      ctx.err(`ltm fmt: no memory-bank.yaml in ${ctx.cwd} or any parent directory\n`);
+      return 1;
+    }
+    let config: BankConfig;
+    let files: RecordFile[];
+    const skipped = new Set<string>();
+    try {
+      config = loadConfig(root);
+      files = listRecordFiles(config, (path, reason) => {
+        skipped.add(path);
+        ctx.err(`ltm fmt: skipped ${path}: ${reason}\n`);
+      });
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
+      ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${e.message.split("\n")[0]}\n`);
+      return 1;
+    }
+
+    let failed = false;
+    let targets = files;
+    if (ctx.positionals.length > 0) {
+      const byAbs = new Map(files.map((f) => [resolve(f.abs), f]));
+      targets = [];
+      for (const p of ctx.positionals) {
+        const abs = resolve(ctx.cwd, p);
+        const rel = isInside(root, abs) ? toPosix(relative(root, abs)) : p;
+        const f = byAbs.get(abs);
+        if (f) {
+          if (!targets.includes(f)) targets.push(f);
+        } else if (!skipped.has(rel)) {
+          // A skipped path already got its own stderr line from the walk.
+          ctx.err(`ltm fmt: ${rel}: not a Record file under any configured type folder\n`);
+          failed = true;
+        }
+      }
+    }
+
+    // Seeded from every Record, named or not: a new id has to be unique across the
+    // whole Bank, and formatRecordText adds each id it mints so the run stays unique too.
+    const texts = new Map<string, string | Error>();
+    const takenIds = new Set<string>();
+    for (const f of files) {
+      let text: string;
+      try {
+        text = readFileSync(f.abs, "utf8");
+      } catch (e) {
+        texts.set(f.abs, e as Error);
+        continue;
+      }
+      texts.set(f.abs, text);
+      const id = existingId(text);
+      if (id !== null) takenIds.add(id);
+    }
+
+    const aliases = statusAliases(config);
+    let wouldChange = false;
+    for (const f of targets) {
+      const text = texts.get(f.abs)!;
+      if (text instanceof Error) {
+        ctx.err(`ltm fmt: ${f.rel}: ${text.message.split("\n")[0]}\n`);
+        failed = true;
+        continue;
+      }
+      const result = formatRecordText(text, { folderType: f.type, statusAliases: aliases, takenIds });
+      if ("reason" in result) {
+        ctx.err(`ltm fmt: ${f.rel}: ${result.reason}\n`);
+        failed = true;
+        continue;
+      }
+      for (const w of result.warnings) ctx.err(`ltm fmt: warning: ${f.rel}: ${w}\n`);
+      if (!result.changed) continue;
+      if (ctx.values.check === true) {
+        ctx.out(`${f.rel}\n`);
+        wouldChange = true;
+      } else {
+        writeFileSync(f.abs, result.text);
+      }
+    }
+    return failed || wouldChange ? 1 : 0;
   },
 };
