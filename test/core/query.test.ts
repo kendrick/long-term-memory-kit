@@ -405,3 +405,52 @@ describe("countFacets", () => {
     ]);
   });
 });
+
+describe("listRecordFiles links beside the Records", () => {
+  const folders = defaultFolders;
+  const walk = async (
+    make: (dir: string) => Promise<void>,
+  ): Promise<{ skipped: [string, string][]; files: string[]; baseline: string[] }> => {
+    let out!: { skipped: [string, string][]; files: string[]; baseline: string[] };
+    await withScratch(demoBank, async (dir) => {
+      const baseline = listRecordFiles({ root: dir, folders, raw: {} }, () => {}).map((f) => f.rel);
+      await make(dir);
+      const skipped: [string, string][] = [];
+      const files = listRecordFiles({ root: dir, folders, raw: {} }, (p, r) => skipped.push([p, r])).map(
+        (f) => f.rel,
+      );
+      out = { skipped, files, baseline };
+    });
+    return out;
+  };
+
+  test("a non-.md link to a file is ignored silently", async () => {
+    const { skipped, files, baseline } = await walk((dir) =>
+      symlink("/etc/hosts", join(dir, "_memory/decisions/diagram.png")),
+    );
+    expect(skipped).toEqual([]);
+    expect(files).toEqual(baseline);
+  });
+
+  test("a .md link is reported", async () => {
+    const { skipped } = await walk((dir) => symlink("/etc/hosts", join(dir, "_memory/decisions/x.md")));
+    expect(skipped).toEqual([["_memory/decisions/x.md", "symlink, not followed"]]);
+  });
+
+  test("a link to a directory is reported", async () => {
+    const { skipped } = await walk((dir) => symlink(dir, join(dir, "_memory/decisions/assets")));
+    expect(skipped).toEqual([["_memory/decisions/assets", "symlink, not followed"]]);
+  });
+
+  test("a non-.md name linking to a directory is reported", async () => {
+    const { skipped } = await walk((dir) => symlink(dir, join(dir, "_memory/decisions/diagram.png")));
+    expect(skipped).toEqual([["_memory/decisions/diagram.png", "symlink, not followed"]]);
+  });
+
+  test("a dangling non-.md link is ignored silently", async () => {
+    const { skipped } = await walk((dir) =>
+      symlink(join(dir, "nowhere"), join(dir, "_memory/decisions/gone.png")),
+    );
+    expect(skipped).toEqual([]);
+  });
+});

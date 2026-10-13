@@ -1,4 +1,4 @@
-import { lstatSync, readdirSync } from "node:fs";
+import { lstatSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
 import { search } from "./recall.ts";
@@ -14,6 +14,18 @@ export function parseFilter(arg: string): Filter | null {
 }
 
 const toRel = (root: string, abs: string): string => relative(root, abs).split(sep).join("/");
+
+// A non-.md link can't be a Record, so only one that reaches a directory is worth reporting
+// (it could hide Records). statSync reads the target's inode, not its contents, so nothing is
+// followed. A dangling link holds nothing; any other error can't rule a directory out.
+function linkMayHoldRecords(p: string): boolean {
+  try {
+    return statSync(p).isDirectory();
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    return !(code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP");
+  }
+}
 
 function walkMarkdown(
   dir: string,
@@ -36,7 +48,10 @@ function walkMarkdown(
     const p = join(dir, e.name);
     // Dirent carries lstat's answer, so a link is caught without a second lookup by path.
     if (e.isSymbolicLink()) {
-      onSkip(toRel(root, p), "symlink, not followed");
+      // Bun may resolve a `\` name elsewhere, so such a link is reported without a stat.
+      if (e.name.endsWith(".md") || e.name.includes("\\") || linkMayHoldRecords(p)) {
+        onSkip(toRel(root, p), "symlink, not followed");
+      }
       continue;
     }
     // Bun may resolve a `\` name as a different path in readFileSync/readdirSync.
