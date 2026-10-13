@@ -54,10 +54,11 @@ const blockTags = (text: string) => {
 };
 
 const threeDefects = (text: string) =>
-  replaceLine(blockTags(replaceLine(text, "status:", null)), "applies_to:", "applies_to: [serivce:x]");
+  replaceLine(blockTags(replaceLine(text, "status:", null)), "applies_to:", "applies_to: [domain:commerce, serivce:x]");
 
 // A second Record built from the demo one, so it stays schema-valid as the fixture evolves.
-const freshRecord = (pg: string, id: string) => replaceLine(pg, "id:", `id: ${id}`);
+// It drops `supersedes`: the older Record points at the original, so a copy keeping it is a half-declared Supersession.
+const freshRecord = (pg: string, id: string) => replaceLine(replaceLine(pg, "id:", `id: ${id}`), "supersedes:", null);
 
 describe("ltm validate", () => {
   test("1: an unmodified demo Bank exits 0 with empty stdout", async () => {
@@ -107,7 +108,8 @@ describe("ltm validate", () => {
       await withScratch(demo, async (dir) => {
         const pg = readFileSync(join(dir, PG), "utf8");
         const file = "_memory/decisions/padded-pP0aD0dE01.md";
-        const atTwenty = pad(freshRecord(pg, "pP0aD0dE01"), 20 - closingLine(pg));
+        const fresh = freshRecord(pg, "pP0aD0dE01");
+        const atTwenty = pad(fresh, 20 - closingLine(fresh));
         expect(closingLine(atTwenty)).toBe(20);
 
         writeFileSync(join(dir, file), atTwenty + "\nbody\n".repeat(30));
@@ -162,17 +164,17 @@ describe("ltm validate", () => {
 
   test("5: facet-prefix reads facet_prefixes from the scratch config", async () => {
     await withScratch(demo, async (dir) => {
-      const misspelled = edit(join(dir, PG), (t) => replaceLine(t, "applies_to:", "applies_to: [serivce:order-service]"));
+      const misspelled = edit(join(dir, PG), (t) => replaceLine(t, "applies_to:", "applies_to: [domain:commerce, serivce:order-service]"));
       const r = await ltm(dir, "validate");
       expect(r.exitCode).toBe(1);
       expect(lines(r.stdout)).toEqual([
         `${PG}:${lineOf(misspelled, "applies_to:")}: error facet-prefix: applies_to: 'serivce:order-service' uses prefix 'serivce', which facet_prefixes doesn't list`,
       ]);
 
-      edit(join(dir, PG), (t) => replaceLine(t, "applies_to:", "applies_to: [service:order-service]"));
+      edit(join(dir, PG), (t) => replaceLine(t, "applies_to:", "applies_to: [domain:commerce, service:order-service]"));
       expect(await ltm(dir, "validate")).toMatchObject({ exitCode: 0, stdout: "" });
 
-      edit(join(dir, PG), (t) => replaceLine(t, "applies_to:", "applies_to: [serivce:order-service]"));
+      edit(join(dir, PG), (t) => replaceLine(t, "applies_to:", "applies_to: [domain:commerce, serivce:order-service]"));
       const cfg = edit(join(dir, "memory-bank.yaml"), (t) => t.replace(/^facet_prefixes: \[/m, "facet_prefixes: [serivce, "));
       expect(cfg).toMatch(/^facet_prefixes: \[serivce, /m);
       expect(await ltm(dir, "validate")).toMatchObject({ exitCode: 0, stdout: "" });

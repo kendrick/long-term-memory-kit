@@ -190,7 +190,7 @@ function checkFacetPrefixes({ rel, data, lineOf }: Frontmatter, known: ReadonlyS
   return out;
 }
 
-type RecordResult = { findings: Finding[]; id: string | null; idLine: number };
+type RecordResult = { findings: Finding[]; id: string | null; idLine: number; fm: Frontmatter | null };
 
 function analyzeRecord(
   rel: string,
@@ -199,7 +199,7 @@ function analyzeRecord(
   facetPrefixes: ReadonlySet<string> | null,
 ): RecordResult {
   const { findings, fm } = checkFrontmatter(rel, text);
-  if (!fm) return { findings, id: null, idLine: 1 };
+  if (!fm) return { findings, id: null, idLine: 1, fm: null };
   findings.push(
     ...checkSchema(fm),
     ...checkCanonicalLists(fm),
@@ -208,7 +208,7 @@ function analyzeRecord(
     ...checkFacetPrefixes(fm, facetPrefixes),
   );
   const id = typeof fm.data.id === "string" ? fm.data.id : null;
-  return { findings, id, idLine: fm.lineOf("id") };
+  return { findings, id, idLine: fm.lineOf("id"), fm };
 }
 
 export function checkRecordText(
@@ -219,6 +219,119 @@ export function checkRecordText(
 ): { findings: Finding[]; id: string | null } {
   const { findings, id } = analyzeRecord(rel, folderType, text, facetPrefixes && new Set(facetPrefixes));
   return { findings, id };
+}
+
+type Node = { file: string; fm: Frontmatter };
+
+// A finding plus the other file its message names, so a paths filter can keep it when either end was named.
+type Pending = { finding: Finding; also: string };
+
+const stringList = (v: unknown): string[] =>
+  typeof v === "string" ? [v] : Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+
+// Missing, null, or empty means "applies everywhere", so it overlaps with anything.
+function sharesScope(a: unknown, b: unknown): boolean {
+  const as = stringList(a);
+  const bs = stringList(b);
+  if (as.length === 0 || bs.length === 0) return true;
+  return as.some((x) => bs.includes(x));
+}
+
+// Reads every Record, named or not: the other end of an edge may live in a file nobody named.
+function checkSupersession(nodes: Node[]): Pending[] {
+  const sorted = [...nodes].sort((a, b) => cmp(a.file, b.file));
+  // An id held by several Records is `unique-id`'s to report; resolving to all holders keeps it from also
+  // reading as a half-declared edge.
+  const byId = new Map<string, Node[]>();
+  for (const n of sorted) {
+    const id = n.fm.data.id;
+    if (typeof id !== "string") continue;
+    const held = byId.get(id);
+    if (held) held.push(n);
+    else byId.set(id, [n]);
+  }
+
+  const out: Pending[] = [];
+  // Edge (old, new) -> which side wrote it down.
+  const edges = new Map<string, { old: Node; new: Node; byOld: boolean; byNew: boolean }>();
+  const edge = (o: Node, n: Node) => {
+    const k = `${o.file}\0${n.file}`;
+    let e = edges.get(k);
+    if (!e) edges.set(k, (e = { old: o, new: n, byOld: false, byNew: false }));
+    return e;
+  };
+  const missing = (n: Node, key: string, id: string) =>
+    out.push({
+      finding: finding(n.file, n.fm.lineOf(key), "supersession-missing-target", key, `${key} names '${id}', which no Record has`),
+      also: n.file,
+    });
+
+  for (const n of sorted) {
+    const { data } = n.fm;
+    const by = data.superseded_by;
+    if (typeof by === "string" && by !== "") {
+      const targets = byId.get(by);
+      if (targets) for (const t of targets) edge(n, t).byOld = true;
+      else missing(n, "superseded_by", by);
+      if (data.status !== "superseded") {
+        const key = n.fm.keys.has("status") ? "status" : "superseded_by";
+        out.push({
+          finding: finding(
+            n.file,
+            n.fm.lineOf(key),
+            "supersession-status",
+            "status",
+            `status is '${String(data.status ?? "")}' but superseded_by is set; a superseded Record needs status 'superseded'`,
+          ),
+          also: n.file,
+        });
+      }
+    }
+    for (const id of new Set(stringList(data.supersedes))) {
+      const targets = byId.get(id);
+      if (targets) for (const t of targets) edge(t, n).byNew = true;
+      else missing(n, "supersedes", id);
+    }
+  }
+
+  for (const e of edges.values()) {
+    if (e.byOld && !e.byNew) {
+      out.push({
+        finding: finding(
+          e.old.file,
+          e.old.fm.lineOf("superseded_by"),
+          "supersession-incomplete",
+          "superseded_by",
+          `superseded_by names ${e.new.file}, which doesn't list it back in supersedes`,
+        ),
+        also: e.new.file,
+      });
+    } else if (e.byNew && !e.byOld) {
+      out.push({
+        finding: finding(
+          e.new.file,
+          e.new.fm.lineOf("supersedes"),
+          "supersession-incomplete",
+          "supersedes",
+          `supersedes names ${e.old.file}, which doesn't list it back in superseded_by`,
+        ),
+        also: e.old.file,
+      });
+    }
+    if (!sharesScope(e.old.fm.data.applies_to, e.new.fm.data.applies_to)) {
+      out.push({
+        finding: finding(
+          e.old.file,
+          e.old.fm.lineOf("applies_to"),
+          "supersession-facets",
+          "applies_to",
+          `${e.old.file} and ${e.new.file} are linked by supersession but share no applies_to entry`,
+        ),
+        also: e.new.file,
+      });
+    }
+  }
+  return out;
 }
 
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -325,6 +438,7 @@ export function validateBankReport(root: string, paths: string[] | null, cwd: st
   const prefixes = Array.isArray(raw) && raw.every((x) => typeof x === "string") ? new Set(raw as string[]) : null;
 
   const ids: { file: string; line: number; id: string }[] = [];
+  const nodes: Node[] = [];
   // Every Record is read even when paths are named: a duplicate id may live in a file nobody named.
   for (const f of files) {
     const isNamed = !namedRels || namedRels.has(f.rel);
@@ -339,7 +453,11 @@ export function validateBankReport(root: string, paths: string[] | null, cwd: st
     const r = analyzeRecord(f.rel, f.type, text, prefixes);
     if (isNamed) findings.push(...r.findings);
     if (r.id !== null) ids.push({ file: f.rel, line: r.idLine, id: r.id });
+    if (r.fm) nodes.push({ file: f.rel, fm: r.fm });
   }
   findings.push(...checkUniqueIds(ids, namedRels));
+  for (const p of checkSupersession(nodes)) {
+    if (!namedRels || namedRels.has(p.finding.file) || namedRels.has(p.also)) findings.push(p.finding);
+  }
   return report(findings, judged);
 }

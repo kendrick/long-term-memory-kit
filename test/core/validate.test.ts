@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { copyFileSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkConfig, checkRecordText, checkUniqueIds, validateBank, type Finding } from "../../src/core/validate.ts";
+import { checkConfig, checkRecordText, checkUniqueIds, validateBank, validateBankReport, type Finding } from "../../src/core/validate.ts";
 import { parseDocument } from "yaml";
 import { withScratch } from "../helpers/scratch.ts";
 
@@ -305,7 +305,7 @@ describe("validateBank", () => {
   test("findings come back sorted by file, then line", async () => {
     await withScratch(demoBank, async (dir) => {
       // line-budget is computed before facet-prefix but sits on a later line, so emit order alone would be wrong.
-      const lines = replaceLine(valid, "applies_to:", "applies_to: [serivce:x]").split("\n");
+      const lines = replaceLine(valid, "applies_to:", "applies_to: [domain:commerce, serivce:x]").split("\n");
       const at = lines.indexOf("---", 1);
       lines.splice(at, 0, ...Array.from({ length: 21 - (at + 1) }, (_, i) => `x${i}: v`));
       writeFileSync(join(dir, rel), lines.join("\n"));
@@ -477,6 +477,190 @@ describe("unique-id under named paths", () => {
       expect(validateBank(dir, [copy], dir)).toEqual([
         { file: copy, line: lineOf(valid, "id:"), rule: "unique-id", severity: "error", key: "id", message: `id '${/^id: (.*)$/m.exec(valid)![1]}' is also used by ${rel}` },
       ]);
+    });
+  });
+});
+
+describe("supersession checks", () => {
+  const oldRel = "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md";
+  const newRel = rel;
+  const supersession = (fs: Finding[]) => fs.filter((f) => f.rule.startsWith("supersession-"));
+
+  // Every mutation is read back before the run that depends on it, so a no-op edit can't pass as green.
+  async function mutate(dir: string, file: string, fn: (text: string) => string): Promise<string> {
+    const before = readFileSync(join(dir, file), "utf8");
+    const after = fn(before);
+    writeFileSync(join(dir, file), after);
+    const read = readFileSync(join(dir, file), "utf8");
+    expect(read).toBe(after);
+    expect(read).not.toBe(before);
+    return read;
+  }
+
+  test("the fixture's superseded pair passes every supersession check", async () => {
+    await withScratch(demoBank, async (dir) => {
+      expect(supersession(validateBankReport(dir, null, dir).findings)).toEqual([]);
+    });
+  });
+
+  test("deleting supersedes from the newer Record is one supersession-incomplete naming both files", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const text = await mutate(dir, newRel, (t) => replaceLine(t, "supersedes:", null));
+      expect(text).not.toContain("supersedes:");
+      const fs = validateBankReport(dir, null, dir).findings;
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!).toMatchObject({ rule: "supersession-incomplete", severity: "error", file: oldRel, key: "superseded_by" });
+      expect(fs[0]!.line).toBe(lineOf(readFileSync(join(dir, oldRel), "utf8"), "superseded_by:"));
+      expect(`${fs[0]!.file} ${fs[0]!.message}`).toContain(oldRel);
+      expect(`${fs[0]!.file} ${fs[0]!.message}`).toContain(newRel);
+    });
+  });
+
+  test("deleting superseded_by from the older Record is one supersession-incomplete on the newer Record", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await mutate(dir, oldRel, (t) => replaceLine(t, "superseded_by:", null));
+      const fs = validateBankReport(dir, null, dir).findings;
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!).toMatchObject({ rule: "supersession-incomplete", file: newRel, key: "supersedes" });
+      expect(fs[0]!.message).toContain(oldRel);
+    });
+  });
+
+  test("an older Record that is still accepted gives supersession-status on its status line", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const text = await mutate(dir, oldRel, (t) => replaceLine(t, "status:", "status: accepted"));
+      expect(text).toContain("status: accepted");
+      expect(text).toContain("superseded_by: kQ7vN2xLp4");
+      const fs = validateBankReport(dir, null, dir).findings;
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!).toMatchObject({ rule: "supersession-status", file: oldRel, key: "status", line: lineOf(text, "status:") });
+    });
+  });
+
+  test("supersession-status falls back to the superseded_by line when status is missing", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const text = await mutate(dir, oldRel, (t) => replaceLine(t, "status:", null));
+      const fs = supersession(validateBankReport(dir, null, dir).findings);
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!).toMatchObject({ rule: "supersession-status", line: lineOf(text, "superseded_by:") });
+    });
+  });
+
+  test("a made-up superseded_by id is one supersession-missing-target on that key", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const text = await mutate(dir, oldRel, (t) => replaceLine(t, "superseded_by:", "superseded_by: zZ9zZ9zZ9z"));
+      expect(text).toContain("superseded_by: zZ9zZ9zZ9z");
+      const all = supersession(validateBankReport(dir, null, dir).findings);
+      // The newer Record still supersedes the older one, which no longer points back: a second, correct finding.
+      expect(all.map((f) => f.rule).sort()).toEqual(["supersession-incomplete", "supersession-missing-target"]);
+      const fs = all.filter((f) => f.rule === "supersession-missing-target");
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!).toMatchObject({
+        rule: "supersession-missing-target",
+        file: oldRel,
+        key: "superseded_by",
+        line: lineOf(text, "superseded_by:"),
+        message: "superseded_by names 'zZ9zZ9zZ9z', which no Record has",
+      });
+    });
+  });
+
+  test("a made-up supersedes entry is one supersession-missing-target on that key", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await mutate(dir, newRel, (t) => replaceLine(t, "supersedes:", "supersedes: [mB3tR9wZe1, zZ9zZ9zZ9z]"));
+      const fs = supersession(validateBankReport(dir, null, dir).findings);
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!).toMatchObject({ rule: "supersession-missing-target", file: newRel, key: "supersedes" });
+      expect(fs[0]!.message).toContain("'zZ9zZ9zZ9z'");
+    });
+  });
+
+  describe("supersession-facets", () => {
+    // A fresh cross-linked pair, so scope is the only thing that can fail.
+    const pair = (oldScope: string | null, newScope: string | null, extra = { old: "", new: "" }) => {
+      const record = (id: string, title: string, status: string, link: string, scope: string | null, more: string) =>
+        [
+          "---",
+          "schema: 1",
+          `id: ${id}`,
+          "memory_type: Decision",
+          `title: ${title}`,
+          `status: ${status}`,
+          "date: 2026-01-01",
+          `summary: ${title}.`,
+          link,
+          ...(scope === null ? [] : [`applies_to: ${scope}`]),
+          ...(more ? [more] : []),
+          "---",
+          "",
+          "## Context",
+          "c",
+          "",
+          "## Decision",
+          "d",
+          "",
+          "## Consequences",
+          "e",
+          "",
+        ].join("\n");
+      return {
+        old: record("aA1aA1aA1a", "Old way", "superseded", "superseded_by: bB2bB2bB2b", oldScope, extra.old),
+        new: record("bB2bB2bB2b", "New way", "accepted", "supersedes: [aA1aA1aA1a]", newScope, extra.new),
+      };
+    };
+    const oldFile = "_memory/decisions/old-way-aA1aA1aA1a.md";
+    const newFile = "_memory/decisions/new-way-bB2bB2bB2b.md";
+    const run = async (p: { old: string; new: string }) =>
+      withScratch(demoBank, async (dir) => {
+        writeFileSync(join(dir, oldFile), p.old);
+        writeFileSync(join(dir, newFile), p.new);
+        expect(readFileSync(join(dir, oldFile), "utf8")).toBe(p.old);
+        expect(readFileSync(join(dir, newFile), "utf8")).toBe(p.new);
+        return validateBankReport(dir, null, dir).findings;
+      });
+
+    test("disjoint scopes give exactly one supersession-facets finding naming both paths", async () => {
+      const fs = await run(pair("[service:a]", "[service:b]"));
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!).toMatchObject({ rule: "supersession-facets", file: oldFile, key: "applies_to" });
+      expect(fs[0]!.message).toContain(oldFile);
+      expect(fs[0]!.message).toContain(newFile);
+    });
+
+    test("a shared entry among several passes", async () => {
+      expect(await run(pair("[service:a]", "[service:a, domain:x]"))).toEqual([]);
+    });
+
+    test("a newer Record with no applies_to passes", async () => {
+      expect(await run(pair("[service:a]", null))).toEqual([]);
+    });
+
+    test("an older Record with an empty applies_to passes", async () => {
+      expect(await run(pair("[]", "[service:b]"))).toEqual([]);
+    });
+
+    test("overlapping only tags or only owners still fails", async () => {
+      for (const key of ["tags", "owners"]) {
+        const fs = await run(pair("[service:a]", "[service:b]", { old: `${key}: [team:x]`, new: `${key}: [team:x]` }));
+        expect(fs.map((f) => f.rule)).toEqual(["supersession-facets"]);
+      }
+    });
+  });
+
+  test("with paths naming only the newer Record, the incomplete finding on the older one still appears", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await mutate(dir, newRel, (t) => replaceLine(t, "supersedes:", null));
+      const fs = validateBankReport(dir, [newRel], dir).findings;
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!).toMatchObject({ rule: "supersession-incomplete", file: oldRel });
+    });
+  });
+
+  test("with paths naming an unrelated Record, supersession findings are dropped", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await mutate(dir, newRel, (t) => replaceLine(t, "supersedes:", null));
+      const other = "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md";
+      expect(validateBankReport(dir, [other], dir).findings).toEqual([]);
     });
   });
 });
