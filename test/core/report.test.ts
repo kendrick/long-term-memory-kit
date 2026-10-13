@@ -159,7 +159,13 @@ describe("toJunit", () => {
 
   test("a lone surrogate is replaced, a paired astral character survives, tab and CR/LF stay", () => {
     const f = err({ message: "a\uD800b\u{1F600}c\td\r\ne", key: null });
-    const p = parseJunit(toJunit([f], ["a.md"]));
+    const doc = toJunit([f], ["a.md"]);
+    // spawnSync's UTF-8 encoding turns a lone surrogate into U+FFFD on its own, so the
+    // python3 parse can't tell fixed from unfixed. The returned string is what `ltm mcp`
+    // will JSON-encode (as `\ud800`), so assert on it directly.
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(doc)).toBe(false);
+    expect(doc).toContain("a\uFFFDb\u{1F600}c");
+    const p = parseJunit(doc);
     expect(p.cases[0]!.failures[0]!.text).toBe("a.md:3: a\uFFFDb\u{1F600}c\td\ne");
   });
 });
