@@ -215,6 +215,19 @@ describe("ltm query from a Consumer repo", () => {
     expect(v.exitCode).toBe(0);
   });
 
+  test("--bank expands ~/ itself when the shell did not (=form and quoted form)", async () => {
+    const scratchHome = { HOME: home };
+    for (const argv of [
+      ["query", "--bank=~/banks/acme", "--type", "Exception"],
+      ["query", "--bank", "~/banks/acme", "--type", "Exception"],
+    ]) {
+      const r = await run({ argv, cwd: repo, env: scratchHome });
+      expect(r.stderr).toBe("");
+      expect(r.exitCode).toBe(0);
+      expect(lines(r.stdout)).toContainEqual(expect.stringContaining(REDIS));
+    }
+  });
+
   test("inside a Bank, a user config changes nothing", async () => {
     const inBank = join(home, "banks", "acme");
     for (const args of [["--all"], ["--json", "--all"], ["--type", "Exception"], ["--text", "redis"]]) {

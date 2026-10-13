@@ -379,4 +379,31 @@ describe("resolveBankFlag", () => {
   test("neither a name nor a Bank path throws ConfigError", () => {
     expect(() => resolveBankFlag("nope", repo, env)).toThrow(ConfigError);
   });
+
+  test("a leading ~/ expands under HOME, as user-config paths do", () => {
+    const b = resolveBankFlag("~/banks/acme", repo, env);
+    expect(b.name).toBe("acme");
+    expect(b.root).toBe(join(home, "banks", "acme"));
+  });
+
+  test("a bare ~ resolves HOME itself", () => {
+    writeFileSync(join(home, "memory-bank.yaml"), readFileSync(join(home, "banks", "acme", "memory-bank.yaml"), "utf8"));
+    expect(resolveBankFlag("~", repo, env).root).toBe(home);
+  });
+
+  test("~ with HOME unset throws ConfigError naming --bank", () => {
+    const e = configErrorOf(() => resolveBankFlag("~/banks/acme", repo, { LTM_CONFIG: configPath }));
+    expect(e.message).toContain("--bank '~/banks/acme' needs HOME, which is not set");
+  });
+
+  test("~user/x is not expanded, matching user-config paths", () => {
+    const e = configErrorOf(() => resolveBankFlag("~user/x", repo, env));
+    expect(e.message).toContain("neither a Bank");
+  });
+
+  test("a user-config Bank literally named ~x resolves by name before any expansion", () => {
+    writeFileSync(configPath, "banks:\n  ~x: { path: ~/banks/acme }\n");
+    const b = resolveBankFlag("~x", repo, env);
+    expect(b.root).toBe(join(home, "banks", "acme"));
+  });
 });

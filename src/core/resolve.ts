@@ -169,12 +169,16 @@ function readOptional(path: string): string | null {
   }
 }
 
+// One `~` rule for user-config paths and `--bank`, so the two can't drift. Only `~` and `~/…` expand; `~user` stays literal. undefined means not a tilde value, and null means HOME is missing.
+function expandTilde(p: string, env: Env): string | null | undefined {
+  if (p !== "~" && !p.startsWith("~/")) return undefined;
+  if (!env.HOME) return null;
+  return join(env.HOME, p.slice(1));
+}
+
 function expandPath(p: string, configPath: string, env: Env): string | null {
-  if (p === "~" || p.startsWith("~/")) {
-    if (!env.HOME) return null;
-    return join(env.HOME, p.slice(1));
-  }
-  return resolve(dirname(configPath), p);
+  const home = expandTilde(p, env);
+  return home !== undefined ? home : resolve(dirname(configPath), p);
 }
 
 // An env with nothing to locate a config by (cron, a bare `env -i`) reads like a
@@ -314,7 +318,10 @@ export function resolveBankFlag(value: string, cwd: string, env: Env): ResolvedB
   const user = loadUserConfig(env);
   const banks = user.config?.banks ?? {};
   if (Object.hasOwn(banks, value)) return openBank(value, banks[value] as UserBank, user.path);
-  const root = resolve(cwd, value);
+  // The shell expands an unquoted `~` but not `--bank=~/x` or a quoted value. This runs after the name lookup so a Bank literally named `~x` still wins.
+  const tilde = expandTilde(value, env);
+  if (tilde === null) throw new ConfigError("--bank", null, `--bank '${value}' needs HOME, which is not set`);
+  const root = tilde ?? resolve(cwd, value);
   const cfg = join(root, BANK_CONFIG);
   try {
     lstatSync(cfg);
