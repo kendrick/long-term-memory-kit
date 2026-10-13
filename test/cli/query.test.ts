@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { run } from "../../src/cli/run.ts";
 import { withScratch } from "../helpers/scratch.ts";
@@ -590,7 +591,7 @@ describe("ltm query from a symlinked _memory (#45)", () => {
 
         // Scratch HOME, no config vars: a developer's own config must not resolve a Bank.
         const { LTM_CONFIG: _c, XDG_CONFIG_HOME: _x, ...base } = process.env;
-        const r = spawnSync("bun", [new URL("../../src/cli/bin.ts", import.meta.url).pathname, "query"], {
+        const r = spawnSync(process.execPath, [fileURLToPath(new URL("../../src/cli/bin.ts", import.meta.url)), "query"], {
           cwd,
           encoding: "utf8",
           env: { ...base, HOME: home },

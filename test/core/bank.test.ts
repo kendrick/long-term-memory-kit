@@ -42,6 +42,8 @@ describe("findBank", () => {
         expect(e).toBeInstanceOf(ConfigError);
         expect((e as ConfigError).path).toBe(join(locked, "memory-bank.yaml"));
         expect((e as ConfigError).line).toBeNull();
+        // The OS reason must reach the user, not a generic refusal.
+        expect((e as ConfigError).message).toMatch(/EACCES: permission denied/);
       } finally {
         chmodSync(locked, 0o755);
       }

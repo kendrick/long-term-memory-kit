@@ -61,7 +61,7 @@ export function findBank(cwd: string): string | null {
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
       if (code !== "ENOENT" && code !== "ENOTDIR") {
-        throw new ConfigError(candidate, null, (e as Error).message.split("\n")[0] ?? String(e));
+        throw new ConfigError(candidate, null, (e as Error).message.split("\n")[0]!);
       }
     }
     if (stat?.isSymbolicLink()) throw new ConfigError(candidate, null, SYMLINK_REFUSAL);
