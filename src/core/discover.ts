@@ -14,6 +14,10 @@ type SourceFile = { rel: string; ext: string; text: string; headings: Heading[] 
 const MAX_BYTES = 1_048_576;
 const HEADING = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
 const SPEAKER = /^[A-Z][\w .'-]{0,40}: /;
+// CommonMark fences: a closer must repeat the opener's character at least as long, so an inner
+// ``` line can't end a ```` block and ~~~ can't end a backtick block. An unclosed fence runs to EOF.
+const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const CLOSE_FENCE = /^ {0,3}(`{3,}|~{3,})\s*$/;
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//;
 
 const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -22,13 +26,18 @@ const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0
 function headingsOf(text: string): Heading[] {
   const body = splitFrontmatter(text)?.body ?? text;
   const out: Heading[] = [];
-  let fenced = false;
+  let fence: { char: string; len: number } | null = null;
   for (const line of body.split(/\r?\n/)) {
-    if (/^\s*```/.test(line)) {
-      fenced = !fenced;
+    if (fence) {
+      const close = CLOSE_FENCE.exec(line);
+      if (close && close[1]![0] === fence.char && close[1]!.length >= fence.len) fence = null;
       continue;
     }
-    if (fenced) continue;
+    const open = OPEN_FENCE.exec(line);
+    if (open && !(open[1]![0] === "`" && open[2]!.includes("`"))) {
+      fence = { char: open[1]![0]!, len: open[1]!.length };
+      continue;
+    }
     const m = HEADING.exec(line);
     if (m) out.push({ level: m[1]!.length, text: m[2]! });
   }
@@ -241,13 +250,14 @@ export function discover(
       onSkip(rel, (e as Error).message?.split("\n")[0] || "unreadable");
       continue;
     }
-    const kind = classify(rel, text, aliases);
+    const root = repoRootOf(dirname(abs), repoRoots);
+    const repoRel = root === null ? null : relative(root, abs).split(sep).join("/");
+    // The folder rule must see the same directories whether `ltm discover` runs from the repo root or
+    // from inside `adr/`. Absolute segments are off the table: a checkout under `~/decisions/` would
+    // turn every file into an ADR. Without a repo, the cwd-relative path is all there is.
+    const kind = classify(repoRel ?? rel, text, aliases);
     if (kind === null) continue;
-    let cited: string[] | null = null;
-    if (records) {
-      const root = repoRootOf(dirname(abs), repoRoots);
-      cited = citedBy(rel, root === null ? null : relative(root, abs).split(sep).join("/"), records);
-    }
+    const cited = records ? citedBy(rel, repoRel, records) : null;
     entries.push({ path: rel, kind, title: titleOf(rel, kind, text), bytes, cited_by: cited });
   }
   entries.sort((a, b) => byCodeUnit(a.path, b.path));

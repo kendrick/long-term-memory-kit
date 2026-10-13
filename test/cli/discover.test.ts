@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { run } from "../../src/cli/run.ts";
@@ -171,5 +173,30 @@ describe("ltm discover", () => {
       expect(r.stderr).toContain(cfg);
       expect(r.stdout).toBe("");
     });
+  });
+
+  test("the folder rule sees the enclosing adr directory from inside it", async () => {
+    const r = await ltm(join(sources, "adr"), "discover", ".", "--json");
+    expect(r.exitCode).toBe(0);
+    expect(kindOf(r.stdout, "0001-postgres.md")).toBe("adr");
+  });
+
+  test("the folder rule uses the repo root when .git exists, else the cwd", async () => {
+    const make = async (withGit: boolean) => {
+      const dir = await mkdtemp(join(tmpdir(), "ltm-folder-"));
+      if (withGit) mkdirSync(join(dir, ".git"));
+      mkdirSync(join(dir, "adr"));
+      writeFileSync(join(dir, "adr/x.md"), "just prose\n");
+      return dir;
+    };
+    const a = await make(true);
+    const b = await make(false);
+    try {
+      expect(kindOf((await ltm(join(a, "adr"), "discover", ".", "--json")).stdout, "x.md")).toBe("adr");
+      expect(kindOf((await ltm(join(b, "adr"), "discover", ".", "--json")).stdout, "x.md")).toBe("document");
+    } finally {
+      await rm(a, { recursive: true, force: true });
+      await rm(b, { recursive: true, force: true });
+    }
   });
 });

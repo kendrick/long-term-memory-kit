@@ -20,6 +20,26 @@ describe("headings", () => {
     const text = "# T\n\n```\n## Context\n## Decision\n```\n";
     expect(classify("x/misc/a.md", text, none)).toBe("document");
   });
+  test("a ~~~ fence hides headings", () => {
+    const text = "# T\n\n~~~\n## Context\n## Decision\n~~~\n";
+    expect(classify("x/misc/a.md", text, none)).toBe("document");
+  });
+  test("an inner ``` line does not close a ```` fence", () => {
+    const text = "# T\n\n````\n```\n## Context\n## Decision\n```\n````\n";
+    expect(classify("x/misc/a.md", text, none)).toBe("document");
+  });
+  test("a ~~~ line does not close a backtick fence", () => {
+    const text = "# T\n\n```\n~~~\n## Context\n## Decision\n```\n";
+    expect(classify("x/misc/a.md", text, none)).toBe("document");
+  });
+  test("headings after a fence closes count again", () => {
+    const text = "# T\n\n~~~\nx\n~~~\n## Context\n## Decision\n";
+    expect(classify("x/misc/a.md", text, none)).toBe("adr");
+  });
+  test("an unclosed fence runs to end of file", () => {
+    const text = "# T\n\n```\n## Context\n## Decision\n";
+    expect(classify("x/misc/a.md", text, none)).toBe("document");
+  });
   test("frontmatter comments are not headings", () => {
     const text = "---\n# Context\n# Decision\n---\nbody\n";
     expect(classify("x/misc/a.md", text, none)).toBe("document");
