@@ -187,6 +187,10 @@ function appliesTo(r: ParsedRecord): string[] | "org-wide" | null {
   return v.filter((x): x is string => typeof x === "string");
 }
 
+export function isOrgWide(r: ParsedRecord): boolean {
+  return appliesTo(r) === "org-wide";
+}
+
 function inFacets(r: ParsedRecord, facets: string[]): boolean {
   const scope = appliesTo(r);
   if (scope === "org-wide") return true;

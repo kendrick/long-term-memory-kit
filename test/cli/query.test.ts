@@ -549,3 +549,26 @@ describe("ltm query options", () => {
     });
   });
 });
+
+describe("ltm query and an alias-bombed config (#43)", () => {
+  test("exits 1 with one memory-bank.yaml line and no stack trace", async () => {
+    // Nine levels of ten refs each: expands past yaml's alias limit.
+    const bomb = ["a: &a [x,x,x,x,x,x,x,x,x,x]"];
+    for (let i = 1; i < 9; i++) {
+      const n = String.fromCharCode(97 + i);
+      const p = String.fromCharCode(96 + i);
+      bomb.push(`${n}: &${n} [${Array(10).fill(`*${p}`).join(",")}]`);
+    }
+    await withScratch(demo, async (dir) => {
+      const cfg = join(dir, "memory-bank.yaml");
+      writeFileSync(cfg, `${readFileSync(cfg, "utf8")}${bomb.join("\n")}\n`);
+      const r = await ltm(dir, "query");
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr.startsWith(`${cfg}: `)).toBe(true);
+      expect(r.stderr).toContain("alias");
+      expect(r.stderr.endsWith("\n")).toBe(true);
+      expect(r.stderr.slice(0, -1)).not.toContain("\n");
+    });
+  });
+});
