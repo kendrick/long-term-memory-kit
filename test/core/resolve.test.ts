@@ -139,6 +139,23 @@ describe("loadUserConfig", () => {
     expect(loadUserConfig(env)).toEqual({ path: configPath, config: null });
   });
 
+  test("no variable that locates a config is no config, not an error", () => {
+    expect(loadUserConfig({})).toEqual({
+      path: "user config (LTM_CONFIG, XDG_CONFIG_HOME, and HOME are unset)",
+      config: null,
+    });
+  });
+
+  test("resolution with no locatable config names the cwd and fails without throwing", () => {
+    const outside = join(tmp, "not-a-repo");
+    mkdirSync(outside);
+    const r = resolveBanks(outside, {});
+    expect(r.banks).toEqual([]);
+    expect(r.resolvedBy).toBeNull();
+    expect(r.checked).toHaveLength(3);
+    expect(r.checked[0]).toContain(outside);
+  });
+
   test("expands ~/ with the given HOME and keeps url", () => {
     writeFileSync(configPath, exampleConfig);
     const { config } = loadUserConfig(env);

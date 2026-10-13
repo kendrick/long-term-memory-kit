@@ -75,15 +75,26 @@ export function matchRule(match: string, identity: string): boolean {
   return want.length === have.length && want.every((seg, i) => seg === "*" || seg === have[i]);
 }
 
-export function userConfigPath(env: Env, platform: string = process.platform): string {
+function locateUserConfig(env: Env, platform: string): string | null {
   if (env.LTM_CONFIG) return resolve(env.LTM_CONFIG);
   if (platform === "win32" && env.APPDATA) return win32.join(env.APPDATA, "ltm", "config.yaml");
   // The XDG spec says to ignore an empty or relative XDG_CONFIG_HOME.
   const xdg = env.XDG_CONFIG_HOME;
   if (xdg && isAbsolute(xdg)) return join(xdg, "ltm", "config.yaml");
   if (env.HOME) return join(env.HOME, ".config", "ltm", "config.yaml");
-  throw new ConfigError("user config", null, "set LTM_CONFIG, XDG_CONFIG_HOME, or HOME so ltm can find its user config");
+  return null;
 }
+
+export function userConfigPath(env: Env, platform: string = process.platform): string {
+  const path = locateUserConfig(env, platform);
+  if (path === null) {
+    throw new ConfigError("user config", null, "set LTM_CONFIG, XDG_CONFIG_HOME, or HOME so ltm can find its user config");
+  }
+  return path;
+}
+
+// Stands in for the path in "rules in ..." messages when nothing locates a config.
+const UNLOCATED = "user config (LTM_CONFIG, XDG_CONFIG_HOME, and HOME are unset)";
 
 // Same CJS default-import workaround as validate.ts.
 const Ajv2020 = Ajv2020Module.default;
@@ -164,8 +175,12 @@ function expandPath(p: string, configPath: string, env: Env): string | null {
   return resolve(dirname(configPath), p);
 }
 
+// An env with nothing to locate a config by (cron, a bare `env -i`) reads like a
+// missing file: no user config. Throwing here would make `ltm query` outside a Bank
+// fail on the env instead of naming the cwd it searched.
 export function loadUserConfig(env: Env): LoadedUserConfig {
-  const path = userConfigPath(env);
+  const path = locateUserConfig(env, process.platform);
+  if (path === null) return { path: UNLOCATED, config: null };
   const text = readOptional(path);
   if (text === null) return { path, config: null };
   const { data: parsed, doc, lc } = parseYamlFile(path, text);
