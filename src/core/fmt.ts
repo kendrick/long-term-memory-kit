@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { isNode, parseDocument, visit } from "yaml";
+import { readFileSync } from "node:fs";
+import { type Document, isNode, isPair, isScalar, parseDocument, visit } from "yaml";
 import { isMapping, type MemoryType } from "./bank.ts";
-import { canonicalFrontmatter, SCHEMA_KEY_ORDER, type Refusal } from "./canonical.ts";
+import { canonicalFrontmatter, canonicalScalar, SCHEMA_KEY_ORDER, type Refusal } from "./canonical.ts";
 import { splitFrontmatter } from "./record.ts";
 
 // Warnings carry no `ltm fmt: warning: <path>: ` prefix: this module never sees a
@@ -14,7 +15,13 @@ export type FmtContext = {
   takenIds: Set<string>;
 };
 
-const STATUSES = new Set(["proposed", "accepted", "superseded", "deprecated", "rejected"]);
+// Read from the schema for the same reason canonical.ts reads key order from it: a new
+// status shouldn't need a second edit here.
+const STATUSES: ReadonlySet<string> = new Set(
+  (JSON.parse(readFileSync(new URL("../../schema/record.schema.json", import.meta.url), "utf8")) as {
+    properties: { status: { enum: string[] } };
+  }).properties.status.enum,
+);
 const ID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
 
 // Adds the id it returns to `taken`. The CLI calls this once per Record and needs ids
@@ -87,6 +94,28 @@ function firstLine(text: string): { line: string; eol: "\n" | "\r\n" } {
   return { line, eol: line.endsWith("\r") ? "\r\n" : "\n" };
 }
 
+// Canonical output re-emits a number from its parsed value, so `id: 0123` would come
+// back as `123` and a 20-digit integer would lose digits, both with exit 0. Refuse
+// any number whose source spelling isn't already canonical. Booleans and nulls are
+// left to fmt: `True` and `~` respell as `true` and `null` with nothing lost.
+function nonCanonicalNumber(doc: Document, yaml: string): Refusal | null {
+  let refusal: Refusal | null = null;
+  visit(doc, {
+    Scalar(key, node, path) {
+      if (typeof node.value !== "number" || !node.range) return undefined;
+      const source = yaml.slice(node.range[0], node.range[1]);
+      // canonicalScalar only looks at inFlow for strings.
+      const canonical = canonicalScalar(node.value, false);
+      if (canonical === source || typeof canonical !== "string") return undefined;
+      const pair = [...path].reverse().find(isPair);
+      const owner = key === "key" ? "key" : isScalar(pair?.key) ? String(pair.key.value) : "value";
+      refusal = { reason: `${owner}: '${source}' would be rewritten as '${canonical}'; quote it or write it canonically` };
+      return visit.BREAK;
+    },
+  });
+  return refusal;
+}
+
 function parseFrontmatter(yaml: string): { data: Record<string, unknown> } | Refusal {
   const doc = parseDocument(yaml);
   if (doc.errors.length > 0) {
@@ -104,6 +133,8 @@ function parseFrontmatter(yaml: string): { data: Record<string, unknown> } | Ref
     });
   }
   if (commented) return { reason: "frontmatter holds a YAML comment, which fmt can't keep" };
+  const numeric = nonCanonicalNumber(doc, yaml);
+  if (numeric) return numeric;
   // Empty frontmatter between two fences is as fillable as none at all.
   if (doc.contents === null) return { data: {} };
   let data: unknown;

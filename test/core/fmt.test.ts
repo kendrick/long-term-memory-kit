@@ -257,6 +257,46 @@ describe("refusals", () => {
     refused(formatRecordText(`\uFEFF---\n${good}---\nBody.\n`, ctx()));
   });
 
+  test("a number spelled non-canonically is refused, not rewritten", () => {
+    const fm = (line: string) => `---\n${good}${line}\n---\nBody.\n`;
+    expect(refused(formatRecordText("---\nschema: 1\nid: 0123\nmemory_type: Decision\nstatus: accepted\n---\nBody.\n", ctx()))).toBe(
+      "id: '0123' would be rewritten as '123'; quote it or write it canonically",
+    );
+    expect(refused(formatRecordText(fm("version: 1.50"), ctx()))).toBe(
+      "version: '1.50' would be rewritten as '1.5'; quote it or write it canonically",
+    );
+    expect(refused(formatRecordText(fm("title: 12345678901234567890"), ctx()))).toBe(
+      "title: '12345678901234567890' would be rewritten as '12345678901234567000'; quote it or write it canonically",
+    );
+    expect(refused(formatRecordText(fm("mask: 0x1F"), ctx()))).toBe(
+      "mask: '0x1F' would be rewritten as '31'; quote it or write it canonically",
+    );
+    expect(refused(formatRecordText(fm("n: 1e3"), ctx()))).toBe(
+      "n: '1e3' would be rewritten as '1000'; quote it or write it canonically",
+    );
+    expect(refused(formatRecordText(fm("tags: [a, 0123]"), ctx()))).toBe(
+      "tags: '0123' would be rewritten as '123'; quote it or write it canonically",
+    );
+  });
+
+  test("numbers already in canonical spelling pass unchanged", () => {
+    const input = `---\n${good}count: 2\noffset: -3\nratio: 1.5\n---\nBody.\n`;
+    const r = ok(formatRecordText(input, ctx()));
+    expect(r.changed).toBe(false);
+    expect(r.text).toBe(input);
+  });
+
+  test("a quoted number-like id is a string and passes untouched", () => {
+    const input = "---\nschema: 1\nid: \"0123\"\nmemory_type: Decision\nstatus: accepted\n---\nBody.\n";
+    const r = ok(formatRecordText(input, ctx()));
+    expect(r.changed).toBe(false);
+  });
+
+  test("booleans and nulls respell canonically, since no value is lost", () => {
+    const r = ok(formatRecordText(`---\n${good}a: True\nb: ~\n---\nBody.\n`, ctx()));
+    expect(r.text).toBe(`---\n${good}a: true\nb: null\n---\nBody.\n`);
+  });
+
   test("a refusal leaves takenIds alone", () => {
     const taken = new Set<string>();
     refused(formatRecordText("---\nschema: 1\n# c\n---\nBody.\n", ctx({ takenIds: taken })));

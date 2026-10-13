@@ -143,6 +143,25 @@ describe("ltm fmt", () => {
     });
   });
 
+  test("an id spelled 0123 is refused byte-identical and named; another Record in the run is still formatted", async () => {
+    await withScratch(demo, async (dir) => {
+      const numeric = join(dir, PG);
+      edit(numeric, (t) => t.replace("id: kQ7vN2xLp4\n", "id: 0123\n"));
+      const numericHash = sha(numeric);
+      const ordinary = join(dir, OVERVIEW);
+      const shuffled = edit(ordinary, reverseKeys);
+      const r = await ltm(dir, "fmt");
+      expect(r).toEqual({
+        exitCode: 1,
+        stdout: "",
+        stderr: `ltm fmt: ${PG}: id: '0123' would be rewritten as '123'; quote it or write it canonically\n`,
+      });
+      expect(sha(numeric)).toBe(numericHash);
+      expect(shuffled).not.toBe(readFileSync(join(demo, OVERVIEW), "utf8"));
+      expect(readFileSync(ordinary, "utf8")).toBe(readFileSync(join(demo, OVERVIEW), "utf8"));
+    });
+  });
+
   test("--check passes the canonical demo Bank, then flags a shuffled Record without writing it", async () => {
     await withScratch(demo, async (dir) => {
       expect(await ltm(dir, "fmt", "--check")).toEqual({ exitCode: 0, stdout: "", stderr: "" });
