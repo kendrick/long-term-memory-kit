@@ -106,8 +106,8 @@ function overrideFiles(config: BankConfig, templateFiles: unknown): unknown {
   return [...new Set(folders.map((f) => `${f.replace(/\/+$/, "")}/**/*.md`))];
 }
 
-// Every key but `overrides` passes through untouched; an entry for the same `files` is
-// replaced in place so a rerun converges instead of stacking duplicates.
+// An entry for the same `files` is replaced in place, so a rerun converges instead of
+// stacking duplicates.
 function mergeOverrides(existing: string | null, entry: { files: unknown; options: unknown }): string {
   const cfg: unknown = existing === null ? {} : JSON.parse(existing);
   if (typeof cfg !== "object" || cfg === null || Array.isArray(cfg)) throw new Error("not a JSON object");
@@ -177,7 +177,8 @@ export const init: Command = {
       failed = true;
     };
 
-    // isLink sees only the last component; a linked parent like .github -> ../x needs this.
+    // isLink sees only the last component, so a linked parent like `.github -> ../x` needs
+    // the realpath check too.
     const realDir = realLocation(dir);
     const inside = (abs: string): boolean => {
       const real = realLocation(abs);
