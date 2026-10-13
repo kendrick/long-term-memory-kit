@@ -67,6 +67,48 @@ describe("toGitlab", () => {
   test("no findings give an empty JSON array", () => {
     expect(JSON.parse(toGitlab([]))).toEqual([]);
   });
+
+  const fps = (fs: Finding[]): string[] => (JSON.parse(toGitlab(fs)) as { fingerprint: string }[]).map((r) => r.fingerprint);
+
+  test("same rule, file, and key on different lines get different fingerprints, whatever the input order", () => {
+    const a = err({ line: 4, message: "first" });
+    const b = err({ line: 9, message: "second" });
+    const [fa, fb] = fps([a, b]);
+    expect(fa).not.toBe(fb);
+    const [rb, ra] = fps([b, a]);
+    expect(ra).toBe(fa);
+    expect(rb).toBe(fb);
+  });
+
+  test("same line, different messages: distinct fingerprints, same result in either input order", () => {
+    const a = err({ message: "alpha" });
+    const b = err({ message: "beta" });
+    const [fa, fb] = fps([a, b]);
+    expect(fa).not.toBe(fb);
+    const [rb, ra] = fps([b, a]);
+    expect(ra).toBe(fa);
+    expect(rb).toBe(fb);
+  });
+
+  test("messages tie-break in code-unit order, not locale order", () => {
+    // localeCompare puts "a" before "B"; code units put "B" (0x42) before "a" (0x61).
+    const lower = err({ message: "a" });
+    const upper = err({ message: "B" });
+    const [fl, fu] = fps([lower, upper]);
+    const [group0, group1] = fps([err({ message: "B" }), err({ message: "a" })]);
+    // "B" sorts first, so it takes in-group index 0 regardless of input position.
+    expect(group0).toBe(fu);
+    expect(group1).toBe(fl);
+  });
+
+  test("a lone finding keeps its fingerprint when its line moves", () => {
+    expect(fps([err({ line: 6 })])).toEqual(fps([err({ line: 3 })]));
+  });
+
+  test("output order follows input order", () => {
+    const rows = JSON.parse(toGitlab([err({ line: 9 }), err({ line: 4 })])) as { location: { lines: { begin: number } } }[];
+    expect(rows.map((r) => r.location.lines.begin)).toEqual([9, 4]);
+  });
 });
 
 // Parsed by Python's stdlib XML parser rather than matched by regex, so malformed

@@ -19,14 +19,41 @@ export function toGithub(findings: Finding[]): string {
 
 // Message and line stay out of the hash: GitLab matches findings across pipelines by
 // fingerprint, and a reworded message or a shifted line is still the same problem.
-const fingerprint = (f: Finding): string =>
-  createHash("sha256").update(`${f.rule}\0${f.file}\0${f.key ?? ""}`).digest("hex");
+// The in-group index keeps two findings with the same rule, file, and key apart (say, two
+// dangling ids under one `supersedes`), since GitLab shows one issue per fingerprint.
+const fingerprint = (f: Finding, index: number): string =>
+  createHash("sha256").update(`${f.rule}\0${f.file}\0${f.key ?? ""}\0${index}`).digest("hex");
+
+// Code-unit order, not localeCompare: locale rules vary by machine, and a fingerprint has
+// to come out the same in every CI runner.
+const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+// Sorting by line, then message, gives a finding the same index whatever order validate
+// emits it in.
+function groupIndexes(findings: Finding[]): number[] {
+  const groups = new Map<string, number[]>();
+  findings.forEach((f, i) => {
+    const k = JSON.stringify([f.rule, f.file, f.key ?? ""]);
+    const g = groups.get(k);
+    if (g) g.push(i);
+    else groups.set(k, [i]);
+  });
+  const indexes: number[] = new Array(findings.length).fill(0);
+  for (const members of groups.values()) {
+    members.sort((i, j) => findings[i]!.line - findings[j]!.line || byCodeUnit(findings[i]!.message, findings[j]!.message));
+    members.forEach((findingIndex, rank) => {
+      indexes[findingIndex] = rank;
+    });
+  }
+  return indexes;
+}
 
 export function toGitlab(findings: Finding[]): string {
-  const rows = findings.map((f) => ({
+  const indexes = groupIndexes(findings);
+  const rows = findings.map((f, i) => ({
     description: f.message,
     check_name: f.rule,
-    fingerprint: fingerprint(f),
+    fingerprint: fingerprint(f, indexes[i]!),
     severity: f.severity === "error" ? "major" : "minor",
     location: { path: f.file, lines: { begin: f.line } },
   }));
