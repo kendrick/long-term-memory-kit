@@ -2,7 +2,7 @@ This repo is the {{name}} Bank. It holds Records that apply to more than one rep
 
 ## Find the Records That Apply
 
-Run these commands from the Bank root, in this order. List the folders, then grep the frontmatter to narrow the list. Next, read the header of each Record that's left with `ltm head` or `head -n 20`. Read the full file only after its header shows that the Record applies.
+Run these commands from the Bank root, in this order. List the folders, then grep the frontmatter to narrow the list. Next, read the header of each Record that's left with `ltm head` or `head -n 20`. The read steps take the files the `applies_to` grep printed, so they never open a Record that grep skipped. Read the full file only after its header shows that the Record applies.
 
 ```sh
 {{funnel}}

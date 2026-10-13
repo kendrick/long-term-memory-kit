@@ -98,15 +98,28 @@ describe("renderAgentsRegion", () => {
   test("the funnel reads headers, then the full file, after grep has narrowed", () => {
     const region = renderAgentsRegion(demoConfig(), schema);
     const lines = /```sh\n([\s\S]*?)```/.exec(region)![1]!.trimEnd().split("\n");
-    expect(lines).toContain("ltm head _memory/policy-rules/*.md");
-    expect(lines).toContain("head -n 20 _memory/policy-rules/*.md");
-    expect(lines).toContain("cat _memory/policy-rules/*.md");
-    const at = (prefix: string) => lines.findIndex((l) => l.startsWith(prefix));
-    expect(at("ls ")).toBeLessThan(at("grep "));
-    expect(lines.findLastIndex((l) => l.startsWith("grep "))).toBeLessThan(at("ltm head "));
-    expect(at("ltm head ")).toBeLessThan(at("cat "));
-    expect(at("head -n 20 ")).toBeLessThan(at("cat "));
-    expect(at("cat ")).toBe(lines.length - 1);
+    const pipe = "grep -rl --null 'applies_to:.*service:order-service' ";
+    const read = (cmd: string) => lines.findIndex((l) => l.startsWith(pipe) && l.endsWith(` | xargs -0 ${cmd}`));
+    expect(read("ltm head")).toBeGreaterThan(-1);
+    expect(read("head -n 20")).toBeGreaterThan(-1);
+    expect(read("cat")).toBe(lines.length - 1);
+    const lastNarrow = lines.findLastIndex((l) => l.startsWith("grep -rl '"));
+    expect(lines.findIndex((l) => l.startsWith("ls "))).toBeLessThan(lines.findIndex((l) => l.startsWith("grep ")));
+    expect(lastNarrow).toBeLessThan(read("ltm head"));
+    expect(read("ltm head")).toBeLessThan(read("cat"));
+    expect(read("head -n 20")).toBeLessThan(read("cat"));
+  });
+
+  test("read steps pipe the applies_to grep instead of globbing a folder", () => {
+    const region = renderAgentsRegion(demoConfig(), schema);
+    const lines = /```sh\n([\s\S]*?)```/.exec(region)![1]!.trimEnd().split("\n");
+    expect(lines.filter((l) => l.includes("*.md"))).toEqual([]);
+    const reads = lines.filter((l) => /(ltm head|head -n 20|cat)\b/.test(l));
+    expect(reads).toHaveLength(3);
+    for (const l of reads) {
+      expect(l.startsWith("grep -rl --null")).toBe(true);
+      expect(l).toContain(" | xargs -0 ");
+    }
   });
 
   test("shell-quotes a folder that needs it", () => {

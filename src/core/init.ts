@@ -60,14 +60,19 @@ export function renderAgentsRegion(
   const allFolders = MEMORY_TYPES.map((t) => shq(folders[t])).join(" ");
   const facetPattern = `applies_to:.*${breEscape(exampleFacet(raw, prefixes))}`;
 
+  // One string for the plain grep and the three pipes, so the read steps can't drift from
+  // what the grep printed. The pipes use --null/-0 because folder paths can hold spaces;
+  // BSD grep's -Z means something else.
+  const appliesGrepArgs = `'${facetPattern.replaceAll("'", `'\\''`)}' ${allFolders}`;
+  const readFrom = (cmd: string) => `grep -rl --null ${appliesGrepArgs} | xargs -0 ${cmd}`;
+
   const funnel = [
     ...MEMORY_TYPES.map((t) => `ls ${shq(folders[t])}`),
     `grep -rl '^memory_type: PolicyRule$' ${shq(folders.PolicyRule)}`,
-    `grep -rl '${facetPattern.replaceAll("'", `'\\''`)}' ${allFolders}`,
-    // The renderer never lists the Bank, so the examples are globs.
-    `ltm head ${shq(folders.PolicyRule)}/*.md`,
-    `head -n 20 ${shq(folders.PolicyRule)}/*.md`,
-    `cat ${shq(folders.PolicyRule)}/*.md`,
+    `grep -rl ${appliesGrepArgs}`,
+    readFrom("ltm head"),
+    readFrom("head -n 20"),
+    readFrom("cat"),
   ].join("\n");
 
   const types = MEMORY_TYPES.map((t) => `${t} (\`${folders[t]}\`)`);
