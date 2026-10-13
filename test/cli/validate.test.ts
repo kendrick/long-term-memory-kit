@@ -333,4 +333,41 @@ describe("ltm validate", () => {
       expect(snapshot()).toEqual(before);
     });
   });
+
+  test("15: an alias bomb in a Record or the config is a finding, not a crash", async () => {
+    const bomb = ["a: &a [x, x, x, x, x, x, x, x, x]"];
+    for (const [from, to] of [["a", "b"], ["b", "c"], ["c", "d"], ["d", "e"]]) {
+      bomb.push(`${to}: &${to} [${Array(9).fill(`*${from}`).join(", ")}]`);
+    }
+    await withScratch(demo, async (dir) => {
+      const rec = "_memory/decisions/bomb.md";
+      writeFileSync(join(dir, rec), `---\n${bomb.join("\n")}\n---\nbody\n`);
+      const r = await ltm(dir, "validate");
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toBe("");
+      expect(lines(r.stdout).filter((l) => l.startsWith(`${rec}:`))).toEqual([
+        expect.stringMatching(new RegExp(`^${rec}:1: error frontmatter: -: .*alias`)),
+      ]);
+    });
+    await withScratch(demo, async (dir) => {
+      edit(join(dir, "memory-bank.yaml"), (t) => `${t.endsWith("\n") ? t : `${t}\n`}${bomb.join("\n")}\n`);
+      const r = await ltm(dir, "validate");
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toBe("");
+      expect(lines(r.stdout)).toEqual([expect.stringMatching(/^memory-bank\.yaml:1: error config-schema: -: .*alias/)]);
+    });
+  });
+
+  test("16: naming only the later of two duplicate ids reports on the named file", async () => {
+    await withScratch(demo, async (dir) => {
+      const copy = "_memory/decisions/zz-copy.md";
+      copyFileSync(join(dir, PG), join(dir, copy));
+      const r = await ltm(dir, "validate", copy);
+      expect(r.exitCode).toBe(1);
+      expect(lines(r.stdout)).toHaveLength(1);
+      expect(lines(r.stdout)[0]).toStartWith(`${copy}:`);
+      expect(lines(r.stdout)[0]).toContain(" error unique-id: ");
+      expect(lines(r.stdout)[0]).toContain(PG);
+    });
+  });
 });

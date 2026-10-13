@@ -103,7 +103,13 @@ function checkFrontmatter(rel: string, text: string): { findings: Finding[]; fm:
   if (!isMap(doc.contents)) return fail(1, "frontmatter is not a YAML mapping");
   const keys = keyLines(doc, src, 2);
   const lineOf = (k: string | null): number => (k === null ? 1 : (keys.get(k)?.line ?? 1));
-  const data = doc.toJS() as Record<string, unknown>;
+  let data: Record<string, unknown>;
+  try {
+    // A source that parses cleanly can still blow yaml's alias limit on expansion.
+    data = doc.toJS() as Record<string, unknown>;
+  } catch (e) {
+    return fail(1, firstLine((e as Error).message));
+  }
   return { findings: [], fm: { rel, src, closingLine: split.closingLine, keys, data, lineOf } };
 }
 
@@ -212,10 +218,12 @@ export function checkUniqueIds(ids: { file: string; line: number; id: string }[]
   const out: Finding[] = [];
   for (const [id, group] of groups) {
     if (group.length < 2) continue;
-    if (named && !group.some((g) => named.has(g.file))) continue;
     group.sort((a, b) => cmp(a.file, b.file));
-    const [first, ...rest] = group;
-    out.push(finding(first!.file, first!.line, "unique-id", "id", `id '${id}' is also used by ${rest.map((r) => r.file).join(", ")}`));
+    // A filtered run must not report against a file the caller didn't name.
+    const at = named ? group.find((g) => named.has(g.file)) : group[0];
+    if (!at) continue;
+    const rest = group.filter((g) => g !== at).map((g) => g.file);
+    out.push(finding(at.file, at.line, "unique-id", "id", `id '${id}' is also used by ${rest.join(", ")}`));
   }
   return out;
 }
@@ -225,9 +233,11 @@ export function checkConfig(root: string): { findings: Finding[]; config: BankCo
   try {
     config = loadConfig(root);
   } catch (e) {
-    if (!(e instanceof ConfigError)) throw e;
-    // Without a config the type folders, and so every Record, are unknown.
-    return { findings: [finding(CONFIG_FILE, e.line ?? 1, "config-schema", null, firstLine(e.message))], config: null };
+    // loadConfig lets yaml's alias-limit ReferenceError through unwrapped; anything else is a bug, not a bad config.
+    if (!(e instanceof ConfigError) && !(e instanceof ReferenceError)) throw e;
+    // Without a config, every Record's type folder is unknown.
+    const line = e instanceof ConfigError ? (e.line ?? 1) : 1;
+    return { findings: [finding(CONFIG_FILE, line, "config-schema", null, firstLine(e.message))], config: null };
   }
 
   const findings: Finding[] = [];

@@ -3,6 +3,7 @@ import { copyFileSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkConfig, checkRecordText, checkUniqueIds, validateBank, type Finding } from "../../src/core/validate.ts";
+import { parseDocument } from "yaml";
 import { withScratch } from "../helpers/scratch.ts";
 
 const valid = readFileSync(
@@ -399,6 +400,83 @@ describe("checkConfig", () => {
       writeFileSync(join(dir, "memory-bank.yaml"), "name: [unclosed\n");
       writeFileSync(join(dir, rel), replaceLine(valid, "status:", null));
       expect(validateBank(dir, null, dir).map((f) => f.rule)).toEqual(["config-schema"]);
+    });
+  });
+});
+
+// Each level multiplies by nine, so the expanded size blows past yaml's alias limit
+// while the source stays a few lines long and parses without error.
+function aliasBomb(): string {
+  const lines = ["a: &a [x, x, x, x, x, x, x, x, x]"];
+  for (const [from, to] of [["a", "b"], ["b", "c"], ["c", "d"], ["d", "e"]]) {
+    lines.push(`${to}: &${to} [${Array(9).fill(`*${from}`).join(", ")}]`);
+  }
+  return lines.join("\n");
+}
+
+describe("alias bombs", () => {
+  test("the bomb parses cleanly but throws from toJS", () => {
+    const doc = parseDocument(aliasBomb());
+    expect(doc.errors).toEqual([]);
+    expect(() => doc.toJS()).toThrow(/alias/);
+  });
+
+  test("in a Record, it is one frontmatter finding at line 1", () => {
+    const fs = check(`---\n${aliasBomb()}\n---\nbody\n`);
+    expect(fs).toEqual([
+      { file: rel, line: 1, rule: "frontmatter", severity: "error", key: null, message: expect.any(String) },
+    ]);
+    expect(fs[0]!.message).toContain("alias");
+    expect(fs[0]!.message).not.toContain("\n");
+  });
+
+  test("in memory-bank.yaml, it is one config-schema finding and no config", async () => {
+    await withScratch(demoBank, async (dir) => {
+      writeFileSync(join(dir, "memory-bank.yaml"), `schema: 1\nname: acme\nfacet_prefixes: [service]\n${aliasBomb()}\n`);
+      const { findings, config } = checkConfig(dir);
+      expect(config).toBeNull();
+      expect(findings).toEqual([
+        { file: "memory-bank.yaml", line: 1, rule: "config-schema", severity: "error", key: null, message: expect.any(String) },
+      ]);
+      expect(findings[0]!.message).toContain("alias");
+      expect(validateBank(dir, null, dir)).toEqual(findings);
+    });
+  });
+});
+
+describe("unique-id under named paths", () => {
+  const ids = [
+    { file: "a.md", line: 3, id: "dup0000000" },
+    { file: "b.md", line: 4, id: "dup0000000" },
+    { file: "c.md", line: 5, id: "dup0000000" },
+  ];
+
+  test("naming only a later member puts the finding on it and lists the rest", () => {
+    expect(checkUniqueIds(ids, new Set(["c.md"]))).toEqual([
+      { file: "c.md", line: 5, rule: "unique-id", severity: "error", key: "id", message: "id 'dup0000000' is also used by a.md, b.md" },
+    ]);
+  });
+
+  test("with several named members, the first named in sort order carries it", () => {
+    expect(checkUniqueIds(ids, new Set(["c.md", "b.md"]))).toEqual([
+      { file: "b.md", line: 4, rule: "unique-id", severity: "error", key: "id", message: "id 'dup0000000' is also used by a.md, c.md" },
+    ]);
+  });
+
+  test("with no named paths, the first path still carries it", () => {
+    expect(checkUniqueIds(ids, null)).toEqual([
+      { file: "a.md", line: 3, rule: "unique-id", severity: "error", key: "id", message: "id 'dup0000000' is also used by b.md, c.md" },
+    ]);
+  });
+
+  test("validateBank naming only the later duplicate reports on that file", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const copy = "_memory/decisions/zz-copy.md";
+      expect(copy > rel).toBe(true);
+      writeFileSync(join(dir, copy), valid);
+      expect(validateBank(dir, [copy], dir)).toEqual([
+        { file: copy, line: lineOf(valid, "id:"), rule: "unique-id", severity: "error", key: "id", message: `id '${/^id: (.*)$/m.exec(valid)![1]}' is also used by ${rel}` },
+      ]);
     });
   });
 });
