@@ -1,9 +1,18 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import pkg from "../../package.json" with { type: "json" };
 import { ConfigError, loadConfig, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
 import { canonicalScalar } from "../core/canonical.ts";
-import { CLAUDE_REGION, COPILOT_REGION, DEFAULT_FACET_PREFIXES, readRegion, renderAgentsRegion, replaceRegion } from "../core/init.ts";
+import {
+  CLAUDE_REGION,
+  COPILOT_REGION,
+  DEFAULT_FACET_PREFIXES,
+  normalizeRegion,
+  readRegion,
+  renderAgentsRegion,
+  replaceRegion,
+  stringList,
+} from "../core/init.ts";
 import type { Command } from "./run.ts";
 
 const CONFIG_FILE = "memory-bank.yaml";
@@ -49,8 +58,6 @@ function folderProblem(value: string): string | undefined {
   return undefined;
 }
 
-const stringList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
-
 function folderOverrides(values: string[]): Partial<Record<MemoryType, string>> {
   const out: Partial<Record<MemoryType, string>> = {};
   for (const v of values) {
@@ -58,6 +65,30 @@ function folderOverrides(values: string[]): Partial<Record<MemoryType, string>> 
     out[v.slice(0, eq) as MemoryType] = v.slice(eq + 1);
   }
   return out;
+}
+
+// Where a write to abs would really land: the nearest existing ancestor through realpath,
+// plus the parts not created yet. null for a dangling link, which mkdir can't pass.
+function realLocation(abs: string): string | null {
+  const tail: string[] = [];
+  for (let head = abs; ; head = dirname(head)) {
+    try {
+      return join(realpathSync(head), ...tail);
+    } catch {
+      if (existsSync(head) || isLink(head) || dirname(head) === head) return null;
+      tail.unshift(basename(head));
+    }
+  }
+}
+
+// Through a symlink, a write could land outside dir, and a CLAUDE.md -> AGENTS.md
+// link (common) would get CLAUDE's region written over AGENTS'.
+function isLink(abs: string): boolean {
+  try {
+    return lstatSync(abs).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 function configText(name: string, prefixes: string[], folders: Partial<Record<MemoryType, string>>): string {
@@ -133,9 +164,7 @@ export const init: Command = {
       for (const { rel, region } of renderRegions(config)) {
         const abs = join(dir, rel);
         const onDisk = existsSync(abs) ? readRegion(readFileSync(abs, "utf8")) : null;
-        // replaceRegion terminates the body with a newline, so readRegion returns it that way.
-        const want = region === "" || region.endsWith("\n") ? region : `${region}\n`;
-        if (onDisk !== want) {
+        if (onDisk !== normalizeRegion(region)) {
           ctx.out(`${rel}\n`);
           stale = true;
         }
@@ -148,14 +177,18 @@ export const init: Command = {
       failed = true;
     };
 
-    // Through a symlink, a write could land outside dir, and a CLAUDE.md -> AGENTS.md
-    // link (common) would get CLAUDE's region written over AGENTS'.
-    const isLink = (abs: string): boolean => {
-      try {
-        return lstatSync(abs).isSymbolicLink();
-      } catch {
-        return false;
-      }
+    // isLink sees only the last component; a linked parent like .github -> ../x needs this.
+    const realDir = realLocation(dir);
+    const inside = (abs: string): boolean => {
+      const real = realLocation(abs);
+      if (realDir !== null && real !== null && (real === realDir || real.startsWith(realDir + sep))) return true;
+      fail(abs, `resolves outside ${dir}, not written`);
+      return false;
+    };
+    const writable = (abs: string): boolean => {
+      if (!isLink(abs)) return inside(abs);
+      fail(abs, "is a symlink, not written");
+      return false;
     };
     const readOrNull = (abs: string): string | null => (existsSync(abs) ? readFileSync(abs, "utf8") : null);
     const writeIfChanged = (abs: string, text: string, before: string | null) => {
@@ -188,6 +221,8 @@ export const init: Command = {
 
     for (const type of MEMORY_TYPES) {
       const folder = join(dir, config.folders[type]);
+      // A linked memory folder is fine so long as it stays in dir.
+      if (!inside(folder)) continue;
       if (!existsSync(folder)) {
         mkdirSync(folder, { recursive: true });
         ctx.out(`created ${show(folder)}/\n`);
@@ -197,10 +232,7 @@ export const init: Command = {
 
     for (const { rel, region } of renderRegions(config)) {
       const abs = join(dir, rel);
-      if (isLink(abs)) {
-        fail(abs, "is a symlink, not written");
-        continue;
-      }
+      if (!writable(abs)) continue;
       const before = readOrNull(abs);
       let next: string;
       try {
@@ -222,10 +254,7 @@ export const init: Command = {
     }
     for (const { rel, template } of formatters) {
       const abs = join(dir, rel);
-      if (isLink(abs)) {
-        fail(abs, "is a symlink, not written");
-        continue;
-      }
+      if (!writable(abs)) continue;
       const entry = loadTemplate(template).overrides[0]!;
       const before = readOrNull(abs);
       try {

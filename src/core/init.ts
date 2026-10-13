@@ -27,7 +27,7 @@ function shq(s: string): string {
 // grep's default is BRE: a Facet like `domain:a.b` would otherwise match `domain:aXb`.
 const breEscape = (s: string): string => s.replace(/[.[\]*^$\\]/g, "\\$&");
 
-const stringList = (v: unknown): string[] =>
+export const stringList = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 
 function exampleFacet(raw: Record<string, unknown>, prefixes: string[]): string {
@@ -64,8 +64,10 @@ export function renderAgentsRegion(
     ...MEMORY_TYPES.map((t) => `ls ${shq(folders[t])}`),
     `grep -rl '^memory_type: PolicyRule$' ${shq(folders.PolicyRule)}`,
     `grep -rl '${facetPattern.replaceAll("'", `'\\''`)}' ${allFolders}`,
-    // The renderer never lists the Bank, so the example is a glob.
+    // The renderer never lists the Bank, so the examples are globs.
     `ltm head ${shq(folders.PolicyRule)}/*.md`,
+    `head -n 20 ${shq(folders.PolicyRule)}/*.md`,
+    `cat ${shq(folders.PolicyRule)}/*.md`,
   ].join("\n");
 
   const types = MEMORY_TYPES.map((t) => `${t} (\`${folders[t]}\`)`);
@@ -113,15 +115,24 @@ function findMarkers(text: string): Span | null {
   return begin ? { beginStart: begin.start, endStart: null } : null;
 }
 
+// Prettier and oxfmt both pad the markers with a blank line, and a hand edit can drop it.
+// Comparing through this keeps either shape from reading as stale.
+export function normalizeRegion(region: string): string {
+  const body = region.replace(/^(?:[ \t]*\r?\n)+/, "").replace(/\s+$/, "");
+  return body === "" ? "" : `${body}\n`;
+}
+
 export function readRegion(fileText: string): string | null {
   const span = findMarkers(fileText);
   if (!span || span.endStart === null) return null;
-  return fileText.slice(span.beginEnd, span.endStart);
+  return normalizeRegion(fileText.slice(span.beginEnd, span.endStart));
 }
 
 export function replaceRegion(fileText: string | null, region: string, version: string): string {
-  const body = region === "" || region.endsWith("\n") ? region : `${region}\n`;
-  const block = `${BEGIN(version)}\n${body}${END}\n`;
+  const body = normalizeRegion(region);
+  // Padded the way the formatters pad it, so formatting the file after init changes nothing.
+  const inner = body === "" ? "\n" : `\n${body}\n`;
+  const block = `${BEGIN(version)}\n${inner}${END}\n`;
   if (fileText === null || fileText === "") return block;
   const span = findMarkers(fileText);
   if (span === null) {
@@ -130,5 +141,5 @@ export function replaceRegion(fileText: string | null, region: string, version: 
   }
   // Appending here would leave two begin markers, and readRegion would pair the stray one with the new end.
   if (span.endStart === null) throw new Error(`${BEGIN(version)} has no matching ${END}`);
-  return `${fileText.slice(0, span.beginStart)}${BEGIN(version)}\n${body}${fileText.slice(span.endStart)}`;
+  return `${fileText.slice(0, span.beginStart)}${BEGIN(version)}\n${inner}${fileText.slice(span.endStart)}`;
 }

@@ -4,7 +4,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, type BankConfig } from "../../src/core/bank.ts";
-import { BEGIN, END, readRegion, renderAgentsRegion, replaceRegion } from "../../src/core/init.ts";
+import {
+  BEGIN,
+  CLAUDE_REGION,
+  COPILOT_REGION,
+  END,
+  normalizeRegion,
+  readRegion,
+  renderAgentsRegion,
+  replaceRegion,
+  stringList,
+} from "../../src/core/init.ts";
 
 const demoBank = fileURLToPath(new URL("../../fixtures/demo-bank", import.meta.url));
 
@@ -85,10 +95,18 @@ describe("renderAgentsRegion", () => {
     expect(before).not.toBe(after);
   });
 
-  test("comes back unchanged from Prettier and oxfmt", () => {
+  test("the funnel reads headers, then the full file, after grep has narrowed", () => {
     const region = renderAgentsRegion(demoConfig(), schema);
-    expect(formatted("prettier", region)).toBe(region);
-    expect(formatted("oxfmt", region)).toBe(region);
+    const lines = /```sh\n([\s\S]*?)```/.exec(region)![1]!.trimEnd().split("\n");
+    expect(lines).toContain("ltm head _memory/policy-rules/*.md");
+    expect(lines).toContain("head -n 20 _memory/policy-rules/*.md");
+    expect(lines).toContain("cat _memory/policy-rules/*.md");
+    const at = (prefix: string) => lines.findIndex((l) => l.startsWith(prefix));
+    expect(at("ls ")).toBeLessThan(at("grep "));
+    expect(lines.findLastIndex((l) => l.startsWith("grep "))).toBeLessThan(at("ltm head "));
+    expect(at("ltm head ")).toBeLessThan(at("cat "));
+    expect(at("head -n 20 ")).toBeLessThan(at("cat "));
+    expect(at("cat ")).toBe(lines.length - 1);
   });
 
   test("shell-quotes a folder that needs it", () => {
@@ -106,7 +124,7 @@ const region = "generated line one\ngenerated line two\n";
 describe("replaceRegion", () => {
   test("creates a missing file holding only the marked region", () => {
     expect(replaceRegion(null, region, v)).toBe(
-      `<!-- ltm:generated:begin v1.2.3 -->\n${region}<!-- ltm:generated:end -->\n`,
+      `<!-- ltm:generated:begin v1.2.3 -->\n\n${region}\n<!-- ltm:generated:end -->\n`,
     );
     expect(BEGIN(v)).toBe("<!-- ltm:generated:begin v1.2.3 -->");
     expect(END).toBe("<!-- ltm:generated:end -->");
@@ -116,10 +134,10 @@ describe("replaceRegion", () => {
     const original = "# Our repo\n\nHand-written notes.\n";
     const out = replaceRegion(original, region, v);
     expect(out.startsWith(original)).toBe(true);
-    expect(out).toBe(`${original}\n${BEGIN(v)}\n${region}${END}\n`);
+    expect(out).toBe(`${original}\n${BEGIN(v)}\n\n${region}\n${END}\n`);
 
     const noNewline = "# Our repo";
-    expect(replaceRegion(noNewline, region, v)).toBe(`${noNewline}\n\n${BEGIN(v)}\n${region}${END}\n`);
+    expect(replaceRegion(noNewline, region, v)).toBe(`${noNewline}\n\n${BEGIN(v)}\n\n${region}\n${END}\n`);
   });
 
   test("on a file with markers, changes only the region and leaves outside text alone", () => {
@@ -144,7 +162,42 @@ describe("replaceRegion", () => {
   });
 });
 
+describe("a whole marked file", () => {
+  // Formatting the region alone misses the blank lines both tools put around the markers.
+  test.each(["prettier", "oxfmt"] as const)("comes back byte-identical from %s, for all three regions", (tool) => {
+    for (const r of [renderAgentsRegion(demoConfig(), schema), CLAUDE_REGION, COPILOT_REGION]) {
+      for (const start of [null, "# Our repo\n\nHand-written notes.\n"]) {
+        const file = replaceRegion(start, r, v);
+        expect(formatted(tool, file)).toBe(file);
+      }
+    }
+  });
+});
+
+describe("normalizeRegion", () => {
+  test("drops blank lines at either end and ends the body with one newline", () => {
+    expect(normalizeRegion("\n\nbody\nmore\n\n\n")).toBe("body\nmore\n");
+    expect(normalizeRegion("body")).toBe("body\n");
+    expect(normalizeRegion("\n  \n")).toBe("");
+    expect(normalizeRegion("a\n\nb\n")).toBe("a\n\nb\n");
+  });
+});
+
+describe("stringList", () => {
+  test("keeps only the strings of an array", () => {
+    expect(stringList(["a", 1, "b", null])).toEqual(["a", "b"]);
+    expect(stringList("a")).toEqual([]);
+  });
+});
+
 describe("readRegion", () => {
+  test("reads a formatter's blank-line-padded region and the unpadded shape the same", () => {
+    const padded = `${BEGIN(v)}\n\n${region}\n${END}\n`;
+    const tight = `${BEGIN(v)}\n${region}${END}\n`;
+    expect(readRegion(padded)).toBe(region);
+    expect(readRegion(tight)).toBe(region);
+  });
+
   test("ignores the version in the begin marker", () => {
     const a = `pre\n${BEGIN("0.0.1")}\n${region}${END}\npost\n`;
     const b = `pre\n${BEGIN("9.9.9")}\n${region}${END}\npost\n`;

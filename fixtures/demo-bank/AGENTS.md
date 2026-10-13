@@ -1,9 +1,10 @@
 <!-- ltm:generated:begin v0.0.0 -->
+
 This repo is the acme Bank. It holds Records that apply to more than one repo. Each Record is one Markdown file with YAML frontmatter, filed in its memory type's folder: Decision (`_memory/decisions`), PolicyRule (`_memory/policy-rules`), Exception (`_memory/exceptions`), and Context (`_memory/context`).
 
 ## Find the Records That Apply
 
-Run these commands from the Bank root. Narrow by folder and frontmatter first. Open a Record's body only after its frontmatter shows that the Record applies.
+Run these commands from the Bank root, in this order. List the folders, then grep the frontmatter to narrow the list. Next, read the header of each Record that's left with `ltm head` or `head -n 20`. Read the full file only after its header shows that the Record applies.
 
 ```sh
 ls _memory/decisions
@@ -13,6 +14,8 @@ ls _memory/context
 grep -rl '^memory_type: PolicyRule$' _memory/policy-rules
 grep -rl 'applies_to:.*service:order-service' _memory/decisions _memory/policy-rules _memory/exceptions _memory/context
 ltm head _memory/policy-rules/*.md
+head -n 20 _memory/policy-rules/*.md
+cat _memory/policy-rules/*.md
 ```
 
 ## Check Status Before You Act
@@ -56,4 +59,5 @@ To add a Record or change one, submit a Proposal in any of these ways:
 - Run `ltm propose`.
 - Call the `propose` tool on the ltm MCP server.
 - Open a PR by hand that adds the Record with `status: proposed`.
+
 <!-- ltm:generated:end -->

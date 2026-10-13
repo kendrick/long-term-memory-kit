@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import * as prettier from "prettier";
@@ -73,9 +84,9 @@ describe("ltm init", () => {
       name: "acme-memory",
       facet_prefixes: ["service", "domain", "system", "team", "platform"],
     });
-    expect(read("CLAUDE.md")).toBe(`<!-- ltm:generated:begin v${pkg.version} -->\n@AGENTS.md\n<!-- ltm:generated:end -->\n`);
+    expect(read("CLAUDE.md")).toBe(`<!-- ltm:generated:begin v${pkg.version} -->\n\n@AGENTS.md\n\n<!-- ltm:generated:end -->\n`);
     expect(read(".github/copilot-instructions.md")).toBe(
-      `<!-- ltm:generated:begin v${pkg.version} -->\nFollow AGENTS.md at the repo root to read and propose Bank memory.\n<!-- ltm:generated:end -->\n`,
+      `<!-- ltm:generated:begin v${pkg.version} -->\n\nFollow AGENTS.md at the repo root to read and propose Bank memory.\n\n<!-- ltm:generated:end -->\n`,
     );
     expect(read("AGENTS.md")).toContain("This repo is the acme-memory Bank.");
     expect(read("CODEOWNERS.example")).toBe(
@@ -183,6 +194,38 @@ describe("ltm init edges", () => {
     expect(existsSync(join(dir, "CLAUDE.md"))).toBe(true);
   });
 
+  test("a symlinked parent pointing outside dir is refused, and nothing lands outside", async () => {
+    const outside = join(tmp, "outside");
+    mkdirSync(outside);
+    symlinkSync("../outside", join(dir, ".github"));
+    symlinkSync("../outside", join(dir, "_memory"));
+    const r = await init();
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr.split("\n").filter(Boolean).sort()).toEqual(
+      [
+        `ltm init: .github/copilot-instructions.md: resolves outside ${dir}, not written`,
+        ...["context", "decisions", "exceptions", "policy-rules"].map(
+          (f) => `ltm init: _memory/${f}: resolves outside ${dir}, not written`,
+        ),
+      ].sort(),
+    );
+    expect(walk(outside)).toEqual([]);
+    expect(readdirSync(outside)).toEqual([]);
+    expect(existsSync(join(dir, "AGENTS.md"))).toBe(true);
+    expect(existsSync(join(dir, "CLAUDE.md"))).toBe(true);
+  });
+
+  test("a --folder through a symlinked parent is refused, and nothing lands outside", async () => {
+    const out2 = join(tmp, "out2");
+    mkdirSync(out2);
+    symlinkSync("../out2", join(dir, "link"));
+    const r = await init("--folder", "Decision=link/adr");
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toBe(`ltm init: link/adr: resolves outside ${dir}, not written\n`);
+    expect(readdirSync(out2)).toEqual([]);
+    expect(existsSync(join(dir, "_memory/context/.gitkeep"))).toBe(true);
+  });
+
   test("a positional dir is resolved from cwd and created", async () => {
     const r = await run({ argv: ["init", "nested/bank"], cwd: dir, env: {} });
     expect(r.exitCode).toBe(0);
@@ -210,7 +253,8 @@ describe("ltm init edges", () => {
 });
 
 describe("ltm init --check", () => {
-  const demoBank = join(import.meta.dir, "../../fixtures/demo-bank");
+  const repoRoot = join(import.meta.dir, "../..");
+  const demoBank = join(repoRoot, "fixtures/demo-bank");
   const at = (d: string, ...argv: string[]) => run({ argv: ["init", ...argv], cwd: d, env: {} });
 
   test("the staleness falsifier: all five steps, in order, and --check writes nothing", async () => {
@@ -252,6 +296,34 @@ describe("ltm init --check", () => {
       expect(r5.exitCode).toBe(1);
       expect(r5.stdout.split("\n")).toContain("AGENTS.md");
       expect(hashes(d)).toEqual(inside);
+    });
+  });
+
+  // Both tools pad the markers with blank lines, and a Bank that formats its root Markdown
+  // must still pass --check and see a rerun change nothing.
+  test.each(["prettier", "oxfmt"] as const)("after %s formats the region files, --check passes and init changes nothing", async (tool) => {
+    await withScratch(demoBank, async (d) => {
+      expect((await at(d)).exitCode).toBe(0);
+      const files = ["AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"];
+      const cfgDir = mkdtempSync(join(tmpdir(), "ltm-fmtcfg-"));
+      try {
+        writeFileSync(join(cfgDir, "empty.json"), "{}\n");
+        const args =
+          tool === "prettier"
+            ? ["--no-config", "--no-editorconfig", "--write", ...files]
+            : ["-c", join(cfgDir, "empty.json"), ...files];
+        const f = spawnSync(join(repoRoot, "node_modules/.bin", tool), args, { cwd: d, encoding: "utf8" });
+        expect({ status: f.status, stderr: f.stderr }).toEqual({ status: 0, stderr: "" });
+      } finally {
+        rmSync(cfgDir, { recursive: true, force: true });
+      }
+      const formatted = hashes(d);
+      const c = await at(d, "--check");
+      expect({ code: c.exitCode, out: c.stdout }).toEqual({ code: 0, out: "" });
+      const again = await at(d);
+      expect(again.exitCode).toBe(0);
+      expect(again.stdout).toBe("");
+      expect(hashes(d)).toEqual(formatted);
     });
   });
 
