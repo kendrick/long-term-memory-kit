@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { copyFileSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkConfig, checkRecordText, checkUniqueIds, validateBank, validateBankReport, type Finding } from "../../src/core/validate.ts";
 import { parseDocument } from "yaml";
+import { run } from "../../src/cli/run.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const valid = readFileSync(
@@ -589,6 +590,8 @@ describe("supersession checks", () => {
           "date: 2026-01-01",
           `summary: ${title}.`,
           link,
+          // Tied to a fixture PolicyRule so a single `service:` scope doesn't also trip bright-line.
+          "related: [constrained_by::cA9wE6uJr3]",
           ...(scope === null ? [] : [`applies_to: ${scope}`]),
           ...(more ? [more] : []),
           "---",
@@ -661,6 +664,217 @@ describe("supersession checks", () => {
       await mutate(dir, newRel, (t) => replaceLine(t, "supersedes:", null));
       const other = "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md";
       expect(validateBankReport(dir, [other], dir).findings).toEqual([]);
+    });
+  });
+});
+
+describe("warnings, Ajv collapse, and the folder-type path", () => {
+  const exceptionRel = "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md";
+  const decisionRel = "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md";
+  const only = (fs: Finding[], rule: string) => fs.filter((f) => f.rule === rule);
+
+  // Writes then reads back, so an edit that matched nothing fails here and not as a false green.
+  function edit(dir: string, file: string, fn: (t: string) => string): string {
+    const before = readFileSync(join(dir, file), "utf8");
+    writeFileSync(join(dir, file), fn(before));
+    const after = readFileSync(join(dir, file), "utf8");
+    expect(after).not.toBe(before);
+    return after;
+  }
+
+  describe("bright-line", () => {
+    test("a single service: scope with no related warns on the applies_to line", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const text = edit(dir, exceptionRel, (t) => replaceLine(t, "related:", null));
+        expect(text).not.toContain("related:");
+        const fs = only(validateBankReport(dir, null, dir).findings, "bright-line");
+        expect(fs).toHaveLength(1);
+        expect(fs[0]!).toMatchObject({
+          file: exceptionRel,
+          severity: "warning",
+          key: "applies_to",
+          line: lineOf(text, "applies_to:"),
+        });
+        expect(fs[0]!.message).toContain("service:order-service");
+      });
+    });
+
+    test("the unmodified Exception, related to a fixture PolicyRule, does not warn", async () => {
+      await withScratch(demoBank, async (dir) => {
+        expect(readFileSync(join(dir, exceptionRel), "utf8")).toContain("related: [constrained_by::cA9wE6uJr3]");
+        expect(only(validateBankReport(dir, null, dir).findings, "bright-line")).toEqual([]);
+      });
+    });
+
+    test("relating it to a PolicyRule clears the warning", async () => {
+      await withScratch(demoBank, async (dir) => {
+        edit(dir, exceptionRel, (t) => replaceLine(t, "related:", null));
+        expect(only(validateBankReport(dir, null, dir).findings, "bright-line")).toHaveLength(1);
+        const text = edit(dir, exceptionRel, (t) => replaceLine(t, "applies_to:", "applies_to: [service:order-service]\nrelated: [constrained_by::cA9wE6uJr3]"));
+        expect(text).toContain("related: [constrained_by::cA9wE6uJr3]");
+        expect(only(validateBankReport(dir, null, dir).findings, "bright-line")).toEqual([]);
+      });
+    });
+
+    test("relating it to a Decision id instead does not clear it", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const text = edit(dir, exceptionRel, (t) => replaceLine(t, "related:", "related: [constrained_by::kQ7vN2xLp4]"));
+        expect(text).toContain("related: [constrained_by::kQ7vN2xLp4]");
+        expect(only(validateBankReport(dir, null, dir).findings, "bright-line")).toHaveLength(1);
+      });
+    });
+
+    test("a domain: scope alone, or service: plus domain:, does not warn", async () => {
+      for (const scope of ["[domain:commerce]", "[service:order-service, domain:commerce]"]) {
+        await withScratch(demoBank, async (dir) => {
+          edit(dir, exceptionRel, (t) => replaceLine(replaceLine(t, "related:", null), "applies_to:", `applies_to: ${scope}`));
+          expect(only(validateBankReport(dir, null, dir).findings, "bright-line")).toEqual([]);
+        });
+      }
+    });
+
+    test("naming a different file drops the warning", async () => {
+      await withScratch(demoBank, async (dir) => {
+        edit(dir, exceptionRel, (t) => replaceLine(t, "related:", null));
+        expect(only(validateBankReport(dir, [decisionRel], dir).findings, "bright-line")).toEqual([]);
+        expect(only(validateBankReport(dir, [exceptionRel], dir).findings, "bright-line")).toHaveLength(1);
+      });
+    });
+  });
+
+  describe("body-sections", () => {
+    test("'context' in a paragraph without a Context heading warns, naming Context only", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const text = edit(dir, decisionRel, (t) => replaceLine(t, "## Context", "Some context for this lives in the paragraph below."));
+        expect(text).not.toContain("## Context");
+        const fs = only(validateBankReport(dir, null, dir).findings, "body-sections");
+        expect(fs).toHaveLength(1);
+        expect(fs[0]!).toMatchObject({
+          file: decisionRel,
+          severity: "warning",
+          line: 1,
+          key: null,
+          message: "Decision body has no Context heading",
+        });
+      });
+    });
+
+    test("a Background heading still warns until heading_aliases lists it", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const text = edit(dir, decisionRel, (t) => replaceLine(t, "## Context", "## Background"));
+        expect(text).toContain("## Background");
+        expect(only(validateBankReport(dir, null, dir).findings, "body-sections")).toHaveLength(1);
+        const cfg = edit(dir, "memory-bank.yaml", (t) => `${t.endsWith("\n") ? t : `${t}\n`}heading_aliases: { Context: [Background] }\n`);
+        expect(cfg).toContain("heading_aliases:");
+        const out = validateBankReport(dir, null, dir).findings;
+        expect(only(out, "body-sections")).toEqual([]);
+        expect(only(out, "config-schema")).toEqual([]);
+      });
+    });
+
+    test("a heading inside a code fence does not count", async () => {
+      await withScratch(demoBank, async (dir) => {
+        edit(dir, decisionRel, (t) => replaceLine(t, "## Consequences", "```\n## Consequences\n```"));
+        const fs = only(validateBankReport(dir, null, dir).findings, "body-sections");
+        expect(fs.map((f) => f.message)).toEqual(["Decision body has no Consequences heading"]);
+      });
+    });
+
+    test("missing sections are listed in Context, Decision, Consequences order", async () => {
+      await withScratch(demoBank, async (dir) => {
+        edit(dir, decisionRel, (t) => `${t.slice(0, t.indexOf("\n---", 4) + 5)}\nJust prose.\n`);
+        const fs = only(validateBankReport(dir, null, dir).findings, "body-sections");
+        expect(fs.map((f) => f.message)).toEqual(["Decision body has no Context, Decision, Consequences heading"]);
+      });
+    });
+
+    test("a Context Record with no headings does not warn", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const ctx = "_memory/context/order-service-overview-gN5yD9sMe2.md";
+        const text = readFileSync(join(dir, ctx), "utf8");
+        expect(text.split("\n").some((l) => l.startsWith("#") && !l.startsWith("# "))).toBe(false);
+        edit(dir, ctx, (t) => `${t.slice(0, t.indexOf("\n---", 4) + 5)}\nNo headings here.\n`);
+        expect(only(validateBankReport(dir, null, dir).findings, "body-sections")).toEqual([]);
+      });
+    });
+  });
+
+  describe("through the CLI", () => {
+    test("one bright-line warning and no errors exits 0 and prints 'warning bright-line'", async () => {
+      await withScratch(demoBank, async (dir) => {
+        edit(dir, exceptionRel, (t) => replaceLine(t, "related:", null));
+        const r = await run({ argv: ["validate"], cwd: dir, env: {} });
+        expect(r.exitCode).toBe(0);
+        expect(r.stderr).toBe("");
+        const out = r.stdout.split("\n").filter((l) => l !== "");
+        expect(out).toHaveLength(1);
+        expect(out[0]).toContain(" warning bright-line: ");
+      });
+    });
+
+    test("an unmodified demo copy exits 0 with empty stdout", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const r = await run({ argv: ["validate"], cwd: dir, env: {} });
+        expect(r.exitCode).toBe(0);
+        expect(r.stdout).toBe("");
+        expect(r.stderr).toBe("");
+      });
+    });
+  });
+
+  describe("Ajv collapse", () => {
+    test("deciders-nested.md gives exactly one schema finding, on deciders", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const fixture = readFileSync(new URL("../../fixtures/invalid/deciders-nested.md", import.meta.url), "utf8");
+        const file = "_memory/decisions/deciders-nested.md";
+        writeFileSync(join(dir, file), fixture);
+        expect(readFileSync(join(dir, file), "utf8")).toBe(fixture);
+        const fs = validateBankReport(dir, [file], dir).findings.filter((f) => f.file === file && f.rule === "schema");
+        expect(fs).toHaveLength(1);
+        expect(fs[0]!).toMatchObject({ key: "deciders", message: "must be a scalar or a flat list of scalars" });
+      });
+    });
+
+    test("weight: .nan gives exactly one schema finding, on weight", () => {
+      const text = replaceLine(valid, "tags:", "weight: .nan");
+      expect(text).toContain("weight: .nan");
+      const fs = check(text);
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!).toMatchObject({ rule: "schema", key: "weight", line: lineOf(text, "weight:") });
+    });
+
+    test("a missing status is still one required finding", () => {
+      const fs = check(replaceLine(valid, "status:", null));
+      expect(fs.map((f) => f.message)).toEqual(["must have required property 'status'"]);
+    });
+  });
+
+  describe("folder-type names the configured folder (#47)", () => {
+    const asContext = (t: string) => replaceLine(t, "memory_type:", "memory_type: Context");
+
+    test("a Record under decisions/archive names _memory/decisions", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const file = "_memory/decisions/archive/x-xX0xX0xX00.md";
+        mkdirSync(join(dir, "_memory/decisions/archive"));
+        writeFileSync(join(dir, file), asContext(replaceLine(valid, "id:", "id: xX0xX0xX00")));
+        expect(readFileSync(join(dir, file), "utf8")).toContain("memory_type: Context");
+        const fs = validateBankReport(dir, [file], dir).findings.filter((f) => f.rule === "folder-type");
+        expect(fs).toHaveLength(1);
+        expect(fs[0]!.message.endsWith("(_memory/decisions)")).toBe(true);
+      });
+    });
+
+    test("with folders: { Decision: docs/adr } the message ends (docs/adr)", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const file = "docs/adr/archive/x-xX0xX0xX00.md";
+        mkdirSync(join(dir, "docs/adr/archive"), { recursive: true });
+        writeFileSync(join(dir, file), asContext(replaceLine(valid, "id:", "id: xX0xX0xX00")));
+        const cfg = edit(dir, "memory-bank.yaml", (t) => `${t.endsWith("\n") ? t : `${t}\n`}folders: { Decision: docs/adr }\n`);
+        expect(cfg).toContain("folders: { Decision: docs/adr }");
+        const fs = validateBankReport(dir, [file], dir).findings.filter((f) => f.rule === "folder-type");
+        expect(fs).toHaveLength(1);
+        expect(fs[0]!.message.endsWith("(docs/adr)")).toBe(true);
+      });
     });
   });
 });

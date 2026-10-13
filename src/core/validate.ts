@@ -100,6 +100,7 @@ type Frontmatter = {
   rel: string;
   src: string;
   closingLine: number;
+  body: string;
   keys: KeyLines;
   data: Record<string, unknown>;
   lineOf: (key: string | null) => number;
@@ -125,15 +126,20 @@ function checkFrontmatter(rel: string, text: string): { findings: Finding[]; fm:
   } catch (e) {
     return fail(1, firstLine((e as Error).message));
   }
-  return { findings: [], fm: { rel, src, closingLine: split.closingLine, keys, data, lineOf } };
+  return { findings: [], fm: { rel, src, closingLine: split.closingLine, body: split.body, keys, data, lineOf } };
 }
 
 function checkSchema({ rel, data, lineOf }: Frontmatter): Finding[] {
   const validate = recordSchema();
   if (validate(data)) return [];
-  return (validate.errors ?? []).map((e) => {
+  const errors = validate.errors ?? [];
+  // An undeclared key's `anyOf` reports each branch's errors (at /key or /key/0, so not always one
+  // instancePath) plus a closing anyOf error. The closing one alone says what's wrong.
+  const collapsed = new Set(errors.filter((e) => e.keyword === "anyOf").map(errorKey));
+  const kept = errors.filter((e) => e.keyword === "anyOf" || !collapsed.has(errorKey(e)));
+  return kept.map((e) => {
     const key = errorKey(e);
-    let message = e.message ?? e.keyword;
+    let message = e.keyword === "anyOf" ? "must be a scalar or a flat list of scalars" : (e.message ?? e.keyword);
     if (e.keyword === "required" && key !== null && KEYS_LTM_FMT_FILLS.has(key)) message += "; `ltm fmt` will add it";
     return finding(rel, lineOf(key), "schema", key, message);
   });
@@ -158,7 +164,7 @@ function checkLineBudget({ rel, closingLine }: Frontmatter): Finding[] {
   return [finding(rel, closing, "line-budget", null, `frontmatter closes on line ${closing}; the budget is ${LINE_BUDGET}`)];
 }
 
-function checkFolderType({ rel, data, lineOf }: Frontmatter, folderType: MemoryType): Finding[] {
+function checkFolderType({ rel, data, lineOf }: Frontmatter, folderType: MemoryType, folderPath?: string): Finding[] {
   const written = data.memory_type;
   if (typeof written !== "string" || written === folderType) return [];
   return [
@@ -167,7 +173,7 @@ function checkFolderType({ rel, data, lineOf }: Frontmatter, folderType: MemoryT
       lineOf("memory_type"),
       "folder-type",
       "memory_type",
-      `memory_type is '${written}' but the file is in the ${folderType} folder (${posix.dirname(rel)})`,
+      `memory_type is '${written}' but the file is in the ${folderType} folder (${folderPath ?? posix.dirname(rel)})`,
     ),
   ];
 }
@@ -190,6 +196,52 @@ function checkFacetPrefixes({ rel, data, lineOf }: Frontmatter, known: ReadonlyS
   return out;
 }
 
+const SECTIONS = {
+  Context: ["context", "context and problem statement"],
+  Decision: ["decision", "decision outcome"],
+  Consequences: ["consequences"],
+} as const;
+type Section = keyof typeof SECTIONS;
+export type HeadingAliases = Partial<Record<Section, string[]>>;
+
+// Config schema errors are reported on their own; a malformed map here must not also crash the run.
+function headingAliases(raw: unknown): HeadingAliases {
+  const out: HeadingAliases = {};
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
+  for (const name of Object.keys(SECTIONS) as Section[]) {
+    const v = (raw as Record<string, unknown>)[name];
+    if (Array.isArray(v)) out[name] = v.filter((x): x is string => typeof x === "string");
+  }
+  return out;
+}
+
+// Headings inside a fenced code block are sample text, not structure.
+function headingTexts(body: string): Set<string> {
+  const out = new Set<string>();
+  let fence: string | null = null;
+  for (const line of body.split("\n")) {
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (f) {
+      if (fence === null) fence = f[0]!;
+      else if (f[0] === fence) fence = null;
+      continue;
+    }
+    if (fence !== null) continue;
+    const h = /^ {0,3}#{1,6}(?:[ \t]+(.*))?$/.exec(line.replace(/\r$/, ""));
+    if (h) out.add((h[1] ?? "").trim().toLowerCase());
+  }
+  return out;
+}
+
+function checkBodySections({ rel, body }: Frontmatter, aliases: HeadingAliases): Finding[] {
+  const have = headingTexts(body);
+  const missing = (Object.keys(SECTIONS) as Section[]).filter(
+    (name) => ![...SECTIONS[name], ...(aliases[name] ?? []).map((a) => a.trim().toLowerCase())].some((h) => have.has(h)),
+  );
+  if (missing.length === 0) return [];
+  return [finding(rel, 1, "body-sections", null, `Decision body has no ${missing.join(", ")} heading`, "warning")];
+}
+
 type RecordResult = { findings: Finding[]; id: string | null; idLine: number; fm: Frontmatter | null };
 
 function analyzeRecord(
@@ -197,6 +249,7 @@ function analyzeRecord(
   folderType: MemoryType,
   text: string,
   facetPrefixes: ReadonlySet<string> | null,
+  opts: { folderPath?: string; aliases?: HeadingAliases } = {},
 ): RecordResult {
   const { findings, fm } = checkFrontmatter(rel, text);
   if (!fm) return { findings, id: null, idLine: 1, fm: null };
@@ -204,9 +257,10 @@ function analyzeRecord(
     ...checkSchema(fm),
     ...checkCanonicalLists(fm),
     ...checkLineBudget(fm),
-    ...checkFolderType(fm, folderType),
+    ...checkFolderType(fm, folderType, opts.folderPath),
     ...checkFacetPrefixes(fm, facetPrefixes),
   );
+  if (folderType === "Decision") findings.push(...checkBodySections(fm, opts.aliases ?? {}));
   const id = typeof fm.data.id === "string" ? fm.data.id : null;
   return { findings, id, idLine: fm.lineOf("id"), fm };
 }
@@ -216,12 +270,13 @@ export function checkRecordText(
   folderType: MemoryType,
   text: string,
   facetPrefixes: string[] | null,
+  folderPath?: string,
 ): { findings: Finding[]; id: string | null } {
-  const { findings, id } = analyzeRecord(rel, folderType, text, facetPrefixes && new Set(facetPrefixes));
+  const { findings, id } = analyzeRecord(rel, folderType, text, facetPrefixes && new Set(facetPrefixes), { folderPath });
   return { findings, id };
 }
 
-type Node = { file: string; fm: Frontmatter };
+type Node = { file: string; type: MemoryType; fm: Frontmatter };
 
 // A finding plus the other file its message names, so a paths filter can keep it when either end was named.
 type Pending = { finding: Finding; also: string };
@@ -334,6 +389,30 @@ function checkSupersession(nodes: Node[]): Pending[] {
   return out;
 }
 
+// A Record scoped to one service and tied to no PolicyRule is probably one repo's working memory.
+function checkBrightLine(nodes: Node[]): Finding[] {
+  const policyIds = new Set<string>();
+  for (const n of nodes) if (n.type === "PolicyRule" && typeof n.fm.data.id === "string") policyIds.add(n.fm.data.id);
+  const out: Finding[] = [];
+  for (const n of nodes) {
+    const scope = n.fm.data.applies_to;
+    const only = Array.isArray(scope) && scope.length === 1 ? scope[0] : undefined;
+    if (typeof only !== "string" || !only.startsWith("service:")) continue;
+    if (stringList(n.fm.data.related).some((r) => policyIds.has(r.slice(r.lastIndexOf("::") + 2)))) continue;
+    out.push(
+      finding(
+        n.file,
+        n.fm.lineOf("applies_to"),
+        "bright-line",
+        "applies_to",
+        `scoped to only ${only} and tied to no PolicyRule; it may be working memory for that service's repo rather than Bank memory`,
+        "warning",
+      ),
+    );
+  }
+  return out;
+}
+
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 export function checkUniqueIds(ids: { file: string; line: number; id: string }[], named: Set<string> | null): Finding[] {
@@ -361,7 +440,7 @@ export function checkConfig(root: string): { findings: Finding[]; config: BankCo
   try {
     config = loadConfig(root);
   } catch (e) {
-    // loadConfig lets yaml's alias-limit ReferenceError through unwrapped; anything else is a bug, not a bad config.
+    // The ReferenceError branch covers a loadConfig that lets yaml's alias-limit error through unwrapped; anything else is a bug, not a bad config.
     if (!(e instanceof ConfigError) && !(e instanceof ReferenceError)) throw e;
     // Without a config, every Record's type folder is unknown.
     const line = e instanceof ConfigError ? (e.line ?? 1) : 1;
@@ -437,6 +516,8 @@ export function validateBankReport(root: string, paths: string[] | null, cwd: st
   const raw = config.raw.facet_prefixes;
   const prefixes = Array.isArray(raw) && raw.every((x) => typeof x === "string") ? new Set(raw as string[]) : null;
 
+  const aliases = headingAliases(config.raw.heading_aliases);
+
   const ids: { file: string; line: number; id: string }[] = [];
   const nodes: Node[] = [];
   // Every Record is read even when paths are named: a duplicate id may live in a file nobody named.
@@ -450,14 +531,17 @@ export function validateBankReport(root: string, paths: string[] | null, cwd: st
       if (isNamed) findings.push(finding(f.rel, 1, "walk", null, firstLine((e as Error).message)));
       continue;
     }
-    const r = analyzeRecord(f.rel, f.type, text, prefixes);
+    const r = analyzeRecord(f.rel, f.type, text, prefixes, { folderPath: config.folders[f.type], aliases });
     if (isNamed) findings.push(...r.findings);
     if (r.id !== null) ids.push({ file: f.rel, line: r.idLine, id: r.id });
-    if (r.fm) nodes.push({ file: f.rel, fm: r.fm });
+    if (r.fm) nodes.push({ file: f.rel, type: f.type, fm: r.fm });
   }
   findings.push(...checkUniqueIds(ids, namedRels));
   for (const p of checkSupersession(nodes)) {
     if (!namedRels || namedRels.has(p.finding.file) || namedRels.has(p.also)) findings.push(p.finding);
+  }
+  for (const f of checkBrightLine(nodes)) {
+    if (!namedRels || namedRels.has(f.file)) findings.push(f);
   }
   return report(findings, judged);
 }
