@@ -48,11 +48,22 @@ export const fmt: Command = {
     let config: BankConfig;
     let files: RecordFile[];
     const skipped = new Set<string>();
+    let failed = false;
+    const namedRels = ctx.positionals.map((p) => {
+      const abs = resolve(ctx.cwd, p);
+      return isInside(root, abs) ? toPosix(relative(root, abs)) : p;
+    });
+    // Same rule as `ltm validate`: a skip fails the run when it could hide a Record we were
+    // asked to check. fmt --check is a CI gate, so an unchecked Record must not read as a pass.
+    // A skipped directory hides every named file beneath it, hence the prefix test.
+    const touchesNamed = (rel: string): boolean =>
+      namedRels.length === 0 || namedRels.some((n) => n === rel || n.startsWith(`${rel}/`));
     try {
       config = loadConfig(root);
       files = listRecordFiles(config, (path, reason) => {
         skipped.add(path);
         ctx.err(`ltm fmt: skipped ${path}: ${reason}\n`);
+        if (touchesNamed(path)) failed = true;
       });
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
@@ -61,7 +72,6 @@ export const fmt: Command = {
       return 1;
     }
 
-    let failed = false;
     let targets = files;
     if (ctx.positionals.length > 0) {
       const byAbs = new Map(files.map((f) => [resolve(f.abs), f]));
@@ -118,7 +128,12 @@ export const fmt: Command = {
         ctx.out(`${f.rel}\n`);
         wouldChange = true;
       } else {
-        writeFileSync(f.abs, result.text);
+        try {
+          writeFileSync(f.abs, result.text);
+        } catch (e) {
+          ctx.err(`ltm fmt: ${f.rel}: ${(e as Error).message.split("\n")[0]}\n`);
+          failed = true;
+        }
       }
     }
     return failed || wouldChange ? 1 : 0;

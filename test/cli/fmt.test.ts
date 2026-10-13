@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
@@ -180,6 +180,65 @@ describe("ltm fmt", () => {
       const r = await ltm(dir, "fmt", "memory-bank.yaml");
       expect(r.exitCode).toBe(1);
       expect(r.stderr).toBe("ltm fmt: memory-bank.yaml: not a Record file under any configured type folder\n");
+    });
+  });
+
+  describe("skipped walk entries", () => {
+    const LINK = "_memory/decisions/linked-zz9AAAAAAA.md";
+    const setup = (dir: string) => symlinkSync(join(dir, OVERVIEW), join(dir, LINK));
+
+    test("whole-Bank --check exits 1 naming the symlink, and still checks the other Records", async () => {
+      await withScratch(demo, async (dir) => {
+        setup(dir);
+        // Every other Record is canonical, so the skip alone has to carry the exit code.
+        const clean = await ltm(dir, "fmt", "--check");
+        expect(clean.exitCode).toBe(1);
+        expect(clean.stderr).toContain(`skipped ${LINK}`);
+        edit(join(dir, OVERVIEW), reverseKeys);
+        const r = await ltm(dir, "fmt", "--check");
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toBe(`${OVERVIEW}\n`);
+      });
+    });
+
+    test("naming the symlink exits 1", async () => {
+      await withScratch(demo, async (dir) => {
+        setup(dir);
+        const r = await ltm(dir, "fmt", LINK);
+        expect(r.exitCode).toBe(1);
+        expect(r.stderr).toContain(`skipped ${LINK}`);
+      });
+    });
+
+    test("naming an unrelated Record exits 0 and still prints the skipped line", async () => {
+      await withScratch(demo, async (dir) => {
+        setup(dir);
+        const r = await ltm(dir, "fmt", PG);
+        expect(r.exitCode).toBe(0);
+        expect(r.stderr).toContain(`skipped ${LINK}`);
+      });
+    });
+  });
+
+  const root = process.getuid?.() === 0;
+  // Root ignores mode bits, so the write would succeed and the assertion would prove nothing.
+  test.skipIf(root)("a Record that cannot be written is named, exits 1, and later Records are still formatted", async () => {
+    await withScratch(demo, async (dir) => {
+      const locked = join(dir, OVERVIEW);
+      const other = join(dir, PG);
+      edit(locked, reverseKeys);
+      edit(other, reverseKeys);
+      const before = readFileSync(locked, "utf8");
+      chmodSync(locked, 0o444);
+      try {
+        const r = await ltm(dir, "fmt");
+        expect(r.exitCode).toBe(1);
+        expect(r.stderr).toContain(`ltm fmt: ${OVERVIEW}:`);
+        expect(readFileSync(locked, "utf8")).toBe(before);
+        expect(readFileSync(other, "utf8")).toBe(readFileSync(join(demo, PG), "utf8"));
+      } finally {
+        chmodSync(locked, 0o644);
+      }
     });
   });
 
