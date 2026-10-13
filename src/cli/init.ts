@@ -208,8 +208,9 @@ function overrideFiles(config: BankConfig, templateFiles: unknown): unknown {
   return [...new Set(folders.map((f) => `${f.replace(/\/+$/, "")}/**/*.md`))];
 }
 
-// An entry for the same `files` is replaced in place, so a rerun converges instead of
-// stacking duplicates.
+// An entry for the same `files` gets merged in place, so a rerun converges instead of stacking
+// duplicates. The merge keeps the user's own keys, such as `excludeFiles` or `proseWrap`, and the
+// template's options win on conflict, so `embeddedLanguageFormatting` stays "off".
 function mergeOverrides(existing: string | null, entry: { files: unknown; options: unknown }): string {
   const cfg: unknown = existing === null ? {} : JSON.parse(existing);
   if (typeof cfg !== "object" || cfg === null || Array.isArray(cfg)) throw new Error("not a JSON object");
@@ -219,7 +220,12 @@ function mergeOverrides(existing: string | null, entry: { files: unknown; option
   const key = JSON.stringify(entry.files);
   const i = overrides.findIndex((o) => typeof o === "object" && o !== null && JSON.stringify((o as { files?: unknown }).files) === key);
   if (i === -1) overrides.push(entry);
-  else overrides[i] = entry;
+  else {
+    const existingEntry = overrides[i] as { options?: unknown };
+    const prior = existingEntry.options;
+    const existingOptions = typeof prior === "object" && prior !== null && !Array.isArray(prior) ? prior : {};
+    overrides[i] = { ...existingEntry, options: { ...existingOptions, ...(entry.options as object) } };
+  }
   return `${JSON.stringify({ ...obj, overrides }, null, 2)}\n`;
 }
 

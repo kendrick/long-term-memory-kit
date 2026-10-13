@@ -129,6 +129,62 @@ describe("ltm init", () => {
     expect(resolved).toEqual({ semi: false, embeddedLanguageFormatting: "off" });
   });
 
+  test("a matching prettier override keeps the user's options and gains the template's", async () => {
+    writeFileSync(
+      join(dir, ".prettierrc.json"),
+      '{"overrides":[{"files":"_memory/**/*.md","options":{"proseWrap":"never"}}]}',
+    );
+    expect((await init()).exitCode).toBe(0);
+    const cfg = JSON.parse(read(".prettierrc.json"));
+    expect(cfg.overrides).toEqual([
+      { files: "_memory/**/*.md", options: { proseWrap: "never", embeddedLanguageFormatting: "off" } },
+    ]);
+  });
+
+  test("a matching oxfmt override keeps its other keys, like excludeFiles", async () => {
+    writeFileSync(
+      join(dir, ".oxfmtrc.json"),
+      JSON.stringify({ overrides: [{ files: ["_memory/**/*.md"], excludeFiles: ["x.md"] }] }),
+    );
+    expect((await init()).exitCode).toBe(0);
+    const cfg = JSON.parse(read(".oxfmtrc.json"));
+    expect(cfg.overrides).toEqual([
+      { files: ["_memory/**/*.md"], excludeFiles: ["x.md"], options: { embeddedLanguageFormatting: "off" } },
+    ]);
+  });
+
+  test("the template's embeddedLanguageFormatting wins over an existing value", async () => {
+    writeFileSync(
+      join(dir, ".prettierrc.json"),
+      '{"overrides":[{"files":"_memory/**/*.md","options":{"embeddedLanguageFormatting":"auto"}}]}',
+    );
+    expect((await init()).exitCode).toBe(0);
+    expect(JSON.parse(read(".prettierrc.json")).overrides[0].options.embeddedLanguageFormatting).toBe("off");
+  });
+
+  test("a matching override whose options is not an object gets the template's options", async () => {
+    writeFileSync(join(dir, ".prettierrc.json"), '{"overrides":[{"files":"_memory/**/*.md","options":"oops"}]}');
+    expect((await init()).exitCode).toBe(0);
+    expect(JSON.parse(read(".prettierrc.json")).overrides).toEqual([
+      { files: "_memory/**/*.md", options: { embeddedLanguageFormatting: "off" } },
+    ]);
+  });
+
+  test("a second init leaves merged formatter configs byte-identical", async () => {
+    writeFileSync(
+      join(dir, ".prettierrc.json"),
+      '{"overrides":[{"files":"_memory/**/*.md","options":{"proseWrap":"never"}}]}',
+    );
+    writeFileSync(
+      join(dir, ".oxfmtrc.json"),
+      JSON.stringify({ overrides: [{ files: ["_memory/**/*.md"], excludeFiles: ["x.md"] }] }),
+    );
+    expect((await init()).exitCode).toBe(0);
+    const first = [read(".prettierrc.json"), read(".oxfmtrc.json")];
+    expect((await init()).exitCode).toBe(0);
+    expect([read(".prettierrc.json"), read(".oxfmtrc.json")]).toEqual(first);
+  });
+
   test("an existing memory-bank.yaml stays byte-identical, and the region follows it", async () => {
     const yaml = "schema: 1\nname:   hand-written   # keep me\nfacet_prefixes: [team]\n";
     writeFileSync(join(dir, "memory-bank.yaml"), yaml);
