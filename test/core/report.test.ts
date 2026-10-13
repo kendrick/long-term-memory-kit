@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { toGithub, toGitlab, toJunit } from "../../src/core/report.ts";
 import type { Finding } from "../../src/core/validate.ts";
 
@@ -68,7 +69,7 @@ describe("toGitlab", () => {
     expect(JSON.parse(toGitlab([]))).toEqual([]);
   });
 
-  const fps = (fs: Finding[]): string[] => (JSON.parse(toGitlab(fs)) as { fingerprint: string }[]).map((r) => r.fingerprint);
+  const fps = (list: Finding[]): string[] => (JSON.parse(toGitlab(list)) as { fingerprint: string }[]).map((r) => r.fingerprint);
 
   test("same rule, file, and key on different lines get different fingerprints, whatever the input order", () => {
     const a = err({ line: 4, message: "first" });
@@ -92,13 +93,13 @@ describe("toGitlab", () => {
 
   test("messages tie-break in code-unit order, not locale order", () => {
     // localeCompare puts "a" before "B"; code units put "B" (0x42) before "a" (0x61).
-    const lower = err({ message: "a" });
-    const upper = err({ message: "B" });
-    const [fl, fu] = fps([lower, upper]);
-    const [group0, group1] = fps([err({ message: "B" }), err({ message: "a" })]);
-    // "B" sorts first, so it takes in-group index 0 regardless of input position.
-    expect(group0).toBe(fu);
-    expect(group1).toBe(fl);
+    // Expected hashes come from the requirement's input string, not from toGitlab.
+    const sha = (index: number): string =>
+      createHash("sha256").update(`schema\0a.md\0status\0${index}`).digest("hex");
+    const [upper, lower] = fps([err({ message: "B" }), err({ message: "a" })]);
+    expect(upper).toBe(sha(0));
+    expect(lower).toBe(sha(1));
+    expect(fps([err({ message: "a" }), err({ message: "B" })])).toEqual([sha(1), sha(0)]);
   });
 
   test("a lone finding keeps its fingerprint when its line moves", () => {

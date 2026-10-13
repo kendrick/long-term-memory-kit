@@ -11,16 +11,16 @@ const PG = "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md";
 const NEW_ID = "nW4pQ8sYd2";
 const NEW = `_memory/decisions/dangling-supersession-${NEW_ID}.md`;
 
-type Row = { check_name: string; fingerprint: string; location: { path: string } };
+type Row = { check_name: string; fingerprint: string; location: { path: string; lines: { begin: number } } };
 
 // Built from the demo Record so it stays schema-valid as the fixture evolves.
-function writeDangling(dir: string, supersedes: string, extraBody = ""): void {
+function writeDangling(dir: string, supersedes: string): void {
   const pg = readFileSync(join(dir, PG), "utf8");
   const text = pg
     .split("\n")
     .map((l) => (l.startsWith("id:") ? `id: ${NEW_ID}` : l.startsWith("supersedes:") ? `supersedes: ${supersedes}` : l))
     .join("\n");
-  writeFileSync(join(dir, NEW), text + extraBody);
+  writeFileSync(join(dir, NEW), text);
 }
 
 const gitlab = async (dir: string): Promise<{ stdout: string; rows: Row[] }> => {
@@ -51,6 +51,20 @@ describe("ltm validate --format gitlab fingerprints", () => {
       expect(readFileSync(join(dir, NEW), "utf8")).not.toBe(pg);
       const after = (await gitlab(dir)).rows;
       expect(after.map((r) => r.fingerprint)).toEqual(before.map((r) => r.fingerprint));
+    });
+  });
+
+  test("blank lines above the finding's key move its line but not its fingerprint", async () => {
+    await withScratch(demo, async (dir) => {
+      writeDangling(dir, "[zZ9zZ9zZ9z]");
+      const before = (await gitlab(dir)).rows;
+      const text = readFileSync(join(dir, NEW), "utf8");
+      writeFileSync(join(dir, NEW), text.replace("\nsupersedes:", "\n\n\nsupersedes:"));
+      expect(readFileSync(join(dir, NEW), "utf8")).not.toBe(text);
+      const after = (await gitlab(dir)).rows;
+      expect(after).toHaveLength(1);
+      expect(after[0]!.location.lines.begin).toBe(before[0]!.location.lines.begin + 2);
+      expect(after[0]!.fingerprint).toBe(before[0]!.fingerprint);
     });
   });
 
