@@ -38,7 +38,7 @@
           "match": {
             "description": "Give a / separated pattern with the same number of segments as <host>/<org>/<repo>, where * matches any one segment. A lone * matches every repo.",
             "type": "string",
-            "minLength": 1
+            "pattern": "^(\\*|[^/]+/[^/]+/[^/]+)$"
           },
           "bank": {
             "description": "Name a Bank from banks.",

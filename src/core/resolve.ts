@@ -237,7 +237,9 @@ function git(cwd: string, args: string[]): string | null {
 export function repoIdentity(cwd: string): { root: string | null; remote: RemoteIdentity | null } {
   const root = git(cwd, ["rev-parse", "--show-toplevel"]);
   if (root === null) return { root: null, remote: null };
-  const url = git(cwd, ["config", "--get", "remote.origin.url"]);
+  // --local: an unscoped lookup falls through to global/system config, which would give
+  // every origin-less repo the same unrelated identity.
+  const url = git(cwd, ["config", "--local", "--get", "remote.origin.url"]);
   return { root, remote: url === null ? null : parseRemote(url) };
 }
 

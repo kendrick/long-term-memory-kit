@@ -194,6 +194,21 @@ describe("loadUserConfig", () => {
     expect(e.line).toBe(4);
   });
 
+  test.each(["github.com/acme", "github.com/acme/order-service/extra", "github.com//order-service", "a/b/"])(
+    "a rule match that can never match (%s) fails, naming rules.0.match",
+    (match) => {
+      writeFileSync(configPath, `banks:\n  acme: { path: x }\nrules:\n  - { match: "${match}", bank: acme }\n`);
+      const e = configErrorOf(() => loadUserConfig(env));
+      expect(e.path).toBe(configPath);
+      expect(e.message).toContain("rules.0.match");
+    },
+  );
+
+  test("a lone * and a three-segment wildcard pattern still load", () => {
+    writeFileSync(configPath, 'banks:\n  acme: { path: x }\nrules:\n  - { match: "*", bank: acme }\n  - { match: "github.com/*/order-*", bank: acme }\n');
+    expect(loadUserConfig(env).config?.rules).toHaveLength(2);
+  });
+
   test("a default naming an unknown Bank fails, naming default", () => {
     writeFileSync(configPath, "banks:\n  acme: { path: x }\ndefault: nope\n");
     expect(configErrorOf(() => loadUserConfig(env)).message).toContain("default");
@@ -220,6 +235,27 @@ describe("repoIdentity", () => {
 
   test("outside a repo, both are null", () => {
     expect(repoIdentity(home)).toEqual({ root: null, remote: null });
+  });
+
+  test("an origin in global git config does not leak into an origin-less repo", () => {
+    const globalCfg = join(tmp, "gitconfig");
+    writeFileSync(globalCfg, '[remote "origin"]\n\turl = git@github.com:elsewhere/unrelated.git\n');
+    const bare = join(tmp, "no-origin");
+    mkdirSync(bare);
+    sh(bare, "init", "-q");
+    // Bun does not forward process.env writes to child processes, so run repoIdentity in a
+    // child that really sees the global config.
+    const resolveTs = fileURLToPath(new URL("../../src/core/resolve.ts", import.meta.url));
+    const childEnv = { ...process.env, GIT_CONFIG_GLOBAL: globalCfg };
+    const probe = spawnSync("git", ["-C", bare, "config", "--get", "remote.origin.url"], { encoding: "utf8", env: childEnv });
+    expect(probe.stdout).toContain("elsewhere");
+    const r = spawnSync(
+      process.execPath,
+      ["-e", `import { repoIdentity } from ${JSON.stringify(resolveTs)}; console.log(JSON.stringify(repoIdentity(${JSON.stringify(bare)})))`],
+      { encoding: "utf8", env: childEnv },
+    );
+    expect(r.stderr).toBe("");
+    expect(JSON.parse(r.stdout)).toEqual({ root: bare, remote: null });
   });
 });
 
