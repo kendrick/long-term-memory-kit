@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync } from "node:fs";
+import { lstatSync, readFileSync, type Stats } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse, YAMLParseError } from "yaml";
 
@@ -33,6 +33,7 @@ export class ConfigError extends Error {
 }
 
 const CONFIG_FILE = "memory-bank.yaml";
+const SYMLINK_REFUSAL = "memory-bank.yaml is a symlink, not followed";
 
 // A symlinked config lets a cloned, untrusted Bank point the CLI at a file outside
 // it (or at a parent Bank's config), so it's refused outright. Stopping instead of
@@ -44,23 +45,27 @@ function refuseSymlink(path: string): void {
   } catch {
     return;
   }
-  if (isLink) throw new ConfigError(path, null, "memory-bank.yaml is a symlink, not followed");
+  if (isLink) throw new ConfigError(path, null, SYMLINK_REFUSAL);
 }
 
-function isFile(p: string): boolean {
-  try {
-    return lstatSync(p).isFile();
-  } catch {
-    return false;
-  }
-}
-
+// One lstat per candidate, so the symlink check and the file check can't disagree.
+// Only ENOENT/ENOTDIR mean "no config here"; any other failure (EACCES on an
+// unreadable directory) must stop the walk, or it would silently adopt a parent Bank.
 export function findBank(cwd: string): string | null {
   let dir = resolve(cwd);
   for (;;) {
     const candidate = join(dir, CONFIG_FILE);
-    refuseSymlink(candidate);
-    if (isFile(candidate)) return dir;
+    let stat: Stats | undefined;
+    try {
+      stat = lstatSync(candidate);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") {
+        throw new ConfigError(candidate, null, (e as Error).message.split("\n")[0] ?? String(e));
+      }
+    }
+    if (stat?.isSymbolicLink()) throw new ConfigError(candidate, null, SYMLINK_REFUSAL);
+    if (stat?.isFile()) return dir;
     const parent = dirname(dir);
     if (parent === dir) return null;
     dir = parent;

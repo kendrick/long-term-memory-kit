@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { lstatSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,38 @@ describe("findBank", () => {
     await withScratch(demoBank, async (dir) => {
       expect(findBank(dir)).toBe(dir);
       expect(findBank(join(dir, "_memory/decisions"))).toBe(dir);
+    });
+  });
+
+  // Root ignores mode bits, so the test would pass without exercising anything.
+  test.skipIf(process.getuid?.() === 0)("throws on a directory it can't stat into instead of returning a parent Bank (#45)", async () => {
+    await withScratch(demoBank, async (s) => {
+      const locked = join(s, "bank/locked");
+      mkdirSync(locked, { recursive: true });
+      await writeFile(join(s, "bank/memory-bank.yaml"), "schema: 1\nname: acme\n");
+      chmodSync(locked, 0o000);
+      try {
+        let e: unknown;
+        try {
+          findBank(locked);
+        } catch (err) {
+          e = err;
+        }
+        expect(e).toBeInstanceOf(ConfigError);
+        expect((e as ConfigError).path).toBe(join(locked, "memory-bank.yaml"));
+        expect((e as ConfigError).line).toBeNull();
+      } finally {
+        chmodSync(locked, 0o755);
+      }
+    });
+  });
+
+  test("climbs past a plain directory with no config", async () => {
+    await withScratch(demoBank, async (s) => {
+      const plain = join(s, "bank/plain");
+      mkdirSync(plain, { recursive: true });
+      await writeFile(join(s, "bank/memory-bank.yaml"), "schema: 1\nname: acme\n");
+      expect(findBank(plain)).toBe(join(s, "bank"));
     });
   });
 
