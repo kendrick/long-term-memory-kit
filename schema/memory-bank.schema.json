@@ -32,9 +32,9 @@
       "additionalProperties": { "type": "string" }
     },
     "consumers": {
-      "description": "Map a Consumer repo's git remote, as org/repo, to the Facets its agents read.",
+      "description": "Map a Consumer repo's git remote, as org/repo, to the Facets its agents read. A subgroup repo's key keeps every org segment, as in grp/sub/repo.",
       "type": "object",
-      "propertyNames": { "pattern": "^[^/\\s]+/[^/\\s]+(?!\\n)$" },
+      "propertyNames": { "pattern": "^[^/\\s]+(/[^/\\s]+)+(?!\\n)$" },
       "additionalProperties": {
         "type": "array",
         "items": { "$ref": "#/$defs/facet" }

@@ -36,9 +36,9 @@
         "required": ["match", "bank"],
         "properties": {
           "match": {
-            "description": "Give a / separated pattern with the same number of segments as <host>/<org>/<repo>, where * matches any one segment. A lone * matches every repo.",
+            "description": "Give a / separated pattern with the same number of segments as <host>/<org>/<repo>, where * matches any one segment. A subgroup identity has more segments, such as gitlab.com/grp/sub/repo, so gitlab.com/grp/*/* matches repos in subgroups of grp. A lone * matches every repo.",
             "type": "string",
-            "pattern": "^(\\*|[^/]+/[^/]+/[^/]+)$"
+            "pattern": "^(\\*|[^/]+(/[^/]+){2,})$"
           },
           "bank": {
             "description": "Name a Bank from banks.",

@@ -193,6 +193,28 @@ describe("ltm query from a Consumer repo", () => {
     expect(out.notes).toEqual(['no git origin here; showing org-wide Records only from Bank "personal"']);
   });
 
+  test("a GitLab subgroup Consumer repo gets its Facets from a deeper consumers key", async () => {
+    const acme = join(home, "banks", "acme");
+    const cfg = join(acme, "memory-bank.yaml");
+    writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\n  grp/sub/repo: [service:order-service]\n`);
+    writeFileSync(configPath, "banks:\n  acme: { path: ~/banks/acme }\nrules:\n  - { match: gitlab.com/grp/*/*, bank: acme }\n");
+    setOrigin("git@gitlab.com:grp/sub/repo.git");
+
+    const r = await ltm(repo, "query", "--json", "--type", "Exception");
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout);
+    expect(out.resolved_by).toBe("rules");
+    expect(out.notes).toEqual([]);
+    expect(out.results.map((x: { bank: string; path: string }) => `${x.bank}:${x.path}`)).toContain(`acme:${REDIS}`);
+    expect(r.stderr).toBe("");
+
+    const human = await ltm(repo, "query", "--type", "Exception");
+    expect(human.stderr).not.toContain("not mapped");
+
+    const v = await ltm(acme, "validate");
+    expect(v.exitCode).toBe(0);
+  });
+
   test("inside a Bank, a user config changes nothing", async () => {
     const inBank = join(home, "banks", "acme");
     for (const args of [["--all"], ["--json", "--all"], ["--type", "Exception"], ["--text", "redis"]]) {

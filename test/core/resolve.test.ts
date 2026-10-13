@@ -69,6 +69,11 @@ describe("matchRule", () => {
     expect(matchRule("*", "github.com/acme/x")).toBe(true);
     expect(matchRule("*", "gitlab.example.com/a/b")).toBe(true);
   });
+
+  test("a subgroup identity needs a pattern with as many segments", () => {
+    expect(matchRule("gitlab.com/grp/*/*", "gitlab.com/grp/sub/repo")).toBe(true);
+    expect(matchRule("gitlab.com/*/*", "gitlab.com/grp/sub/repo")).toBe(false);
+  });
 });
 
 describe("userConfigPath", () => {
@@ -210,7 +215,8 @@ describe("loadUserConfig", () => {
     expect(e.line).toBe(4);
   });
 
-  test.each(["github.com/acme", "github.com/acme/order-service/extra", "github.com//order-service", "a/b/"])(
+  // A four-segment match can match a subgroup identity, so it is not on this list.
+  test.each(["github.com/acme", "github.com//order-service", "a/b/", "gitlab.com/grp//repo"])(
     "a rule match that can never match (%s) fails, naming rules.0.match",
     (match) => {
       writeFileSync(configPath, `banks:\n  acme: { path: x }\nrules:\n  - { match: "${match}", bank: acme }\n`);
@@ -223,6 +229,11 @@ describe("loadUserConfig", () => {
   test("a lone * and a three-segment wildcard pattern still load", () => {
     writeFileSync(configPath, 'banks:\n  acme: { path: x }\nrules:\n  - { match: "*", bank: acme }\n  - { match: "github.com/*/order-*", bank: acme }\n');
     expect(loadUserConfig(env).config?.rules).toHaveLength(2);
+  });
+
+  test.each(["gitlab.com/grp/sub/repo", "gitlab.com/grp/*/*"])("a subgroup match (%s) loads", (match) => {
+    writeFileSync(configPath, `banks:\n  acme: { path: x }\nrules:\n  - { match: "${match}", bank: acme }\n`);
+    expect(loadUserConfig(env).config?.rules).toEqual([{ match, bank: "acme" }]);
   });
 
   test("a default naming an unknown Bank fails, naming default", () => {
