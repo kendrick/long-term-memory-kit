@@ -39,21 +39,23 @@ const firstLine = (s: string): string => s.split("\n")[0] ?? s;
 const stripGit = (s: string): string => (s.endsWith(".git") ? s.slice(0, -4) : s);
 
 function identityFromPath(host: string, path: string): RemoteIdentity | null {
+  // GitLab subgroups nest arbitrarily deep, so org is every segment before the repo. Keyed on path shape only: any host may nest.
   const segs = path.replace(/^\/+/, "").replace(/\/+$/, "").split("/");
-  if (segs.length !== 2) return null;
-  const org = segs[0] ?? "";
-  const repo = stripGit(segs[1] ?? "");
-  if (host === "" || org === "" || repo === "") return null;
-  return { host: host.toLowerCase(), org, repo };
+  if (segs.length < 2) return null;
+  const repo = stripGit(segs.pop() ?? "");
+  if (host === "" || repo === "" || segs.some((seg) => seg === "")) return null;
+  return { host: host.toLowerCase(), org: segs.join("/"), repo };
 }
 
 export function parseRemote(url: string): RemoteIdentity | null {
   const s = url.trim();
   if (/\s/.test(s)) return null;
-  // scp-like syntax has no scheme, so URL can't parse it. Requiring `user@` keeps a
-  // Windows path such as C:/x from reading as host C.
-  const scp = /^[^@/:]+@([^/:]+):(?!\/)(.+)$/.exec(s);
-  if (scp) return identityFromPath(scp[1] ?? "", scp[2] ?? "");
+  // scp-like syntax has no scheme, so URL can't parse it. Without `user@`, the host must look like a hostname (a dot, or localhost) so a Windows path such as C:/x never reads as host C.
+  const scp = /^(?:([^@/:]+)@)?([^@/:]+):(?!\/)(.+)$/.exec(s);
+  const scpHost = scp?.[2] ?? "";
+  if (scp && (scp[1] !== undefined || scpHost.includes(".") || scpHost === "localhost")) {
+    return identityFromPath(scpHost, scp[3] ?? "");
+  }
   let parsed: URL;
   try {
     parsed = new URL(s);

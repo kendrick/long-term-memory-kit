@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConfigError } from "../../src/core/bank.ts";
 import {
+  identityString,
   loadUserConfig,
   matchRule,
   noBankMessage,
@@ -34,12 +35,27 @@ describe("parseRemote", () => {
     expect(parseRemote(url)).toEqual(want);
   });
 
-  test.each(["ftp://x", "not a url", "", "https://github.com/acme", "https://github.com/a/b/c", "C:/acme/order-service"])(
-    "%p gives null",
-    (url) => {
-      expect(parseRemote(url)).toBeNull();
-    },
-  );
+  test.each(["ftp://x", "not a url", "", "https://github.com/acme", "C:/acme/order-service"])("%p gives null", (url) => {
+    expect(parseRemote(url)).toBeNull();
+  });
+
+  test.each([
+    ["git@gitlab.com:grp/sub/repo.git", { host: "gitlab.com", org: "grp/sub", repo: "repo" }],
+    ["https://gitlab.com/grp/sub/repo", { host: "gitlab.com", org: "grp/sub", repo: "repo" }],
+    ["github.com:acme/order-service.git", { host: "github.com", org: "acme", repo: "order-service" }],
+    ["ssh://git@github.com/a/b/c/d.git", { host: "github.com", org: "a/b/c", repo: "d" }],
+    ["https://github.com/a/b/c", { host: "github.com", org: "a/b", repo: "c" }],
+    ["C:/x/y", null],
+    ["https://h.com/a//b", null],
+    ["https://h.com/only", null],
+  ])("%s", (url, want) => {
+    expect(parseRemote(url)).toEqual(want);
+  });
+
+  test("a subgroup identity keeps every org segment", () => {
+    const id = parseRemote("git@gitlab.com:grp/sub/repo.git");
+    expect(id && identityString(id)).toBe("gitlab.com/grp/sub/repo");
+  });
 });
 
 describe("matchRule", () => {
