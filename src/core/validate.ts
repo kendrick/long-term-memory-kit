@@ -302,8 +302,10 @@ function sharesScope(a: unknown, b: unknown): boolean {
 // Reads every Record, named or not: the other end of an edge may live in a file nobody named.
 function checkSupersession(nodes: Node[]): Pending[] {
   const sorted = [...nodes].sort((a, b) => cmp(a.file, b.file));
-  // An id held by several Records is `unique-id`'s to report; resolving to all holders keeps it from also
-  // reading as a half-declared edge.
+  // An id held by several Records is `unique-id`'s to report, and an edge can't pick between holders. So an
+  // edge is recorded only when its target resolves to one Record, and `incomplete` is skipped when either
+  // end's own id is shared, since the reciprocal side can't be resolved. Scope needs no reciprocal, so
+  // `facets` still runs on every recorded edge.
   const byId = new Map<string, Node[]>();
   for (const n of sorted) {
     const id = n.fm.data.id;
@@ -312,6 +314,8 @@ function checkSupersession(nodes: Node[]): Pending[] {
     if (held) held.push(n);
     else byId.set(id, [n]);
   }
+
+  const unique = (id: unknown) => typeof id === "string" && byId.get(id)?.length === 1;
 
   const out: Pending[] = [];
   // Edge (old, new) -> which side wrote it down.
@@ -333,8 +337,8 @@ function checkSupersession(nodes: Node[]): Pending[] {
     const by = data.superseded_by;
     if (typeof by === "string" && by !== "") {
       const targets = byId.get(by);
-      if (targets) for (const t of targets) edge(n, t).byOld = true;
-      else missing(n, "superseded_by", by);
+      if (!targets) missing(n, "superseded_by", by);
+      else if (unique(by)) edge(n, targets[0]!).byOld = true;
       if (data.status !== "superseded") {
         const key = n.fm.keys.has("status") ? "status" : "superseded_by";
         out.push({
@@ -351,13 +355,14 @@ function checkSupersession(nodes: Node[]): Pending[] {
     }
     for (const id of new Set(stringList(data.supersedes))) {
       const targets = byId.get(id);
-      if (targets) for (const t of targets) edge(t, n).byNew = true;
-      else missing(n, "supersedes", id);
+      if (!targets) missing(n, "supersedes", id);
+      else if (unique(id)) edge(targets[0]!, n).byNew = true;
     }
   }
 
   for (const e of edges.values()) {
-    if (e.byOld && !e.byNew) {
+    const resolvable = unique(e.old.fm.data.id) && unique(e.new.fm.data.id);
+    if (resolvable && e.byOld && !e.byNew) {
       out.push({
         finding: finding(
           e.old.file,
@@ -368,7 +373,7 @@ function checkSupersession(nodes: Node[]): Pending[] {
         ),
         also: e.new.file,
       });
-    } else if (e.byNew && !e.byOld) {
+    } else if (resolvable && e.byNew && !e.byOld) {
       out.push({
         finding: finding(
           e.new.file,

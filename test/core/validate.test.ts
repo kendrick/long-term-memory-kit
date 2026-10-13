@@ -650,6 +650,56 @@ describe("supersession checks", () => {
     });
   });
 
+  test("an id held by two Records is unique-id's alone: no supersession finding resolves through it", async () => {
+    await withScratch(demoBank, async (dir) => {
+      // The original keeps `supersedes`; the copy shares its id but doesn't list the older Record.
+      const copy = "_memory/decisions/zz-copy.md";
+      const copyText = replaceLine(valid, "supersedes:", null);
+      writeFileSync(join(dir, copy), copyText);
+      const readBack = readFileSync(join(dir, copy), "utf8");
+      expect(readBack).toBe(copyText);
+      expect(readBack).not.toContain("supersedes:");
+      expect(readFileSync(join(dir, newRel), "utf8")).toContain("supersedes:");
+
+      const fs = validateBankReport(dir, null, dir).findings;
+      expect(fs.map((f) => f.rule)).toEqual(["unique-id"]);
+    });
+  });
+
+  test("a duplicated id on the older side stays unique-id's alone too", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const oldText = readFileSync(join(dir, oldRel), "utf8");
+      const copy = "_memory/decisions/zz-old-copy.md";
+      // Disjoint scope on a copy with no superseded_by: it declares no edge, so facets must stay quiet.
+      const copyText = replaceLine(replaceLine(oldText, "superseded_by:", null), "applies_to:", "applies_to: [domain:elsewhere, service:elsewhere]");
+      writeFileSync(join(dir, copy), copyText);
+      const readBack = readFileSync(join(dir, copy), "utf8");
+      expect(readBack).toBe(copyText);
+      expect(readBack).not.toContain("superseded_by:");
+
+      const fs = validateBankReport(dir, null, dir).findings;
+      expect(fs.map((f) => f.rule)).toEqual(["unique-id"]);
+    });
+  });
+
+  test("a duplicated older id still gets supersession-facets per declaring copy, and no supersession-incomplete", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const oldText = readFileSync(join(dir, oldRel), "utf8");
+      const copy = "_memory/decisions/zz-old-copy.md";
+      writeFileSync(join(dir, copy), oldText);
+      expect(readFileSync(join(dir, copy), "utf8")).toBe(oldText);
+      const newText = await mutate(dir, newRel, (t) => replaceLine(replaceLine(t, "supersedes:", null), "applies_to:", "applies_to: [domain:zzz, system:zzz]"));
+      expect(newText).toContain("applies_to: [domain:zzz, system:zzz]");
+      expect(newText).not.toContain("supersedes:");
+
+      const fs = supersession(validateBankReport(dir, null, dir).findings);
+      expect(fs.map((f) => [f.rule, f.file])).toEqual([
+        ["supersession-facets", oldRel],
+        ["supersession-facets", copy],
+      ]);
+    });
+  });
+
   test("with paths naming only the newer Record, the incomplete finding on the older one still appears", async () => {
     await withScratch(demoBank, async (dir) => {
       await mutate(dir, newRel, (t) => replaceLine(t, "supersedes:", null));
