@@ -16,6 +16,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run test
+      # The committed generated files are what an agent in the demo Bank reads; fail when the renderer drifts from them.
+      - run: bun src/cli/bin.ts init --check fixtures/demo-bank
 
   schema:
     runs-on: ubuntu-latest

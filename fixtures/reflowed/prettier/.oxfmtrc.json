@@ -1,0 +1,10 @@
+{
+  "overrides": [
+    {
+      "files": ["_memory/**/*.md"],
+      "options": {
+        "embeddedLanguageFormatting": "off"
+      }
+    }
+  ]
+}
