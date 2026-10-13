@@ -16,8 +16,9 @@ export function parseFilter(arg: string): Filter | null {
 const toRel = (root: string, abs: string): string => relative(root, abs).split(sep).join("/");
 
 // A non-.md link can't be a Record, so only one that reaches a directory is worth reporting
-// (it could hide Records). statSync reads the target's inode, not its contents, so nothing is
-// followed. A dangling link holds nothing; any other error can't rule a directory out.
+// (it could hide Records). statSync resolves the link only to learn the target's type; nothing
+// behind it is read or descended into. A dangling link holds nothing; any other error can't
+// rule a directory out.
 function linkMayHoldRecords(p: string): boolean {
   try {
     return statSync(p).isDirectory();
@@ -46,17 +47,14 @@ function walkMarkdown(
   }
   for (const e of entries) {
     const p = join(dir, e.name);
-    // Dirent carries lstat's answer, so a link is caught without a second lookup by path.
-    if (e.isSymbolicLink()) {
-      // Bun may resolve a `\` name elsewhere, so such a link is reported without a stat.
-      if (e.name.endsWith(".md") || e.name.includes("\\") || linkMayHoldRecords(p)) {
-        onSkip(toRel(root, p), "symlink, not followed");
-      }
+    // Bun may resolve a `\` name as a different path in stat/readFileSync/readdirSync, so such an
+    // entry is reported without any lookup. Dirent carries lstat's answer for links.
+    if (e.name.includes("\\")) {
+      onSkip(toRel(root, p), e.isSymbolicLink() ? "symlink, not followed" : "name contains a backslash");
       continue;
     }
-    // Bun may resolve a `\` name as a different path in readFileSync/readdirSync.
-    if (e.name.includes("\\")) {
-      onSkip(toRel(root, p), "name contains a backslash");
+    if (e.isSymbolicLink()) {
+      if (e.name.endsWith(".md") || linkMayHoldRecords(p)) onSkip(toRel(root, p), "symlink, not followed");
       continue;
     }
     if (e.isDirectory()) walkMarkdown(p, into, root, onSkip);

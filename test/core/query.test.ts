@@ -406,12 +406,13 @@ describe("countFacets", () => {
   });
 });
 
-describe("listRecordFiles links beside the Records", () => {
+describe("listRecordFiles symlinks beside Records", () => {
   const folders = defaultFolders;
-  const walk = async (
+  const DECISIONS = "_memory/decisions";
+  const link = async (
     make: (dir: string) => Promise<void>,
-  ): Promise<{ skipped: [string, string][]; files: string[]; baseline: string[] }> => {
-    let out!: { skipped: [string, string][]; files: string[]; baseline: string[] };
+    check: (r: { skipped: [string, string][]; files: string[]; baseline: string[] }) => void,
+  ) => {
     await withScratch(demoBank, async (dir) => {
       const baseline = listRecordFiles({ root: dir, folders, raw: {} }, () => {}).map((f) => f.rel);
       await make(dir);
@@ -419,38 +420,74 @@ describe("listRecordFiles links beside the Records", () => {
       const files = listRecordFiles({ root: dir, folders, raw: {} }, (p, r) => skipped.push([p, r])).map(
         (f) => f.rel,
       );
-      out = { skipped, files, baseline };
+      check({ skipped, files, baseline });
     });
-    return out;
   };
 
   test("a non-.md link to a file is ignored silently", async () => {
-    const { skipped, files, baseline } = await walk((dir) =>
-      symlink("/etc/hosts", join(dir, "_memory/decisions/diagram.png")),
+    await link(
+      (dir) => symlink("/etc/hosts", join(dir, DECISIONS, "diagram.png")),
+      ({ skipped, files, baseline }) => {
+        expect(skipped).toEqual([]);
+        expect(files).toEqual(baseline);
+      },
     );
-    expect(skipped).toEqual([]);
-    expect(files).toEqual(baseline);
   });
 
   test("a .md link is reported", async () => {
-    const { skipped } = await walk((dir) => symlink("/etc/hosts", join(dir, "_memory/decisions/x.md")));
-    expect(skipped).toEqual([["_memory/decisions/x.md", "symlink, not followed"]]);
+    await link(
+      (dir) => symlink("/etc/hosts", join(dir, DECISIONS, "x.md")),
+      ({ skipped }) => expect(skipped).toEqual([[`${DECISIONS}/x.md`, "symlink, not followed"]]),
+    );
   });
 
   test("a link to a directory is reported", async () => {
-    const { skipped } = await walk((dir) => symlink(dir, join(dir, "_memory/decisions/assets")));
-    expect(skipped).toEqual([["_memory/decisions/assets", "symlink, not followed"]]);
+    await link(
+      (dir) => symlink(dir, join(dir, DECISIONS, "assets")),
+      ({ skipped }) => expect(skipped).toEqual([[`${DECISIONS}/assets`, "symlink, not followed"]]),
+    );
   });
 
   test("a non-.md name linking to a directory is reported", async () => {
-    const { skipped } = await walk((dir) => symlink(dir, join(dir, "_memory/decisions/diagram.png")));
-    expect(skipped).toEqual([["_memory/decisions/diagram.png", "symlink, not followed"]]);
+    await link(
+      (dir) => symlink(dir, join(dir, DECISIONS, "diagram.png")),
+      ({ skipped }) => expect(skipped).toEqual([[`${DECISIONS}/diagram.png`, "symlink, not followed"]]),
+    );
   });
 
   test("a dangling non-.md link is ignored silently", async () => {
-    const { skipped } = await walk((dir) =>
-      symlink(join(dir, "nowhere"), join(dir, "_memory/decisions/gone.png")),
+    await link(
+      (dir) => symlink(join(dir, "nowhere"), join(dir, DECISIONS, "gone.png")),
+      ({ skipped, files, baseline }) => {
+        expect(skipped).toEqual([]);
+        expect(files).toEqual(baseline);
+      },
     );
-    expect(skipped).toEqual([]);
+  });
+
+  test("a backslash-named non-.md link to a file is reported without a stat", async () => {
+    await link(
+      (dir) => symlink("/etc/hosts", join(dir, DECISIONS, "a\\b.png")),
+      ({ skipped }) => expect(skipped).toEqual([[`${DECISIONS}/a\\b.png`, "symlink, not followed"]]),
+    );
+  });
+
+  // The link's target sits in a directory stat can't traverse, so EACCES says nothing about
+  // whether it is a directory and the link must be reported.
+  test.skipIf(process.getuid?.() === 0)("a non-.md link whose stat fails with EACCES is reported", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const locked = join(dir, "locked");
+      await mkdir(locked);
+      await writeFile(join(locked, "t"), "x");
+      await symlink(join(locked, "t"), join(dir, DECISIONS, "diagram.png"));
+      await chmod(locked, 0o000);
+      try {
+        const skipped: [string, string][] = [];
+        listRecordFiles({ root: dir, folders, raw: {} }, (p, r) => skipped.push([p, r]));
+        expect(skipped).toEqual([[`${DECISIONS}/diagram.png`, "symlink, not followed"]]);
+      } finally {
+        await chmod(locked, 0o755);
+      }
+    });
   });
 });
