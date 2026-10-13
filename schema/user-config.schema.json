@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kendrick/long-term-memory-kit/schema/user-config.schema.json",
+  "title": "ltm user config",
+  "description": "Per-user settings for ltm, read from $LTM_CONFIG, else %APPDATA%\\ltm\\config.yaml on Windows, else $XDG_CONFIG_HOME/ltm/config.yaml, else ~/.config/ltm/config.yaml. It names the Banks this user has checked out and says which apply to a Consumer repo.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "banks": {
+      "description": "Map each Bank name to its local checkout. Rules, default, and a Consumer repo's .ltm.yaml refer to Banks by these names.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": {
+            "description": "Give the Bank's local checkout, the directory holding memory-bank.yaml. A leading ~/ expands to the home directory, and a relative path resolves against this file's directory.",
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "description": "Give the Bank's git remote. ltm connect prints it, and ltm mcp clones from it.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "rules": {
+      "description": "Map Consumer repos to Banks by their origin's <host>/<org>/<repo>. Every matching rule applies, in order.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["match", "bank"],
+        "properties": {
+          "match": {
+            "description": "Give a / separated pattern with the same number of segments as <host>/<org>/<repo>, where * matches any one segment. A lone * matches every repo.",
+            "type": "string",
+            "minLength": 1
+          },
+          "bank": {
+            "description": "Name a Bank from banks.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "default": {
+      "description": "Name the Bank from banks to use when no .ltm.yaml exists and no rule matches.",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

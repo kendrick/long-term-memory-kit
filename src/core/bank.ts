@@ -97,6 +97,11 @@ export function loadConfig(root: string): BankConfig {
     if (e instanceof YAMLParseError) {
       throw new ConfigError(path, e.linePos?.[0]?.line ?? null, e.message);
     }
+    // yaml throws a bare ReferenceError once alias expansion passes its limit. Keying on
+    // "alias" keeps any other ReferenceError (a real bug) from being reported as a bad config.
+    if (e instanceof ReferenceError && e.message.includes("alias")) {
+      throw new ConfigError(path, null, e.message.split("\n")[0] ?? e.message);
+    }
     throw e;
   }
   if (!isMapping(raw)) throw new ConfigError(path, null, "config is not a YAML mapping");

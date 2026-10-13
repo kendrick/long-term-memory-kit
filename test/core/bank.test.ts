@@ -193,3 +193,47 @@ test("DEFAULT_FOLDERS matches the defaults the schema states", () => {
     expect(description).toContain(`${type} ${folder}`);
   }
 });
+
+describe("loadConfig alias handling (#43)", () => {
+  // Nine levels of ten refs each: expands past yaml's alias limit.
+  const bomb = (() => {
+    const lines = ["a: &a [x,x,x,x,x,x,x,x,x,x]"];
+    for (let i = 1; i < 9; i++) {
+      const n = String.fromCharCode(97 + i);
+      const p = String.fromCharCode(96 + i);
+      lines.push(`${n}: &${n} [${Array(10).fill(`*${p}`).join(",")}]`);
+    }
+    return `${lines.join("\n")}\n`;
+  })();
+
+  function configText(dir: string): string {
+    return readFileSync(join(dir, "memory-bank.yaml"), "utf8");
+  }
+
+  test("an alias bomb becomes a ConfigError with a null line", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await writeFile(join(dir, "memory-bank.yaml"), `${configText(dir)}${bomb}`);
+      let caught: unknown;
+      try {
+        loadConfig(dir);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(ConfigError);
+      const err = caught as ConfigError;
+      expect(err.path).toBe(join(dir, "memory-bank.yaml"));
+      expect(err.line).toBeNull();
+      expect(err.message).toContain("alias");
+      expect(err.message).not.toContain("\n");
+    });
+  });
+
+  test("a config with an ordinary alias still loads", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await writeFile(join(dir, "memory-bank.yaml"), `${configText(dir)}a: &x service\nb: *x\n`);
+      const config = loadConfig(dir);
+      expect(config.raw.a).toBe("service");
+      expect(config.raw.b).toBe("service");
+    });
+  });
+});
