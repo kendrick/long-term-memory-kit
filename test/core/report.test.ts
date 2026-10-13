@@ -111,7 +111,7 @@ describe("toJunit", () => {
     const p = parseJunit(xml);
     expect(p.tag).toBe("testsuite");
     expect(p.tests).toBe("2");
-    expect(p.failures).toBe("2");
+    expect(p.failures).toBe("1");
     expect(p.testcases).toBe(2);
     expect(p.failure_total).toBe(2);
     const a = p.cases.find((c) => c.name === "a.md")!;
@@ -133,5 +133,33 @@ describe("toJunit", () => {
     const p = parseJunit(toJunit([err({ message: `<&> "q" 'a'`, key: null })], ["a.md"]));
     expect(p.cases[0]!.failures[0]!.text).toBe(`a.md:3: <&> "q" 'a'`);
     expect(p.cases[0]!.failures[0]!.message).toBe("schema: -");
+  });
+
+  test("failures counts testcases with an error, not individual errors", () => {
+    const p = parseJunit(toJunit([err(), err({ line: 5, key: "tags" }), err({ file: "c.md" })], ["a.md", "b.md", "c.md"]));
+    expect(p.tests).toBe("3");
+    expect(p.failures).toBe("2");
+    expect(p.failure_total).toBe(3);
+  });
+
+  test("XML-forbidden code points in a file name and a message become U+FFFD", () => {
+    const f = err({ file: "bad\u0001name\uFFFF.md", message: "x\u0001y\uFFFFz\uFFFE\u0008" });
+    const p = parseJunit(toJunit([f], [f.file]));
+    expect(p.cases[0]!.name).toBe("bad\uFFFDname\uFFFD.md");
+    expect(p.cases[0]!.failures[0]!.text).toBe("bad\uFFFDname\uFFFD.md:3: x\uFFFDy\uFFFDz\uFFFD\uFFFD");
+  });
+
+  test("forbidden code points in a warning's system-out and in a key are replaced too", () => {
+    const w = warn({ message: "m\u0001", key: "k\u0002" });
+    const p = parseJunit(toJunit([w, err({ key: "k\u0003" })], ["a.md"]));
+    expect(p.cases[0]!.out[0]).toContain("m\uFFFD");
+    expect(p.cases[0]!.out[0]).toContain("k\uFFFD");
+    expect(p.cases[0]!.failures[0]!.message).toBe("schema: k\uFFFD");
+  });
+
+  test("a lone surrogate is replaced, a paired astral character survives, tab and CR/LF stay", () => {
+    const f = err({ message: "a\uD800b\u{1F600}c\td\r\ne", key: null });
+    const p = parseJunit(toJunit([f], ["a.md"]));
+    expect(p.cases[0]!.failures[0]!.text).toBe("a.md:3: a\uFFFDb\u{1F600}c\td\ne");
   });
 });

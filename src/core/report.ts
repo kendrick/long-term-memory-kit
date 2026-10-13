@@ -34,13 +34,20 @@ export function toGitlab(findings: Finding[]): string {
 }
 
 const XML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
-const xml = (s: string): string => s.replace(/[&<>"']/g, (c) => XML_ESCAPES[c] ?? c);
+// XML 1.0 forbids most C0 controls, lone surrogates, and U+FFFE/U+FFFF even as escaped
+// references, and Unix filenames can hold them. One bad byte makes a CI consumer reject
+// the whole report, so swap them for U+FFFD and leave a visible trace.
+const XML_FORBIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+const xml = (s: string): string =>
+  s.replace(XML_FORBIDDEN, "\uFFFD").replace(/[&<>"']/g, (c) => XML_ESCAPES[c] ?? c);
 
 export function toJunit(findings: Finding[], files: string[]): string {
-  const errors = findings.filter((f) => f.severity === "error");
+  // JUnit's `failures` counts failed testcases, and a testcase here is a file, so a file
+  // with three errors is one failure in the summary and three <failure> children.
+  const failedFiles = files.filter((file) => findings.some((f) => f.file === file && f.severity === "error"));
   const out = [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    `<testsuite name="ltm validate" tests="${files.length}" failures="${errors.length}">`,
+    `<testsuite name="ltm validate" tests="${files.length}" failures="${failedFiles.length}">`,
   ];
   for (const file of files) {
     const mine = findings.filter((f) => f.file === file);
