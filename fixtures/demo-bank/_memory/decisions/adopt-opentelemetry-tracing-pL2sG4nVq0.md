@@ -12,10 +12,13 @@ review_by: 2026-12-15
 ---
 
 ## Context
+
 The vendor agent ties us to one tracing backend.
 
 ## Decision
+
 Instrument services with OpenTelemetry SDKs.
 
 ## Consequences
+
 Teams re-instrument once. Backend choice becomes a config change.

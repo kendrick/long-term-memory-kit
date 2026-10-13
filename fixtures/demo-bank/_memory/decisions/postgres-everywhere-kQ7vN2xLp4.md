@@ -15,10 +15,13 @@ source_refs: [fixtures/hydration-sources/adr/0001-postgres.md]
 ---
 
 ## Context
+
 Two relational engines doubled our operational load.
 
 ## Decision
+
 Use PostgreSQL for every service that needs a relational store.
 
 ## Consequences
+
 One engine to patch and back up. Existing MySQL services migrate on their next major change.

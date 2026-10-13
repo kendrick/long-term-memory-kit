@@ -12,10 +12,13 @@ owners: [team:platform-engineering]
 ---
 
 ## Context
+
 Release branches drifted from main for weeks.
 
 ## Decision
+
 Merge to main daily and gate unfinished work behind flags.
 
 ## Consequences
+
 Flags need cleanup. Releases become routine.

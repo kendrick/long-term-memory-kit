@@ -13,10 +13,13 @@ tags: [messaging, events]
 ---
 
 ## Context and Problem Statement
+
 Order-service calls four downstream services synchronously, so one slow dependency stalls checkout.
 
 ## Decision Outcome
+
 Publish order events to the shared queue and let consumers subscribe.
 
 ## Consequences
+
 Checkout no longer waits on downstream work. Consumers must handle duplicate events.

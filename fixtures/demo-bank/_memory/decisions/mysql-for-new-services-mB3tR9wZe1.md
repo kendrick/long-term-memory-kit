@@ -13,10 +13,13 @@ tags: [database, mysql]
 ---
 
 ## Context
+
 The platform team only ran MySQL in 2024.
 
 ## Decision
+
 Default new services to MySQL.
 
 ## Consequences
+
 Services built on MySQL need migration once Postgres becomes the default engine.
