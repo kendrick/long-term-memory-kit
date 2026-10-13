@@ -33,7 +33,6 @@ function allFiles(dir: string): string[] {
 const hashes = (dir: string) =>
   allFiles(dir).map((f) => [f, createHash("sha256").update(readFileSync(f)).digest("hex")]);
 
-// Bytes after the closing `---` line.
 function bodyOf(text: string): string {
   const m = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(text);
   expect(m).not.toBeNull();

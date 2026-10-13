@@ -26,8 +26,9 @@ function parsesBackAs(yaml: string, key: string, expected: (v: unknown) => boole
   return keys.length === 1 && keys[0] === key && expected(doc[key]);
 }
 
-// Plain only when the same parser every Record reader uses gives the identical string
-// back. Anything else goes out as JSON, which is always a valid YAML double-quoted scalar.
+// A string goes out plain only when the parser every Record reader uses reads it back
+// unchanged, so `123`, `true`, or `a: b` can't come back as a number, boolean, or mapping.
+// JSON output is always a valid YAML double-quoted scalar.
 function canonicalString(s: string, inFlow: boolean): string {
   const plain = inFlow
     ? parsesBackAs(`k: [${s}]`, "k", (v) => Array.isArray(v) && v.length === 1 && v[0] === s)
