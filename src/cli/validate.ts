@@ -37,6 +37,7 @@ export const validate: Command = {
         ctx.out(`${f.file}:${f.line}: ${f.severity} ${f.rule}: ${f.key ?? "-"}: ${f.message}\n`);
       }
     }
-    return findings.length > 0 ? 1 : 0;
+    // Warnings are advice; failing CI on them would push teams to switch the checks off.
+    return findings.some((f) => f.severity === "error") ? 1 : 0;
   },
 };

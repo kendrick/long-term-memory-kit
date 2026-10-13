@@ -16,9 +16,17 @@ export type Rule =
   | "facet-prefix"
   | "unique-id"
   | "frontmatter"
-  | "walk";
+  | "walk"
+  | "supersession-missing-target"
+  | "supersession-incomplete"
+  | "supersession-status"
+  | "supersession-facets"
+  | "body-sections"
+  | "bright-line";
 
-export type Finding = { file: string; line: number; rule: Rule; severity: "error"; key: string | null; message: string };
+export type Severity = "error" | "warning";
+
+export type Finding = { file: string; line: number; rule: Rule; severity: Severity; key: string | null; message: string };
 
 const CONFIG_FILE = "memory-bank.yaml";
 const LINE_BUDGET = 20;
@@ -46,11 +54,18 @@ function compileSchema(file: string): ValidateFunction {
 const recordSchema = (): ValidateFunction => compileSchema("record.schema.json");
 const configSchema = (): ValidateFunction => compileSchema("memory-bank.schema.json");
 
-const finding = (file: string, line: number, rule: Rule, key: string | null, message: string): Finding => ({
+const finding = (
+  file: string,
+  line: number,
+  rule: Rule,
+  key: string | null,
+  message: string,
+  severity: Severity = "error",
+): Finding => ({
   file,
   line,
   rule,
-  severity: "error",
+  severity,
   key,
   message,
 });
@@ -262,10 +277,24 @@ function sortFindings(fs: Finding[]): Finding[] {
 
 const toPosix = (p: string): string => p.split(sep).join("/");
 
+export type BankReport = { findings: Finding[]; files: string[] };
+
+// JUnit needs a testcase per file judged, including the clean ones, which findings alone can't supply.
+function report(findings: Finding[], judged: Iterable<string>): BankReport {
+  const files = new Set(judged);
+  for (const f of findings) files.add(f.file);
+  return { findings: sortFindings(findings), files: [...files].sort(cmp) };
+}
+
 export function validateBank(root: string, paths: string[] | null, cwd: string): Finding[] {
+  return validateBankReport(root, paths, cwd).findings;
+}
+
+export function validateBankReport(root: string, paths: string[] | null, cwd: string): BankReport {
   const bankRoot = resolve(root);
   const { findings, config } = checkConfig(bankRoot);
-  if (!config) return sortFindings(findings);
+  const judged: string[] = [CONFIG_FILE];
+  if (!config) return report(findings, judged);
 
   const named = paths
     ? paths.map((p) => {
@@ -299,6 +328,7 @@ export function validateBank(root: string, paths: string[] | null, cwd: string):
   // Every Record is read even when paths are named: a duplicate id may live in a file nobody named.
   for (const f of files) {
     const isNamed = !namedRels || namedRels.has(f.rel);
+    if (isNamed) judged.push(f.rel);
     let text: string;
     try {
       text = readFileSync(f.abs, "utf8");
@@ -311,5 +341,5 @@ export function validateBank(root: string, paths: string[] | null, cwd: string):
     if (r.id !== null) ids.push({ file: f.rel, line: r.idLine, id: r.id });
   }
   findings.push(...checkUniqueIds(ids, namedRels));
-  return sortFindings(findings);
+  return report(findings, judged);
 }
