@@ -3,7 +3,7 @@ import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "no
 import pkg from "../../package.json" with { type: "json" };
 import { ConfigError, loadConfig, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
 import { canonicalScalar } from "../core/canonical.ts";
-import { CLAUDE_REGION, COPILOT_REGION, DEFAULT_FACET_PREFIXES, renderAgentsRegion, replaceRegion } from "../core/init.ts";
+import { CLAUDE_REGION, COPILOT_REGION, DEFAULT_FACET_PREFIXES, readRegion, renderAgentsRegion, replaceRegion } from "../core/init.ts";
 import type { Command } from "./run.ts";
 
 const CONFIG_FILE = "memory-bank.yaml";
@@ -92,14 +92,20 @@ function mergeOverrides(existing: string | null, entry: { files: unknown; option
 
 export const init: Command = {
   name: "init",
-  summary: "Scaffold a Bank and its generated agent instructions",
+  summary: "Scaffold a Bank and its generated agent instructions (--check: report stale ones)",
   options: {
     name: { type: "string" },
     folder: { type: "string", multiple: true },
     "facet-prefix": { type: "string", multiple: true },
+    check: { type: "boolean" },
   },
   positionals: [{ name: "dir", required: false }],
   checkArgs(_positionals, values) {
+    // --check never writes, so a flag that shapes a new memory-bank.yaml has nothing to act on.
+    if (values.check === true) {
+      const given = (["name", "folder", "facet-prefix"] as const).find((k) => values[k] !== undefined);
+      return given === undefined ? undefined : `--check can't be combined with --${given}`;
+    }
     for (const v of stringList(values.folder)) {
       const problem = folderProblem(v);
       if (problem !== undefined) return problem;
@@ -109,6 +115,33 @@ export const init: Command = {
   async run(ctx) {
     const dir = resolve(ctx.cwd, ctx.positionals[0] ?? ".");
     const show = (abs: string) => abs.slice(dir.length + 1);
+
+    if (ctx.values.check === true) {
+      let config: BankConfig;
+      if (!existsSync(join(dir, CONFIG_FILE))) {
+        ctx.err(`ltm init --check: no ${CONFIG_FILE} in ${dir}\n`);
+        return 1;
+      }
+      try {
+        config = loadConfig(dir);
+      } catch (e) {
+        if (!(e instanceof ConfigError)) throw e;
+        ctx.err(`ltm init --check: ${e.path}${e.line === null ? "" : `:${e.line}`}: ${e.message.split("\n")[0]}\n`);
+        return 1;
+      }
+      let stale = false;
+      for (const { rel, region } of renderRegions(config)) {
+        const abs = join(dir, rel);
+        const onDisk = existsSync(abs) ? readRegion(readFileSync(abs, "utf8")) : null;
+        // replaceRegion terminates the body with a newline, so readRegion returns it that way.
+        const want = region === "" || region.endsWith("\n") ? region : `${region}\n`;
+        if (onDisk !== want) {
+          ctx.out(`${rel}\n`);
+          stale = true;
+        }
+      }
+      return stale ? 1 : 0;
+    }
     let failed = false;
     const fail = (abs: string, why: string) => {
       ctx.err(`ltm init: ${show(abs)}: ${why}\n`);

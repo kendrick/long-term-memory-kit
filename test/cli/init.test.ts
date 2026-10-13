@@ -8,6 +8,7 @@ import { parse } from "yaml";
 import pkg from "../../package.json" with { type: "json" };
 import { defaultCommands } from "../../src/cli/commands.ts";
 import { run } from "../../src/cli/run.ts";
+import { withScratch } from "../helpers/scratch.ts";
 
 let tmp: string;
 let dir: string;
@@ -205,5 +206,89 @@ describe("ltm init edges", () => {
     expect(r.exitCode).toBe(2);
     expect(r.stderr).toContain(reason);
     expect(walk(tmp)).toEqual([]);
+  });
+});
+
+describe("ltm init --check", () => {
+  const demoBank = join(import.meta.dir, "../../fixtures/demo-bank");
+  const at = (d: string, ...argv: string[]) => run({ argv: ["init", ...argv], cwd: d, env: {} });
+
+  test("the staleness falsifier: all five steps, in order, and --check writes nothing", async () => {
+    await withScratch(demoBank, async (d) => {
+      expect((await at(d)).exitCode).toBe(0);
+
+      const clean = hashes(d);
+      const ok = await at(d, "--check");
+      expect(ok.exitCode).toBe(0);
+      expect(ok.stdout).toBe("");
+      expect(hashes(d)).toEqual(clean);
+
+      const cfg = join(d, "memory-bank.yaml");
+      writeFileSync(cfg, readFileSync(cfg, "utf8").replace(/facet_prefixes: \[/, "facet_prefixes: [widget, "));
+      const stale = hashes(d);
+      const r2 = await at(d, "--check");
+      expect(r2.exitCode).toBe(1);
+      expect(r2.stdout.split("\n")).toContain("AGENTS.md");
+      expect(r2.stdout).not.toContain("CLAUDE.md");
+      expect(hashes(d)).toEqual(stale);
+
+      expect((await at(d)).exitCode).toBe(0);
+      const r3 = await at(d, "--check");
+      expect(r3.exitCode).toBe(0);
+      expect(r3.stdout).toBe("");
+
+      const agents = join(d, "AGENTS.md");
+      writeFileSync(agents, `# Mine\n\nhand-written\n\n${readFileSync(agents, "utf8")}\ntrailing prose\n`);
+      const outside = hashes(d);
+      const r4 = await at(d, "--check");
+      expect(r4.exitCode).toBe(0);
+      expect(hashes(d)).toEqual(outside);
+
+      const text = readFileSync(agents, "utf8");
+      const at1 = text.indexOf("\n", text.indexOf("ltm:generated:begin")) + 1;
+      writeFileSync(agents, text.slice(0, at1) + (text[at1] === "X" ? "Y" : "X") + text.slice(at1 + 1));
+      const inside = hashes(d);
+      const r5 = await at(d, "--check");
+      expect(r5.exitCode).toBe(1);
+      expect(r5.stdout.split("\n")).toContain("AGENTS.md");
+      expect(hashes(d)).toEqual(inside);
+    });
+  });
+
+  test("a missing region file is named, and not created", async () => {
+    await withScratch(demoBank, async (d) => {
+      await at(d);
+      rmSync(join(d, ".github"), { recursive: true });
+      const before = hashes(d);
+      const r = await at(d, "--check");
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe(".github/copilot-instructions.md\n");
+      expect(hashes(d)).toEqual(before);
+    });
+  });
+
+  test("a file with no markers is stale", async () => {
+    await withScratch(demoBank, async (d) => {
+      await at(d);
+      writeFileSync(join(d, "CLAUDE.md"), "just prose\n");
+      const r = await at(d, "--check");
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("CLAUDE.md\n");
+    });
+  });
+
+  test("no memory-bank.yaml is exit 1 and writes nothing", async () => {
+    const r = await at(dir, "--check");
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toBe(`ltm init --check: no memory-bank.yaml in ${dir}\n`);
+    expect(walk(dir)).toEqual([]);
+  });
+
+  test("combined with --name, --folder or --facet-prefix it is a usage error", async () => {
+    for (const extra of [["--name", "x"], ["--folder", "Decision=docs/adr"], ["--facet-prefix", "a"]]) {
+      const r = await at(dir, "--check", ...extra);
+      expect(r.exitCode).toBe(2);
+    }
+    expect(walk(dir)).toEqual([]);
   });
 });
