@@ -5,8 +5,8 @@ memory_type: Decision
 title: Trunk-based deployment
 status: accepted
 date: 2025-11-03
-summary: Acme services deploy from the main branch behind feature flags instead of long-lived release branches.
 last_confirmed: 2026-08-20
+summary: Acme services deploy from the main branch behind feature flags instead of long-lived release branches.
 applies_to: [domain:commerce, platform:kubernetes]
 owners: [team:platform-engineering]
 ---

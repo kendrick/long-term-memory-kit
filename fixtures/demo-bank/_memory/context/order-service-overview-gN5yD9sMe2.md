@@ -5,8 +5,8 @@ memory_type: Context
 title: order-service overview
 status: accepted
 date: 2026-06-10
-summary: Order-service owns carts, checkout, and order state for Acme commerce and publishes order events.
 last_confirmed: 2026-09-01
+summary: Order-service owns carts, checkout, and order state for Acme commerce and publishes order events.
 applies_to: [service:order-service, domain:commerce]
 owners: [team:commerce-architecture]
 ---

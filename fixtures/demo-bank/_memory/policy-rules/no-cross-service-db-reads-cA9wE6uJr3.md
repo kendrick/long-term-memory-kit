@@ -5,8 +5,8 @@ memory_type: PolicyRule
 title: No cross-service DB reads
 status: accepted
 date: 2026-02-12
-summary: A service in the commerce domain never reads another service's database directly and goes through that service's API or events.
 last_confirmed: 2026-09-01
+summary: A service in the commerce domain never reads another service's database directly and goes through that service's API or events.
 applies_to: [domain:commerce]
 owners: [team:commerce-architecture]
 tags: [data-access, boundaries]

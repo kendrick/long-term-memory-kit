@@ -8,8 +8,8 @@ date: 2026-04-22
 summary: Order-service publishes order lifecycle events to the shared message queue instead of calling downstream services directly.
 applies_to: [service:order-service, domain:commerce]
 owners: [team:commerce-architecture]
-deciders: [alice, bob]
 tags: [messaging, events]
+deciders: [alice, bob]
 ---
 
 ## Context and Problem Statement

@@ -5,8 +5,8 @@ memory_type: Decision
 title: Postgres everywhere
 status: accepted
 date: 2026-02-10
-summary: Acme services use PostgreSQL as their relational store, superseding the MySQL decision for all new and migrated services.
 last_confirmed: 2026-09-01
+summary: Acme services use PostgreSQL as their relational store, superseding the MySQL decision for all new and migrated services.
 supersedes: [mB3tR9wZe1]
 applies_to: [domain:commerce, system:data-platform]
 owners: [team:commerce-architecture]

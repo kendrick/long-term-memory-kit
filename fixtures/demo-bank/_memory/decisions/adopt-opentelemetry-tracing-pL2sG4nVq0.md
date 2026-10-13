@@ -5,10 +5,10 @@ memory_type: Decision
 title: Adopt OpenTelemetry tracing
 status: proposed
 date: 2026-09-30
+review_by: 2026-12-15
 summary: Acme services emit traces through OpenTelemetry instead of the vendor tracing agent.
 applies_to: [platform:kubernetes, system:observability]
 owners: [team:platform-engineering]
-review_by: 2026-12-15
 ---
 
 ## Context
