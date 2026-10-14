@@ -34,6 +34,15 @@ describe("lexical.search", () => {
     expect(lexical.search([b, a], "redis").map((h) => h.record.path)).toEqual(["a.md", "b.md"]);
   });
 
+  // Uppercase must beat lowercase: code-unit order puts "B" (0x42) before "a" (0x61), localeCompare doesn't.
+  test("equal scores sort by code unit, so an uppercase path precedes a lowercase one", () => {
+    const lower = rec("_memory/decisions/a-cache.md", { title: "Use redis", summary: "A cache." });
+    const upper = rec("_memory/decisions/B-cache.md", { title: "Use redis", summary: "A cache." });
+    const hits = lexical.search([lower, upper], "redis");
+    expect(hits[0]?.score).toBe(hits[1]?.score);
+    expect(hits.map((h) => h.record.path)).toEqual(["_memory/decisions/B-cache.md", "_memory/decisions/a-cache.md"]);
+  });
+
   test("a token outside title and summary doesn't match", () => {
     const bodyOnly = rec("a.md", { title: "Databases", summary: "Pick one.", body: "postgres", tags: ["postgres"] });
     expect(lexical.search([bodyOnly], "postgres")).toEqual([]);

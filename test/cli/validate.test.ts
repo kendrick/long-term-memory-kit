@@ -302,6 +302,27 @@ describe("ltm validate", () => {
     });
   });
 
+  test("12b: a symlinked memory-bank.yaml exits 1 with the findBank refusal on stderr", async () => {
+    await withScratch(demo, async (dir) => {
+      const outside = mkdtempSync(join(tmpdir(), "ltm-validate-cfg-"));
+      try {
+        const real = join(outside, "memory-bank.yaml");
+        copyFileSync(join(dir, "memory-bank.yaml"), real);
+        rmSync(join(dir, "memory-bank.yaml"));
+        symlinkSync(real, join(dir, "memory-bank.yaml"));
+        // Without validate's ConfigError catch, run() rejects instead of returning this result.
+        const r = await ltm(dir, "validate");
+        expect(r).toEqual({
+          exitCode: 1,
+          stdout: "",
+          stderr: `ltm validate: ${join(dir, "memory-bank.yaml")}: memory-bank.yaml is a symlink, not followed\n`,
+        });
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  });
+
   test("13: outside any Bank, exits 1 and stderr names the dir", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ltm-validate-nobank-"));
     try {
