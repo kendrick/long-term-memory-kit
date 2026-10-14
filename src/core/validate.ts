@@ -312,8 +312,9 @@ type Pending = { finding: Finding; also: string };
 const stringList = (v: unknown): string[] =>
   typeof v === "string" ? [v] : Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 
-// Missing, null, or empty means "applies everywhere", so it overlaps with anything.
-function sharesScope(a: unknown, b: unknown): boolean {
+// Missing, null, or empty means "applies everywhere", so it overlaps with anything. Exported so ltm supersede
+// (#11) refuses exactly the pairs this check would flag.
+export function sharesScope(a: unknown, b: unknown): boolean {
   const as = stringList(a);
   const bs = stringList(b);
   if (as.length === 0 || bs.length === 0) return true;
