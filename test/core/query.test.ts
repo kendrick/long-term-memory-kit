@@ -280,25 +280,24 @@ describe("RETIRED_STATUSES", () => {
 });
 
 describe("isOrgWide", () => {
-  const withAppliesTo = (extra: Record<string, unknown>): ParsedRecord => ({
+  const withAppliesTo = (v: unknown): ParsedRecord => ({
     ...record,
-    frontmatter: { ...record.frontmatter, ...extra },
+    frontmatter: { ...record.frontmatter, applies_to: v },
   });
 
   test("a missing key, null, and an empty list are org-wide", () => {
-    const { applies_to: _omitted, ...rest } = { ...record.frontmatter, applies_to: undefined };
+    const { applies_to: _omitted, ...rest } = record.frontmatter;
     expect(isOrgWide({ ...record, frontmatter: rest })).toBe(true);
-    expect(isOrgWide(withAppliesTo({ applies_to: null }))).toBe(true);
-    expect(isOrgWide(withAppliesTo({ applies_to: [] }))).toBe(true);
+    expect(isOrgWide(withAppliesTo(null))).toBe(true);
+    expect(isOrgWide(withAppliesTo([]))).toBe(true);
   });
 
-  // The non-list shapes are the point: counting a malformed value as org-wide would leak
-  // the Record into every Facet.
+  // The non-list shapes are the point: counting a malformed value as org-wide would leak the Record into every Facet.
   test("a populated list, a string, and malformed shapes are not org-wide", () => {
-    expect(isOrgWide(withAppliesTo({ applies_to: ["billing"] }))).toBe(false);
-    expect(isOrgWide(withAppliesTo({ applies_to: "billing" }))).toBe(false);
-    expect(isOrgWide(withAppliesTo({ applies_to: { a: 1 } }))).toBe(false);
-    expect(isOrgWide(withAppliesTo({ applies_to: 3 }))).toBe(false);
+    expect(isOrgWide(withAppliesTo(["billing"]))).toBe(false);
+    expect(isOrgWide(withAppliesTo("billing"))).toBe(false);
+    expect(isOrgWide(withAppliesTo({ a: 1 }))).toBe(false);
+    expect(isOrgWide(withAppliesTo(3))).toBe(false);
   });
 });
 
