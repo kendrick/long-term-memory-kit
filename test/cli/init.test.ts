@@ -255,12 +255,31 @@ describe("ltm init formatter globs", () => {
     expect(overrideGlobs(file)).toEqual(["_memory/**/*.md"]);
   });
 
-  test("a Bank-root type folder (_memory/..) still gets Prettier's override on a root Record", async () => {
-    const r = await init("--folder", "Decision=_memory/..");
-    expect(r.exitCode).toBe(0);
-    writeFileSync(join(dir, "x.md"), "# x\n");
-    const resolved = await prettier.resolveConfig(join(dir, "x.md"), { editorconfig: false });
-    expect(resolved).toEqual({ embeddedLanguageFormatting: "off" });
+  // Asserts the formatters' output, not the resolved config: the glob is only right if a root Record's
+  // fenced block survives. The default-layout control keeps this from passing on a formatter that formats nothing.
+  test("a Bank-root type folder (_memory/..) keeps a root Record's code block intact in Prettier and oxfmt", async () => {
+    const root = join(import.meta.dir, "../..");
+    const oxfmt = join(root, "node_modules/.bin/oxfmt");
+    const block = "# x\n\n```js\nconst   a  =  {b:1}\n```\n";
+    const control = join(tmp, "control");
+    mkdirSync(control);
+
+    expect((await init("--folder", "Decision=_memory/..")).exitCode).toBe(0);
+    expect((await run({ argv: ["init"], cwd: control, env: {} })).exitCode).toBe(0);
+
+    const formatted = async (cwd: string) => {
+      writeFileSync(join(cwd, "x.md"), block);
+      const options = await prettier.resolveConfig(join(cwd, "x.md"), { editorconfig: false });
+      const viaPrettier = await prettier.format(block, { ...options, filepath: join(cwd, "x.md") });
+      const ox = spawnSync(oxfmt, ["-c", ".oxfmtrc.json", "x.md"], { cwd, encoding: "utf8" });
+      expect(ox.status).toBe(0);
+      return { viaPrettier, viaOxfmt: readFileSync(join(cwd, "x.md"), "utf8") };
+    };
+
+    expect(await formatted(dir)).toEqual({ viaPrettier: block, viaOxfmt: block });
+    const ctl = await formatted(control);
+    expect(ctl.viaPrettier).toContain("const a = { b: 1 };");
+    expect(ctl.viaOxfmt).toContain("const a = { b: 1 };");
   });
 });
 
