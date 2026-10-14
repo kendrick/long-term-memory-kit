@@ -352,6 +352,35 @@ describe("resolveBanks", () => {
     expect(r.resolvedBy).toBe("rules");
   });
 
+  // A rule list that matches nothing must not shadow `default`; it's the catch-all for repos no rule claims.
+  test("an origin no rule matches falls through to default", () => {
+    writeFileSync(
+      configPath,
+      "banks:\n  acme: { path: ~/banks/acme }\n  personal: { path: ~/banks/personal }\nrules:\n  - { match: github.com/other/*, bank: acme }\ndefault: personal\n",
+    );
+    const r = resolveBanks(repo, env);
+    expect(names(r)).toEqual(["personal"]);
+    expect(r.resolvedBy).toBe("default");
+  });
+
+  test("two rules naming the same Bank open it once", () => {
+    writeFileSync(
+      configPath,
+      "banks:\n  acme: { path: ~/banks/acme }\nrules:\n  - { match: github.com/acme/*, bank: acme }\n  - { match: \"*\", bank: acme }\n",
+    );
+    const r = resolveBanks(repo, env);
+    expect(names(r)).toEqual(["acme"]);
+    expect(r.resolvedBy).toBe("rules");
+  });
+
+  test(".ltm.yaml listing a Bank twice opens it once", () => {
+    writeFileSync(configPath, "banks:\n  acme: { path: ~/banks/acme }\n");
+    writeFileSync(join(repo, ".ltm.yaml"), "banks: [acme, acme]\n");
+    const r = resolveBanks(repo, env);
+    expect(names(r)).toEqual(["acme"]);
+    expect(r.resolvedBy).toBe("ltm.yaml");
+  });
+
   test("nothing resolvable lists the three places checked", () => {
     writeFileSync(configPath, "banks:\n  acme: { path: ~/banks/acme }\n");
     const r = resolveBanks(repo, env);
@@ -396,6 +425,18 @@ describe("resolveBanks", () => {
 describe("resolveBankFlag", () => {
   test("a name in user config wins", () => {
     writeFileSync(configPath, exampleConfig);
+    const b = resolveBankFlag("personal", repo, env);
+    expect(b.name).toBe("personal");
+    expect(b.root).toBe(join(home, "banks", "personal"));
+  });
+
+  // Lookup order is the contract: a stray directory in cwd must not hijack a configured name.
+  test("a user-config name wins over a different Bank at that relative path", () => {
+    writeFileSync(configPath, exampleConfig);
+    const decoy = join(repo, "personal");
+    cpSync(demoBank, decoy, { recursive: true });
+    const cfg = join(decoy, "memory-bank.yaml");
+    writeFileSync(cfg, readFileSync(cfg, "utf8").replace(/^name:.*$/m, "name: decoy"));
     const b = resolveBankFlag("personal", repo, env);
     expect(b.name).toBe("personal");
     expect(b.root).toBe(join(home, "banks", "personal"));

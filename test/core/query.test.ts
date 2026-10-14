@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { type BankConfig } from "../../src/core/bank.ts";
 import {
   countFacets,
+  isOrgWide,
   listRecordFiles,
   listRecords,
   matches,
@@ -275,6 +276,29 @@ const MYSQL = "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md";
 describe("RETIRED_STATUSES", () => {
   test("superseded, deprecated, rejected", () => {
     expect([...RETIRED_STATUSES].sort()).toEqual(["deprecated", "rejected", "superseded"]);
+  });
+});
+
+describe("isOrgWide", () => {
+  const withAppliesTo = (extra: Record<string, unknown>): ParsedRecord => ({
+    ...record,
+    frontmatter: { ...record.frontmatter, ...extra },
+  });
+
+  test("a missing key, null, and an empty list are org-wide", () => {
+    const { applies_to: _omitted, ...rest } = { ...record.frontmatter, applies_to: undefined };
+    expect(isOrgWide({ ...record, frontmatter: rest })).toBe(true);
+    expect(isOrgWide(withAppliesTo({ applies_to: null }))).toBe(true);
+    expect(isOrgWide(withAppliesTo({ applies_to: [] }))).toBe(true);
+  });
+
+  // The non-list shapes are the point: counting a malformed value as org-wide would leak
+  // the Record into every Facet.
+  test("a populated list, a string, and malformed shapes are not org-wide", () => {
+    expect(isOrgWide(withAppliesTo({ applies_to: ["billing"] }))).toBe(false);
+    expect(isOrgWide(withAppliesTo({ applies_to: "billing" }))).toBe(false);
+    expect(isOrgWide(withAppliesTo({ applies_to: { a: 1 } }))).toBe(false);
+    expect(isOrgWide(withAppliesTo({ applies_to: 3 }))).toBe(false);
   });
 });
 

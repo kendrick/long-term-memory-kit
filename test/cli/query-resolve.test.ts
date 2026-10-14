@@ -172,6 +172,33 @@ describe("ltm query from a Consumer repo", () => {
     expect(lines(r.stderr)).toHaveLength(1);
   });
 
+  test("a mapped repo gets only its own Facets' Records, not every Record in the Bank", async () => {
+    const r = await ltm(repo, "query", "--type", "Exception");
+    expect(r.exitCode).toBe(0);
+    const got = lines(r.stdout).map((l) => l.split("  ")[0]);
+    expect(got).toContain(`acme:${REDIS}`);
+    // Other services' Exceptions would all appear if the mapped Facets were dropped.
+    expect(got.join("\n")).not.toContain("legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md");
+    expect(got.join("\n")).not.toContain("search-service-plaintext-logs-bU2pR8aXf7.md");
+    expect(r.stderr).toBe("");
+  });
+
+  test("a repo mapped to [] gets only org-wide Records, not the whole Bank", async () => {
+    const acme = join(home, "banks", "acme");
+    const cfg = join(acme, "memory-bank.yaml");
+    writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\n  acme/empty: []\n`);
+    setOrigin("git@github.com:acme/empty.git");
+
+    const r = await ltm(repo, "query", "--json");
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout);
+    const acmePaths = out.results.filter((x: { bank: string }) => x.bank === "acme").map((x: { path: string }) => x.path);
+    expect(acmePaths.sort()).toEqual([ORG_CTX, ORG_EXC].sort());
+    // Mapped (to nothing) is not unmapped, so no "not mapped" note for acme.
+    expect(out.notes.join("\n")).not.toContain('Bank "acme"');
+    expect(r.stderr).toBe("");
+  });
+
   test("--facet overrides the mapping in every Bank and emits no note", async () => {
     setOrigin("https://github.com/acme/billing");
     const r = await ltm(repo, "query", "--json", "--facet", "service:order-service", "--type", "Exception");

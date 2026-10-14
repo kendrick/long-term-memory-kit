@@ -114,4 +114,43 @@ describe("ltm connect", () => {
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(new RegExp(`^ltm connect: ${configPath}:\\d+: .*pathh.*\\n$`));
   });
+
+  test("--bank <path> to a directory with no memory-bank.yaml names the file it looked for", async () => {
+    const r = await connect("--bank", "./nowhere");
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toStartWith(`ltm connect: ${join(repo, "nowhere", "memory-bank.yaml")}: --bank './nowhere' is neither a Bank in `);
+    expect(r.stderr.trimEnd().split("\n")).toHaveLength(1);
+  });
+
+  test("a malformed .ltm.yaml fails loudly with its path and line instead of falling through to rules", async () => {
+    writeFileSync(join(repo, ".ltm.yaml"), "banks: [acme]\nextra: 1\n");
+    const r = await connect();
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toStartWith(`ltm connect: ${join(repo, ".ltm.yaml")}:2: extra: unknown key`);
+    expect(r.stderr.trimEnd().split("\n")).toHaveLength(1);
+  });
+
+  test("a Bank whose memory-bank.yaml has a YAML syntax error is reported at that file and line, first line only", async () => {
+    const bankCfg = join(home, "banks", "personal", "memory-bank.yaml");
+    writeFileSync(bankCfg, "name: personal\nfolders: [unclosed\n");
+    writeFileSync(join(repo, ".ltm.yaml"), "banks: [personal]\n");
+    const r = await connect();
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toMatch(new RegExp(`^ltm connect: ${bankCfg}:\\d+: [^\\n]+\\n$`));
+  });
+
+  test("a ConfigError with no line prints the path alone, never ':null'", async () => {
+    // Valid YAML that isn't a mapping: loadConfig has no line to attribute, so line is null.
+    const bankCfg = join(home, "banks", "personal", "memory-bank.yaml");
+    writeFileSync(bankCfg, "- not\n- a mapping\n");
+    writeFileSync(join(repo, ".ltm.yaml"), "banks: [personal]\n");
+    const r = await connect();
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe(`ltm connect: ${bankCfg}: config is not a YAML mapping\n`);
+    expect(r.stderr).not.toContain("null");
+  });
 });
