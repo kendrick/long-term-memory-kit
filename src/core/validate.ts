@@ -155,7 +155,7 @@ function checkUnrepresentable({ rel, src, lineOf }: Frontmatter, flagged: Readon
     return [];
   }
   const out: Finding[] = [];
-  const seen = new Set<string>();
+  const seen = new Set<string | null>();
   for (const { key, reason } of found) {
     if (flagged.has(key) || seen.has(key)) continue;
     seen.add(key);

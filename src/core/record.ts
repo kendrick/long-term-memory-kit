@@ -75,11 +75,16 @@ export function parseRecordFile(absPath: string, relPath: string, memoryType: Me
     throw new RecordError(relPath, `frontmatter can't be serialized: ${first}`);
   }
   const [first] = unrepresentable(source);
-  if (first) throw new RecordError(relPath, `frontmatter value ${first.key} can't be represented in JSON: ${first.reason}`);
+  if (first) {
+    const subject = first.key === null ? "frontmatter" : `frontmatter value ${first.key}`;
+    throw new RecordError(relPath, `${subject} can't be represented in JSON: ${first.reason}`);
+  }
   return { path: relPath, memoryType, frontmatter };
 }
 
-export type Unrepresentable = { key: string; reason: string };
+export type Unrepresentable = { key: string | null; reason: string };
+
+const MERGE_TAG = "tag:yaml.org,2002:merge";
 
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 
@@ -132,6 +137,9 @@ function hasRoundedScalar(node: unknown): boolean {
 // Every value reasonFor flags parses to a JS value that `JSON.stringify` rewrites without complaint (a rounded number, null, {}, an ISO string, 0 for -0.0), so `--json` would print something the Record doesn't say (#44). The value parse can't see a lost integer once it's a `number`, so this function parses again with `intAsBigInt`, apart from the parse every caller reads, where integers must stay `number`. The `intAsBigInt` parse reads an integer `-0` as `0n` and leaves it unflagged. YAML has no negative integer zero, so JSON's `0` is the same value. A float spelling (`9007199254740993.0`) is rounded before either parse returns, so the only trace is the scalar's source text, which the document walk compares digit for digit against the number JSON would print.
 export function unrepresentable(src: string): Unrepresentable[] {
   const root: unknown = parse(src, { intAsBigInt: true });
+  // isMapping accepts any non-array object, so a root !!set or !!timestamp would otherwise walk as an empty mapping and pass.
+  const rootReason = reasonFor(root);
+  if (rootReason) return [{ key: null, reason: rootReason }];
   if (!isMapping(root)) return [];
   const doc = parseDocument(src);
   const nodes = new Map<string, unknown>();
@@ -153,6 +161,11 @@ export function unrepresentable(src: string): Unrepresentable[] {
     const before = found.length;
     walk(key, value);
     if (found.length === before && hasRoundedScalar(nodes.get(key))) found.push({ key, reason: "number rounded on parse" });
+  }
+  // A `!!merge <<:` pair spreads its value into the root, so the merged-in keys have no node of their own for the loop above. Only the tagged form merges; an untagged `<<` is an ordinary key.
+  if (isMap(doc.contents) && !found.some((f) => f.key === "<<")) {
+    const merged = doc.contents.items.some((pair) => isScalar(pair.key) && pair.key.tag === MERGE_TAG && hasRoundedScalar(pair.value));
+    if (merged) found.push({ key: "<<", reason: "number rounded on parse" });
   }
   return found;
 }

@@ -160,6 +160,14 @@ describe("unrepresentable", () => {
     ["s: '9007199254740993.0'", []],
     ["x: 1e400", [{ key: "x", reason: nonFinite }]],
     ["big: 9007199254740994", [{ key: "big", reason: safe }]],
+    ["!!set\n? a\n? b", [{ key: null, reason: "set" }]],
+    ["!!omap\n- a: 1\n- b: 2", [{ key: null, reason: "ordered map" }]],
+    ["!!binary aGVsbG8=", [{ key: null, reason: "binary value" }]],
+    ["!!timestamp 2001-12-14", [{ key: null, reason: "timestamp" }]],
+    ["a: 1", []],
+    ["!!merge <<: {x: 9007199254740993.0}\nb: 2", [{ key: "<<", reason: rounded }]],
+    ["!!merge <<: {x: [9007199254740993.0]}", [{ key: "<<", reason: rounded }]],
+    ["!!merge <<: {x: 1.5}\nb: 2", []],
   ] as const)("%p", (src, expected) => {
     expect(unrepresentable(src)).toEqual([...expected]);
   });

@@ -228,6 +228,21 @@ describe("ltm query", () => {
       });
     });
 
+    test("a frontmatter that is itself a !!set skips the Record and names the root", async () => {
+      await withScratch(demo, async (dir) => {
+        const before = await ltm(dir, "query", "--json");
+        const file = join(dir, PG);
+        const src = readFileSync(file, "utf8");
+        const end = src.indexOf("\n---\n", 4);
+        writeFileSync(file, `---\n!!set\n? a\n? b${src.slice(end)}`);
+        const r = await ltm(dir, "query", "--json");
+        expect(r.exitCode).toBe(0);
+        expect(r.stderr).toBe(`ltm query: skipped ${PG}: frontmatter can't be represented in JSON: set\n`);
+        const rows = JSON.parse(r.stdout) as unknown[];
+        expect(rows).toHaveLength((JSON.parse(before.stdout) as unknown[]).length - 1);
+      });
+    });
+
     test("an ordinary integer and float still print with their values intact", async () => {
       await withScratch(demo, async (dir) => {
         addFrontmatter(dir, ["n: 3", "f: 1.5"]);
