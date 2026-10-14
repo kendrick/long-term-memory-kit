@@ -13,9 +13,9 @@ ls _memory/exceptions
 ls _memory/context
 grep -rl '^memory_type: PolicyRule$' _memory/policy-rules
 grep -rl 'applies_to:.*service:order-service' _memory/decisions _memory/policy-rules _memory/exceptions _memory/context
-grep -rl --null 'applies_to:.*service:order-service' _memory/decisions _memory/policy-rules _memory/exceptions _memory/context | xargs -0 ltm head
-grep -rl --null 'applies_to:.*service:order-service' _memory/decisions _memory/policy-rules _memory/exceptions _memory/context | xargs -0 head -n 20
-grep -rl --null 'applies_to:.*service:order-service' _memory/decisions _memory/policy-rules _memory/exceptions _memory/context | xargs -0 cat
+grep -rl --null 'applies_to:.*service:order-service' _memory/decisions _memory/policy-rules _memory/exceptions _memory/context | xargs -0 -r ltm head
+grep -rl --null 'applies_to:.*service:order-service' _memory/decisions _memory/policy-rules _memory/exceptions _memory/context | xargs -0 -r head -n 20
+grep -rl --null 'applies_to:.*service:order-service' _memory/decisions _memory/policy-rules _memory/exceptions _memory/context | xargs -0 -r cat
 ```
 
 ## Check Status Before You Act

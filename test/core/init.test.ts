@@ -99,7 +99,7 @@ describe("renderAgentsRegion", () => {
     const region = renderAgentsRegion(demoConfig(), schema);
     const lines = /```sh\n([\s\S]*?)```/.exec(region)![1]!.trimEnd().split("\n");
     const pipe = "grep -rl --null 'applies_to:.*service:order-service' ";
-    const read = (cmd: string) => lines.findIndex((l) => l.startsWith(pipe) && l.endsWith(` | xargs -0 ${cmd}`));
+    const read = (cmd: string) => lines.findIndex((l) => l.startsWith(pipe) && l.endsWith(` | xargs -0 -r ${cmd}`));
     expect(read("ltm head")).toBeGreaterThan(-1);
     expect(read("head -n 20")).toBeGreaterThan(-1);
     expect(read("cat")).toBe(lines.length - 1);
@@ -118,7 +118,7 @@ describe("renderAgentsRegion", () => {
     expect(reads).toHaveLength(3);
     for (const l of reads) {
       expect(l.startsWith("grep -rl --null")).toBe(true);
-      expect(l).toContain(" | xargs -0 ");
+      expect(l).toMatch(/ \| xargs -0 -r (ltm head|head -n 20|cat)$/);
     }
   });
 

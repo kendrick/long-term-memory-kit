@@ -62,9 +62,10 @@ export function renderAgentsRegion(
 
   // One string for the plain grep and the three pipes, so the read steps can't drift from
   // what the grep printed. The pipes use --null/-0 because folder paths can hold spaces;
-  // BSD grep's -Z means something else.
+  // BSD grep's -Z means something else. xargs -r keeps GNU xargs from running the reader once with
+  // no paths when grep matches nothing (`ltm head` with no path exits 2).
   const appliesGrepArgs = `'${facetPattern.replaceAll("'", `'\\''`)}' ${allFolders}`;
-  const readFrom = (cmd: string) => `grep -rl --null ${appliesGrepArgs} | xargs -0 ${cmd}`;
+  const readFrom = (cmd: string) => `grep -rl --null ${appliesGrepArgs} | xargs -0 -r ${cmd}`;
 
   const funnel = [
     ...MEMORY_TYPES.map((t) => `ls ${shq(folders[t])}`),

@@ -43,9 +43,9 @@ describe("the demo Bank's generated files", () => {
 
   // ltm isn't on PATH under test; the shell commands are the fallback an agent can always run.
   test("every non-ltm command in the sh block runs and prints something", () => {
-    const cmds = funnel().filter((l) => !l.includes("xargs -0 ltm"));
-    expect(cmds.some((l) => l.includes("xargs -0 head"))).toBe(true);
-    expect(cmds.some((l) => l.includes("xargs -0 cat"))).toBe(true);
+    const cmds = funnel().filter((l) => !l.includes("xargs -0 -r ltm"));
+    expect(cmds.some((l) => l.includes("xargs -0 -r head"))).toBe(true);
+    expect(cmds.some((l) => l.includes("xargs -0 -r cat"))).toBe(true);
     for (const cmd of cmds) {
       const r = spawnSync("sh", ["-c", cmd], { cwd: demo, encoding: "utf8" });
       expect({ cmd, status: r.status }).toEqual({ cmd, status: 0 });
@@ -65,8 +65,8 @@ describe("the demo Bank's generated files", () => {
       const cli = `bun ${join(root, "src/cli/bin.ts")} `;
       const steps = readFileSync(join(dir, "AGENTS.md"), "utf8")
         .split("\n")
-        .filter((l) => l.includes("| xargs -0"))
-        .map((l) => l.replace("xargs -0 ltm ", `xargs -0 ${cli}`));
+        .filter((l) => l.includes("| xargs -0 -r"))
+        .map((l) => l.replace("xargs -0 -r ltm ", `xargs -0 -r ${cli}`));
       expect(steps).toHaveLength(3);
       const out = steps.map((cmd) => {
         const r = spawnSync("sh", ["-c", cmd], { cwd: dir, encoding: "utf8" });
@@ -77,10 +77,32 @@ describe("the demo Bank's generated files", () => {
         expect(o).not.toContain("scoped-out");
         expect(o).not.toContain("BODY-UNIQUE-TO-OUT");
       }
-      const byTool = (tool: string) => out[steps.findIndex((c) => c.includes(`xargs -0 ${tool}`))]!;
+      const byTool = (tool: string) => out[steps.findIndex((c) => c.includes(`xargs -0 -r ${tool}`))]!;
       expect(byTool(cli)).toContain("scoped-in");
       expect(byTool("head -n 20")).toContain("scoped-in");
       expect(byTool("cat")).toContain("BODY-UNIQUE-TO-IN");
+    });
+  });
+
+  // GNU xargs without -r runs the reader once with no paths on empty input, and `ltm head` then exits 2.
+  // BSD xargs skips it anyway, so this only bites on Linux CI.
+  test("read steps print nothing and exit 0 when no Record matches the facet", async () => {
+    await withScratch(demo, async (dir) => {
+      for (const f of readdirSync(join(dir, "_memory"), { recursive: true, withFileTypes: true })) {
+        if (!f.isFile() || !f.name.endsWith(".md")) continue;
+        const p = join(f.parentPath, f.name);
+        writeFileSync(p, readFileSync(p, "utf8").replaceAll("service:order-service", "service:elsewhere"));
+      }
+      const cli = `bun ${join(root, "src/cli/bin.ts")} `;
+      const steps = readFileSync(join(dir, "AGENTS.md"), "utf8")
+        .split("\n")
+        .filter((l) => l.includes("| xargs -0 -r"))
+        .map((l) => l.replace("xargs -0 -r ltm ", `xargs -0 -r ${cli}`));
+      expect(steps).toHaveLength(3);
+      for (const cmd of steps) {
+        const r = spawnSync("sh", ["-c", cmd], { cwd: dir, encoding: "utf8" });
+        expect({ cmd, status: r.status, stdout: r.stdout, stderr: r.stderr }).toEqual({ cmd, status: 0, stdout: "", stderr: "" });
+      }
     });
   });
 
