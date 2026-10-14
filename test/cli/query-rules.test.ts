@@ -36,7 +36,7 @@ const record = (id: string, title: string, status: string, summary: string, tags
 describe("ltm query rules", () => {
   // Whole-token recall would miss this Record: "postgresql" is one token and never equals
   // "postgres". The title and summary avoid a bare "postgres" so nothing else can carry the hit.
-  test("rule 1: --text matches a substring of a longer word", async () => {
+  test("--text matches a substring of a longer word", async () => {
     await withScratch(demo, async (dir) => {
       const rel = "_memory/decisions/postgresql-connection-pooling-pQ4wE8rTy2.md";
       writeFileSync(
@@ -51,7 +51,7 @@ describe("ltm query rules", () => {
     });
   });
 
-  test("rule 3: tags=superseded does not unlock retired Records", async () => {
+  test("tags=superseded does not unlock retired Records", async () => {
     await withScratch(demo, async (dir) => {
       const rel = "_memory/decisions/retire-the-old-queue-xN6cV1bMk9.md";
       writeFileSync(
@@ -67,6 +67,24 @@ describe("ltm query rules", () => {
       const r = await ltm(dir, "query", "tags=superseded");
       expect(r.exitCode).toBe(0);
       expect(paths(r.stdout)).not.toContain(rel);
+    });
+  });
+
+  // Equal scores tie-break on a code-unit path compare, where "B-" sorts before "a-"; a locale
+  // compare would flip them. Goes through the CLI so the order a caller sees is what's pinned.
+  test("--text lists equal-scoring Records in code-unit path order", async () => {
+    await withScratch(demo, async (dir) => {
+      const upper = "_memory/decisions/B-zephyrwidget-bK3mN7pQw2.md";
+      const lower = "_memory/decisions/a-zephyrwidget-aR5tY9uLe4.md";
+      const body = (id: string) =>
+        record(id, "Zephyrwidget rollout", "accepted", "Zephyrwidget ships in stages.", "rollout");
+      writeFileSync(join(dir, upper), body("bK3mN7pQw2"));
+      writeFileSync(join(dir, lower), body("aR5tY9uLe4"));
+      expect((await ltm(dir, "validate")).exitCode).toBe(0);
+
+      const r = await ltm(dir, "query", "--text", "zephyrwidget");
+      expect(r.exitCode).toBe(0);
+      expect(paths(r.stdout)).toEqual([upper, lower]);
     });
   });
 });

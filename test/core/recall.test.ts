@@ -34,7 +34,7 @@ describe("lexical.search", () => {
     expect(lexical.search([b, a], "redis").map((h) => h.record.path)).toEqual(["a.md", "b.md"]);
   });
 
-  // Uppercase must beat lowercase: code-unit order puts "B" (0x42) before "a" (0x61), localeCompare doesn't.
+  // Code-unit order puts "B" (0x42) before "a" (0x61); localeCompare reverses them.
   test("equal scores sort by code unit, so an uppercase path precedes a lowercase one", () => {
     const lower = rec("_memory/decisions/a-cache.md", { title: "Use redis", summary: "A cache." });
     const upper = rec("_memory/decisions/B-cache.md", { title: "Use redis", summary: "A cache." });
