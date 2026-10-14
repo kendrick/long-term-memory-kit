@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseRecordFile, RecordError, splitFrontmatter } from "../../src/core/record.ts";
+import { parseRecordFile, RecordError, splitFrontmatter, unrepresentable } from "../../src/core/record.ts";
 
 describe("splitFrontmatter", () => {
   test("canonical input", () => {
@@ -119,6 +119,59 @@ describe("parseRecordFile", () => {
       const r = parseRecordFile(join(dir, "alias.md"), "alias.md", "Decision");
       expect(r.frontmatter.a).toBe(1);
       expect(r.frontmatter.b).toBe(1);
+    });
+  });
+});
+
+describe("unrepresentable", () => {
+  const safe = "integer outside the safe range";
+  const nonFinite = "not a finite number";
+  test.each([
+    ["n: 3\nf: 1.5\ne: 1e300\nok: 9007199254740991", []],
+    ["big: 9007199254740993", [{ key: "big", reason: safe }]],
+    ["neg: -9007199254740993", [{ key: "neg", reason: safe }]],
+    ["w: .nan", [{ key: "w", reason: nonFinite }]],
+    ["w: .inf", [{ key: "w", reason: nonFinite }]],
+    ["w: -.inf", [{ key: "w", reason: nonFinite }]],
+    ["b: !!binary aGVsbG8=", [{ key: "b", reason: "binary value" }]],
+    ["s: !!set { a, b }", [{ key: "s", reason: "set" }]],
+    ["o: !!omap [ { a: 1 } ]", [{ key: "o", reason: "ordered map" }]],
+    ["nested: { deep: [1, 9007199254740993] }", [{ key: "nested", reason: safe }]],
+    ["a: 1\nz: .nan\nm: 9007199254740993", [{ key: "z", reason: nonFinite }, { key: "m", reason: safe }]],
+    ["s: plain\nb: true\nn: null\nl: [x, { y: 2 }]", []],
+  ] as const)("%p", (src, expected) => {
+    expect(unrepresentable(src)).toEqual([...expected]);
+  });
+
+  test("a recursive alias doesn't hang the walk", () => {
+    expect(unrepresentable("extra: &x { self: *x, big: 9007199254740993 }")).toEqual([{ key: "extra", reason: safe }]);
+  });
+});
+
+describe("parseRecordFile and unrepresentable values (#44)", () => {
+  test("an integer past the safe range throws RecordError naming the key", async () => {
+    await withTmp(async (dir) => {
+      await writeFile(join(dir, "big.md"), "---\ntitle: T\nbig: 9007199254740993\n---\nbody\n");
+      let caught: unknown;
+      try {
+        parseRecordFile(join(dir, "big.md"), "d/big.md", "Decision");
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(RecordError);
+      expect((caught as RecordError).path).toBe("d/big.md");
+      expect((caught as RecordError).message).toBe(
+        "frontmatter value big can't be represented in JSON: integer outside the safe range",
+      );
+    });
+  });
+
+  test("the value parse still hands callers a number for an integer", async () => {
+    await withTmp(async (dir) => {
+      await writeFile(join(dir, "n.md"), "---\nn: 3\nf: 1.5\n---\n");
+      const r = parseRecordFile(join(dir, "n.md"), "n.md", "Decision");
+      expect(r.frontmatter.n).toBe(3);
+      expect(r.frontmatter.f).toBe(1.5);
     });
   });
 });

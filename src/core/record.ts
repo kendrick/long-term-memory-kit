@@ -57,9 +57,10 @@ export function parseRecordFile(absPath: string, relPath: string, memoryType: Me
   }
   const split = splitFrontmatter(text);
   if (!split) throw new RecordError(relPath, "no frontmatter");
+  const source = split.frontmatterLines.join("\n");
   let frontmatter: unknown;
   try {
-    frontmatter = parse(split.frontmatterLines.join("\n"));
+    frontmatter = parse(source);
   } catch (e) {
     throw new RecordError(relPath, (e as Error).message.split("\n")[0] ?? "invalid YAML");
   }
@@ -73,5 +74,45 @@ export function parseRecordFile(absPath: string, relPath: string, memoryType: Me
     const first = (e as Error).message.split("\n")[0] || "unserializable";
     throw new RecordError(relPath, `frontmatter can't be serialized: ${first}`);
   }
+  const [bad] = unrepresentable(source);
+  if (bad) throw new RecordError(relPath, `frontmatter value ${bad.key} can't be represented in JSON: ${bad.reason}`);
   return { path: relPath, memoryType, frontmatter };
+}
+
+export type Unrepresentable = { key: string; reason: string };
+
+const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+
+function reasonFor(value: unknown): string | null {
+  if (typeof value === "bigint") return value > MAX_SAFE || value < -MAX_SAFE ? "integer outside the safe range" : null;
+  if (typeof value === "number") return Number.isFinite(value) ? null : "not a finite number";
+  if (value instanceof Uint8Array) return "binary value";
+  if (value instanceof Set) return "set";
+  if (value instanceof Map) return "ordered map";
+  return null;
+}
+
+// Each of these parses to a JS value `JSON.stringify` rewrites without complaint
+// (a rounded number, null, {}), so `--json` would print something the Record
+// doesn't say (#44). The value parse can't see a lost integer once it's a
+// `number`, hence a second parse with `intAsBigInt` kept apart from the one
+// every caller reads, where integers stay `number`.
+export function unrepresentable(src: string): Unrepresentable[] {
+  const root: unknown = parse(src, { intAsBigInt: true });
+  if (!isMapping(root)) return [];
+  const found: Unrepresentable[] = [];
+  // A recursive alias is #37's to reject, but this is exported and may run first.
+  const seen = new Set<object>();
+  const walk = (key: string, value: unknown): void => {
+    const reason = reasonFor(value);
+    if (reason) {
+      found.push({ key, reason });
+      return;
+    }
+    if (typeof value !== "object" || value === null || seen.has(value)) return;
+    seen.add(value);
+    for (const child of Object.values(value)) walk(key, child);
+  };
+  for (const [key, value] of Object.entries(root)) walk(key, value);
+  return found;
 }
