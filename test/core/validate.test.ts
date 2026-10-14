@@ -962,3 +962,38 @@ describe("warnings, Ajv collapse, and the folder-type path", () => {
     });
   });
 });
+
+describe("checkRecordText: values JSON can't carry exactly", () => {
+  // Appended just before the closing fence, so the added key's line is found from the text.
+  const withKey = (line: string) => {
+    const ls = valid.split("\n");
+    ls.splice(ls.indexOf("---", 1), 0, line);
+    return ls.join("\n");
+  };
+
+  test("an integer past the safe range is one schema finding on its own line", () => {
+    const text = withKey("big: 9007199254740993");
+    const fs = check(text);
+    expect(fs).toHaveLength(1);
+    expect(fs[0]).toMatchObject({ rule: "schema", severity: "error", key: "big", line: lineOf(text, "big:") });
+    expect(fs[0]!.message).toContain("integer outside the safe range");
+  });
+
+  test("two unsafe integers under one key still give one finding", () => {
+    const fs = check(withKey("big: [9007199254740993, 9007199254740995]"));
+    expect(fs.filter((f) => f.key === "big")).toHaveLength(1);
+  });
+
+  test(".nan stays the single finding checkSchema already gave", () => {
+    const text = withKey("weight: .nan");
+    const fs = check(text).filter((f) => f.key === "weight");
+    expect(fs).toHaveLength(1);
+    expect(fs[0]!.rule).toBe("schema");
+    expect(fs[0]!.line).toBe(lineOf(text, "weight:"));
+    expect(fs[0]!.message).not.toContain("not a finite number");
+  });
+
+  test("the largest safe integer gives no finding", () => {
+    expect(check(withKey("ok: 9007199254740991"))).toEqual([]);
+  });
+});
