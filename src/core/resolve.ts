@@ -50,10 +50,10 @@ function identityFromPath(host: string, path: string): RemoteIdentity | null {
 export function parseRemote(url: string): RemoteIdentity | null {
   const s = url.trim();
   if (/\s/.test(s)) return null;
-  // scp-like syntax has no scheme, so URL can't parse it. Without `user@`, the host must look like a hostname (a dot, or localhost) so a Windows path such as C:/x never reads as host C.
+  // scp-like syntax has no scheme, so URL can't parse it. A lone-letter host is a Windows drive (C:x), which git also refuses to read as a host.
   const scp = /^(?:([^@/:]+)@)?([^@/:]+):(?!\/)(.+)$/.exec(s);
   const scpHost = scp?.[2] ?? "";
-  if (scp && (scp[1] !== undefined || scpHost.includes(".") || scpHost === "localhost")) {
+  if (scp && (scp[1] !== undefined || !/^[A-Za-z]$/.test(scpHost))) {
     return identityFromPath(scpHost, scp[3] ?? "");
   }
   let parsed: URL;

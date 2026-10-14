@@ -35,7 +35,7 @@ describe("parseRemote", () => {
     expect(parseRemote(url)).toEqual(want);
   });
 
-  test.each(["ftp://x", "not a url", "", "https://github.com/acme", "C:/acme/order-service"])("%p gives null", (url) => {
+  test.each(["ftp://x", "not a url", "", "https://github.com/acme", "C:/acme/order-service", "C:acme/order-service", "c:x/y"])("%p gives null", (url) => {
     expect(parseRemote(url)).toBeNull();
   });
 
@@ -45,7 +45,12 @@ describe("parseRemote", () => {
     ["github.com:acme/order-service.git", { host: "github.com", org: "acme", repo: "order-service" }],
     ["ssh://git@github.com/a/b/c/d.git", { host: "github.com", org: "a/b/c", repo: "d" }],
     ["https://github.com/a/b/c", { host: "github.com", org: "a/b", repo: "c" }],
+    ["work:grp/repo.git", { host: "work", org: "grp", repo: "repo" }],
+    ["gh:acme/order-service", { host: "gh", org: "acme", repo: "order-service" }],
+    ["localhost:a/b", { host: "localhost", org: "a", repo: "b" }],
     ["C:/x/y", null],
+    ["C:acme/order-service", null],
+    ["c:x/y", null],
     ["https://h.com/a//b", null],
     ["https://h.com/only", null],
   ])("%s", (url, want) => {
