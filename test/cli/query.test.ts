@@ -205,6 +205,18 @@ describe("ltm query", () => {
       });
     });
 
+    test("a float spelling that rounds on parse skips the Record and names the reason", async () => {
+      await withScratch(demo, async (dir) => {
+        addFrontmatter(dir, ["big: 9007199254740993.0"]);
+        const r = await ltm(dir, "query", "--json", "id=kQ7vN2xLp4");
+        expect(r.exitCode).toBe(0);
+        expect(r.stderr).toContain(`ltm query: skipped ${PG}:`);
+        expect(r.stderr).toContain("number rounded on parse");
+        const rows = JSON.parse(r.stdout) as { id?: string }[];
+        expect(rows.some((row) => row.id === "kQ7vN2xLp4")).toBe(false);
+      });
+    });
+
     test("a !!timestamp skips the Record on stderr and drops its row", async () => {
       await withScratch(demo, async (dir) => {
         addFrontmatter(dir, ["when: !!timestamp 2001-12-14"]);

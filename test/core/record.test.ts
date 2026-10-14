@@ -126,6 +126,7 @@ describe("parseRecordFile", () => {
 describe("unrepresentable", () => {
   const safe = "integer outside the safe range";
   const nonFinite = "not a finite number";
+  const rounded = "number rounded on parse";
   test.each([
     ["n: 3\nf: 1.5\ne: 1e300\nok: 9007199254740991", []],
     ["big: 9007199254740993", [{ key: "big", reason: safe }]],
@@ -142,6 +143,23 @@ describe("unrepresentable", () => {
     ["nested: { deep: [1, 9007199254740993] }", [{ key: "nested", reason: safe }]],
     ["a: 1\nz: .nan\nm: 9007199254740993", [{ key: "z", reason: nonFinite }, { key: "m", reason: safe }]],
     ["s: plain\nb: true\nn: null\nl: [x, { y: 2 }]", []],
+    ["big: 9007199254740993.0", [{ key: "big", reason: rounded }]],
+    ["big: 9.007199254740993e15", [{ key: "big", reason: rounded }]],
+    ["f: 3.0000000000000001", [{ key: "f", reason: rounded }]],
+    ["t: 1e-400", [{ key: "t", reason: rounded }]],
+    ["l: [1.5, 9007199254740993.0]", [{ key: "l", reason: rounded }]],
+    ["m: {a: 9007199254740993.0}", [{ key: "m", reason: rounded }]],
+    ["f: 0.1", []],
+    ["f: 1.50", []],
+    ["f: +1.5", []],
+    ["f: 1e2", []],
+    ["f: .5", []],
+    ["f: 5.", []],
+    ["f: 9007199254740992.0", []],
+    ["f: 1.0e21", []],
+    ["s: '9007199254740993.0'", []],
+    ["x: 1e400", [{ key: "x", reason: nonFinite }]],
+    ["big: 9007199254740994", [{ key: "big", reason: safe }]],
   ] as const)("%p", (src, expected) => {
     expect(unrepresentable(src)).toEqual([...expected]);
   });

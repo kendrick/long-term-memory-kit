@@ -145,7 +145,7 @@ function checkSchema({ rel, data, lineOf }: Frontmatter): Finding[] {
   });
 }
 
-// A value JSON can't carry exactly is a schema error too, but only on a key checkSchema didn't already flag. `.nan`, `!!binary`, and `!!timestamp` already fail the schema, and a second finding would report one problem twice (#44). In practice that leaves the unsafe integer and `-0.0`.
+// A value JSON can't carry exactly is a schema error too, but only on a key checkSchema didn't already flag. `.nan`, `!!binary`, and `!!timestamp` already fail the schema, and a second finding would report one problem twice (#44). In practice that leaves the unsafe integer, `-0.0`, and a float spelling that rounds on parse.
 function checkUnrepresentable({ rel, src, lineOf }: Frontmatter, flagged: ReadonlySet<string | null>): Finding[] {
   let found: Unrepresentable[];
   try {

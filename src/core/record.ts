@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { parse } from "yaml";
+import { isMap, isScalar, isSeq, parse, parseDocument } from "yaml";
 import { isMapping, type MemoryType } from "./bank.ts";
 
 export type Split = { frontmatterLines: string[]; closingLine: number; body: string };
@@ -96,10 +96,46 @@ function reasonFor(value: unknown): string | null {
   return null;
 }
 
-// Every value reasonFor flags parses to a JS value that `JSON.stringify` rewrites without complaint (a rounded number, null, {}, an ISO string, 0 for -0.0), so `--json` would print something the Record doesn't say (#44). The value parse can't see a lost integer once it's a `number`, so this function parses again with `intAsBigInt`, apart from the parse every caller reads, where integers must stay `number`. The `intAsBigInt` parse reads an integer `-0` as `0n` and leaves it unflagged. YAML has no negative integer zero, so JSON's `0` is the same value.
+const CORE_DECIMAL = /^([-+]?)(\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE]([-+]?[0-9]+))?$/;
+
+// Works on digit strings, because a float round trip is the thing under test and converting through Number would hide the rounding.
+function decimalParts(text: string): { negative: boolean; digits: string; exponent: bigint } | null {
+  const m = CORE_DECIMAL.exec(text);
+  if (!m) return null;
+  const [, sign, mantissa, exp] = m as unknown as [string, string, string, string | undefined];
+  const [whole = "", frac = ""] = mantissa.split(".");
+  const trimmedLead = (whole + frac).replace(/^0+/, "");
+  const digits = trimmedLead.replace(/0+$/, "");
+  if (digits === "") return { negative: false, digits: "", exponent: 0n };
+  const exponent = BigInt(exp ?? "0") - BigInt(frac.length) + BigInt(trimmedLead.length - digits.length);
+  return { negative: sign === "-", digits, exponent };
+}
+
+function roundedOnParse(source: string, value: number): boolean {
+  const written = decimalParts(source);
+  const held = decimalParts(JSON.stringify(value));
+  if (!written || !held) return false;
+  return written.negative !== held.negative || written.digits !== held.digits || written.exponent !== held.exponent;
+}
+
+function hasRoundedScalar(node: unknown): boolean {
+  if (isScalar(node)) {
+    const { value, source } = node;
+    return typeof value === "number" && Number.isFinite(value) && !Object.is(value, -0) && typeof source === "string" && roundedOnParse(source, value);
+  }
+  if (isMap(node)) return node.items.some((pair) => hasRoundedScalar(pair.value));
+  if (isSeq(node)) return node.items.some(hasRoundedScalar);
+  // An alias adds nothing, because its anchor was checked where it was defined.
+  return false;
+}
+
+// Every value reasonFor flags parses to a JS value that `JSON.stringify` rewrites without complaint (a rounded number, null, {}, an ISO string, 0 for -0.0), so `--json` would print something the Record doesn't say (#44). The value parse can't see a lost integer once it's a `number`, so this function parses again with `intAsBigInt`, apart from the parse every caller reads, where integers must stay `number`. The `intAsBigInt` parse reads an integer `-0` as `0n` and leaves it unflagged. YAML has no negative integer zero, so JSON's `0` is the same value. A float spelling (`9007199254740993.0`) is rounded before either parse returns, so the only trace is the scalar's source text, which the document walk compares digit for digit against the number JSON would print.
 export function unrepresentable(src: string): Unrepresentable[] {
   const root: unknown = parse(src, { intAsBigInt: true });
   if (!isMapping(root)) return [];
+  const doc = parseDocument(src);
+  const nodes = new Map<string, unknown>();
+  if (isMap(doc.contents)) for (const pair of doc.contents.items) nodes.set(String(isScalar(pair.key) ? pair.key.value : pair.key), pair.value);
   const found: Unrepresentable[] = [];
   // A recursive alias is #37's to reject, but this is exported and may run first.
   const seen = new Set<object>();
@@ -113,6 +149,10 @@ export function unrepresentable(src: string): Unrepresentable[] {
     seen.add(value);
     for (const child of Object.values(value)) walk(key, child);
   };
-  for (const [key, value] of Object.entries(root)) walk(key, value);
+  for (const [key, value] of Object.entries(root)) {
+    const before = found.length;
+    walk(key, value);
+    if (found.length === before && hasRoundedScalar(nodes.get(key))) found.push({ key, reason: "number rounded on parse" });
+  }
   return found;
 }

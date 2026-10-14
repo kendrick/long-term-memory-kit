@@ -978,6 +978,14 @@ describe("checkRecordText: values JSON can't carry exactly", () => {
     expect(fs[0]!.message).toContain("integer outside the safe range");
   });
 
+  test("a float spelling that rounds on parse is one schema finding on its own line", () => {
+    const text = withKey("big: 9.007199254740993e15");
+    const fs = check(text);
+    expect(fs).toHaveLength(1);
+    expect(fs[0]).toMatchObject({ rule: "schema", severity: "error", key: "big", line: lineOf(text, "big:") });
+    expect(fs[0]!.message).toContain("number rounded on parse");
+  });
+
   test("two unsafe integers under one key still give one finding", () => {
     const fs = check(withKey("big: [9007199254740993, 9007199254740995]"));
     expect(fs.filter((f) => f.key === "big")).toHaveLength(1);
