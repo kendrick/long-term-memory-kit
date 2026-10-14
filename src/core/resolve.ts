@@ -169,11 +169,12 @@ function readOptional(path: string): string | null {
   }
 }
 
-// One `~` rule for user-config paths and `--bank`, so the two can't drift. Only `~` and `~/…` expand; `~user` stays literal. Three states because callers differ on the first: undefined (not a tilde value) falls back to a config-relative path in expandPath and to cwd in resolveBankFlag; null means HOME is missing.
+// One `~` rule for user-config paths and `--bank`, so the two can't drift. Only `~` and `~/…` expand; `~user` stays literal. Three states because callers differ on the first: undefined (not a tilde value) falls back to a config-relative path in expandPath and to cwd in resolveBankFlag; null means neither HOME nor USERPROFILE is set. Windows cmd and PowerShell set USERPROFILE but not HOME, so it's the fallback; HOME wins when both exist, so POSIX behaves as before.
 function expandTilde(p: string, env: Env): string | null | undefined {
   if (p !== "~" && !p.startsWith("~/")) return undefined;
-  if (!env.HOME) return null;
-  return join(env.HOME, p.slice(1));
+  const home = env.HOME || env.USERPROFILE;
+  if (!home) return null;
+  return join(home, p.slice(1));
 }
 
 function expandPath(p: string, configPath: string, env: Env): string | null {
@@ -215,7 +216,7 @@ export function loadUserConfig(env: Env): LoadedUserConfig {
   for (const [name, b] of Object.entries(raw.banks ?? {})) {
     const line = lineAt(doc, lc, ["banks", name, "path"]);
     const root = expandPath(b.path, path, env);
-    if (root === null) throw new ConfigError(path, line, `banks.${name}.path: '${b.path}' needs HOME, which is not set`);
+    if (root === null) throw new ConfigError(path, line, `banks.${name}.path: '${b.path}' needs HOME or USERPROFILE, and neither is set`);
     banks[name] = { path: root, url: b.url ?? null, line };
   }
   const known = (name: string): boolean => Object.hasOwn(banks, name);
@@ -321,7 +322,7 @@ export function resolveBankFlag(value: string, cwd: string, env: Env): ResolvedB
   // The shell expands an unquoted `~` but not `--bank=~/x` or a quoted value. This runs after the name lookup so a Bank literally named `~` or `~/x` still wins.
   const expanded = expandTilde(value, env);
   // The path slot already renders as `--bank`, so the message doesn't repeat it.
-  if (expanded === null) throw new ConfigError("--bank", null, `'${value}' needs HOME, which is not set`);
+  if (expanded === null) throw new ConfigError("--bank", null, `'${value}' needs HOME or USERPROFILE, and neither is set`);
   const root = expanded ?? resolve(cwd, value);
   const cfg = join(root, BANK_CONFIG);
   try {

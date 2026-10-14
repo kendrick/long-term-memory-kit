@@ -186,6 +186,25 @@ describe("loadUserConfig", () => {
     expect(config?.default).toBe("personal");
   });
 
+  test("a ~/ path falls back to USERPROFILE when HOME is unset", () => {
+    writeFileSync(configPath, exampleConfig);
+    const { config } = loadUserConfig({ LTM_CONFIG: configPath, USERPROFILE: home });
+    expect(config?.banks.acme?.path).toBe(join(home, "banks", "acme"));
+  });
+
+  test("HOME wins over USERPROFILE for a ~/ path", () => {
+    writeFileSync(configPath, exampleConfig);
+    const { config } = loadUserConfig({ LTM_CONFIG: configPath, HOME: home, USERPROFILE: join(tmp, "decoy") });
+    expect(config?.banks.acme?.path).toBe(join(home, "banks", "acme"));
+  });
+
+  test("a ~/ path with neither HOME nor USERPROFILE throws ConfigError", () => {
+    writeFileSync(configPath, exampleConfig);
+    const e = configErrorOf(() => loadUserConfig({ LTM_CONFIG: configPath }));
+    expect(e.path).toBe(configPath);
+    expect(e.message).toContain("needs HOME or USERPROFILE, and neither is set");
+  });
+
   test("a relative path resolves against the config file's directory", () => {
     writeFileSync(configPath, "banks:\n  acme: { path: home/banks/acme }\n");
     expect(loadUserConfig(env).config?.banks.acme?.path).toBe(join(tmp, "home", "banks", "acme"));
@@ -394,7 +413,23 @@ describe("resolveBankFlag", () => {
   test("~ with HOME unset throws ConfigError naming --bank once", () => {
     const e = configErrorOf(() => resolveBankFlag("~/banks/acme", repo, { LTM_CONFIG: configPath }));
     expect(e.path).toBe("--bank");
-    expect(e.message).toBe("'~/banks/acme' needs HOME, which is not set");
+    expect(e.message).toBe("'~/banks/acme' needs HOME or USERPROFILE, and neither is set");
+  });
+
+  test("~/ falls back to USERPROFILE when HOME is unset", () => {
+    const b = resolveBankFlag("~/banks/acme", repo, { LTM_CONFIG: configPath, USERPROFILE: home });
+    expect(b.root).toBe(join(home, "banks", "acme"));
+  });
+
+  test("~/ falls back to USERPROFILE when HOME is empty", () => {
+    const b = resolveBankFlag("~/banks/acme", repo, { LTM_CONFIG: configPath, HOME: "", USERPROFILE: home });
+    expect(b.root).toBe(join(home, "banks", "acme"));
+  });
+
+  test("HOME wins over USERPROFILE", () => {
+    const decoy = join(tmp, "decoy");
+    const b = resolveBankFlag("~/banks/acme", repo, { LTM_CONFIG: configPath, HOME: home, USERPROFILE: decoy });
+    expect(b.root).toBe(join(home, "banks", "acme"));
   });
 
   test("~user/x is not expanded, matching user-config paths", () => {

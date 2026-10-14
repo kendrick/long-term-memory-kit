@@ -233,7 +233,7 @@ describe("ltm query from a Consumer repo", () => {
     writeFileSync(configPath, `banks:\n  acme: { path: ${join(home, "banks", "acme")} }\n`);
     const r = await run({ argv: ["query", "--bank=~/banks/acme"], cwd: repo, env: { LTM_CONFIG: configPath } });
     expect(r.exitCode).not.toBe(0);
-    expect(r.stderr.trim().split("\n")).toEqual(["ltm query: --bank: '~/banks/acme' needs HOME, which is not set"]);
+    expect(r.stderr.trim().split("\n")).toEqual(["ltm query: --bank: '~/banks/acme' needs HOME or USERPROFILE, and neither is set"]);
   });
 
   test("inside a Bank, a user config changes nothing", async () => {
