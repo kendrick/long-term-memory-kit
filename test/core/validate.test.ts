@@ -964,7 +964,6 @@ describe("warnings, Ajv collapse, and the folder-type path", () => {
 });
 
 describe("checkRecordText: values JSON can't carry exactly", () => {
-  // Appended just before the closing fence, so the added key's line is found from the text.
   const withKey = (line: string) => {
     const ls = valid.split("\n");
     ls.splice(ls.indexOf("---", 1), 0, line);
@@ -991,6 +990,22 @@ describe("checkRecordText: values JSON can't carry exactly", () => {
     expect(fs[0]!.rule).toBe("schema");
     expect(fs[0]!.line).toBe(lineOf(text, "weight:"));
     expect(fs[0]!.message).not.toContain("not a finite number");
+  });
+
+  test("a !!timestamp stays the single finding checkSchema already gave", () => {
+    const text = withKey("when: !!timestamp 2001-12-14");
+    const fs = check(text).filter((f) => f.key === "when");
+    expect(fs).toHaveLength(1);
+    expect(fs[0]!.rule).toBe("schema");
+    expect(fs[0]!.message).not.toContain("timestamp");
+  });
+
+  test("a float negative zero is one schema finding on its own line", () => {
+    const text = withKey("z: -0.0");
+    const fs = check(text);
+    expect(fs).toHaveLength(1);
+    expect(fs[0]).toMatchObject({ rule: "schema", severity: "error", key: "z", line: lineOf(text, "z:") });
+    expect(fs[0]!.message).toContain("negative zero");
   });
 
   test("the largest safe integer gives no finding", () => {

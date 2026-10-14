@@ -187,7 +187,6 @@ describe("ltm query", () => {
 
   describe("frontmatter JSON can't carry exactly (#44)", () => {
     const PG = "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md";
-    // Appends lines above the closing fence of the Postgres Decision.
     const addFrontmatter = (dir: string, lines: string[]) => {
       const file = join(dir, PG);
       const src = readFileSync(file, "utf8");
@@ -198,6 +197,17 @@ describe("ltm query", () => {
     test("NaN, an unsafe integer, and !!binary skip the Record on stderr and drop its row", async () => {
       await withScratch(demo, async (dir) => {
         addFrontmatter(dir, ["weight: .nan", "big: 9007199254740993", "blob: !!binary aGVsbG8="]);
+        const r = await ltm(dir, "query", "--json", "id=kQ7vN2xLp4");
+        expect(r.exitCode).toBe(0);
+        expect(r.stderr).toContain(`ltm query: skipped ${PG}:`);
+        const rows = JSON.parse(r.stdout) as { id?: string }[];
+        expect(rows.some((row) => row.id === "kQ7vN2xLp4")).toBe(false);
+      });
+    });
+
+    test("a !!timestamp skips the Record on stderr and drops its row", async () => {
+      await withScratch(demo, async (dir) => {
+        addFrontmatter(dir, ["when: !!timestamp 2001-12-14"]);
         const r = await ltm(dir, "query", "--json", "id=kQ7vN2xLp4");
         expect(r.exitCode).toBe(0);
         expect(r.stderr).toContain(`ltm query: skipped ${PG}:`);

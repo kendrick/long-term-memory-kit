@@ -5,7 +5,7 @@ import addFormatsModule from "ajv-formats";
 import { isMap, isScalar, isSeq, parseDocument, type Document, type Pair } from "yaml";
 import { ConfigError, isInside, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
 import { listRecordFiles } from "./query.ts";
-import { splitFrontmatter, unrepresentable } from "./record.ts";
+import { splitFrontmatter, unrepresentable, type Unrepresentable } from "./record.ts";
 
 export type Rule =
   | "config-schema"
@@ -145,9 +145,9 @@ function checkSchema({ rel, data, lineOf }: Frontmatter): Finding[] {
   });
 }
 
-// A value JSON can't carry exactly is a schema error too. Only keys checkSchema left alone get one: `.nan` and `!!binary` already fail the schema, and a second finding would report one problem twice (#44). In practice that leaves the unsafe integer.
+// A value JSON can't carry exactly is a schema error too, but only on a key checkSchema didn't already flag. `.nan`, `!!binary`, and `!!timestamp` already fail the schema, and a second finding would report one problem twice (#44). In practice that leaves the unsafe integer and `-0.0`.
 function checkUnrepresentable({ rel, src, lineOf }: Frontmatter, flagged: ReadonlySet<string | null>): Finding[] {
-  let found: ReturnType<typeof unrepresentable>;
+  let found: Unrepresentable[];
   try {
     found = unrepresentable(src);
   } catch {

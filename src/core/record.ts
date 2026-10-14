@@ -74,8 +74,8 @@ export function parseRecordFile(absPath: string, relPath: string, memoryType: Me
     const first = (e as Error).message.split("\n")[0] || "unserializable";
     throw new RecordError(relPath, `frontmatter can't be serialized: ${first}`);
   }
-  const [bad] = unrepresentable(source);
-  if (bad) throw new RecordError(relPath, `frontmatter value ${bad.key} can't be represented in JSON: ${bad.reason}`);
+  const [first] = unrepresentable(source);
+  if (first) throw new RecordError(relPath, `frontmatter value ${first.key} can't be represented in JSON: ${first.reason}`);
   return { path: relPath, memoryType, frontmatter };
 }
 
@@ -85,18 +85,18 @@ const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 
 function reasonFor(value: unknown): string | null {
   if (typeof value === "bigint") return value > MAX_SAFE || value < -MAX_SAFE ? "integer outside the safe range" : null;
-  if (typeof value === "number") return Number.isFinite(value) ? null : "not a finite number";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return "not a finite number";
+    return Object.is(value, -0) ? "negative zero" : null;
+  }
+  if (value instanceof Date) return "timestamp";
   if (value instanceof Uint8Array) return "binary value";
   if (value instanceof Set) return "set";
   if (value instanceof Map) return "ordered map";
   return null;
 }
 
-// Each of these parses to a JS value `JSON.stringify` rewrites without complaint
-// (a rounded number, null, {}), so `--json` would print something the Record
-// doesn't say (#44). The value parse can't see a lost integer once it's a
-// `number`, hence a second parse with `intAsBigInt` kept apart from the one
-// every caller reads, where integers stay `number`.
+// Every value reasonFor flags parses to a JS value that `JSON.stringify` rewrites without complaint (a rounded number, null, {}, an ISO string, 0 for -0.0), so `--json` would print something the Record doesn't say (#44). The value parse can't see a lost integer once it's a `number`, so this function parses again with `intAsBigInt`, apart from the parse every caller reads, where integers must stay `number`. The `intAsBigInt` parse reads an integer `-0` as `0n` and leaves it unflagged. YAML has no negative integer zero, so JSON's `0` is the same value.
 export function unrepresentable(src: string): Unrepresentable[] {
   const root: unknown = parse(src, { intAsBigInt: true });
   if (!isMapping(root)) return [];
