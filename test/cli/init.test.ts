@@ -218,42 +218,49 @@ describe("ltm init", () => {
 });
 
 describe("ltm init formatter globs", () => {
+  const files = [".prettierrc.json", ".oxfmtrc.json"];
   const overrideGlobs = (file: string) =>
     (JSON.parse(read(file)).overrides as { files: string | string[] }[]).flatMap((o) => o.files);
 
-  test("--folder through _memory/.. gets the glob of where the Records live", async () => {
+  test.each(files)("--folder through _memory/.. gets the glob of where the Records live (%s)", async (file) => {
     const r = await init("--folder", "Decision=_memory/../docs/adr");
     expect(r.exitCode).toBe(0);
-    for (const file of [".prettierrc.json", ".oxfmtrc.json"]) {
-      const globs = overrideGlobs(file);
-      expect(globs).toContain("docs/adr/**/*.md");
-      expect(globs.filter((g) => g.includes(".."))).toEqual([]);
-    }
+    expect(overrideGlobs(file)).toContain("docs/adr/**/*.md");
+    expect(overrideGlobs(file).filter((g) => g.includes(".."))).toEqual([]);
   });
 
-  test("a . segment under _memory/ keeps the template glob", async () => {
+  test("--folder through _memory/.. also lands in CODEOWNERS.example as the real path", async () => {
+    const r = await init("--folder", "Decision=_memory/../docs/adr");
+    expect(r.exitCode).toBe(0);
+    expect(read("CODEOWNERS.example").split("\n")[0]).toBe("/docs/adr/ @your-org/memory-maintainers");
+  });
+
+  test.each(files)("a . segment under _memory/ keeps the template glob (%s)", async (file) => {
     const r = await init("--folder", "Decision=_memory/./adr");
     expect(r.exitCode).toBe(0);
-    expect(overrideGlobs(".prettierrc.json")).toEqual(["_memory/**/*.md"]);
-    expect(overrideGlobs(".oxfmtrc.json")).toEqual(["_memory/**/*.md"]);
+    expect(overrideGlobs(file)).toEqual(["_memory/**/*.md"]);
   });
 
-  test("a hand-written memory-bank.yaml folder through _memory/.. gets the same glob", async () => {
+  test.each(files)("a hand-written memory-bank.yaml folder through _memory/.. gets the same glob (%s)", async (file) => {
     writeFileSync(join(dir, "memory-bank.yaml"), "schema: 1\nname: acme\nfacet_prefixes: [team]\nfolders:\n  Decision: _memory/../docs/adr\n");
     const r = await init();
     expect(r.exitCode).toBe(0);
-    for (const file of [".prettierrc.json", ".oxfmtrc.json"]) {
-      const globs = overrideGlobs(file);
-      expect(globs).toContain("docs/adr/**/*.md");
-      expect(globs.filter((g) => g.includes(".."))).toEqual([]);
-    }
+    expect(overrideGlobs(file)).toContain("docs/adr/**/*.md");
+    expect(overrideGlobs(file).filter((g) => g.includes(".."))).toEqual([]);
   });
 
-  test("the default layout keeps the template glob", async () => {
+  test.each(files)("the default layout keeps the template glob (%s)", async (file) => {
     const r = await init();
     expect(r.exitCode).toBe(0);
-    expect(overrideGlobs(".prettierrc.json")).toEqual(["_memory/**/*.md"]);
-    expect(overrideGlobs(".oxfmtrc.json")).toEqual(["_memory/**/*.md"]);
+    expect(overrideGlobs(file)).toEqual(["_memory/**/*.md"]);
+  });
+
+  test("a Bank-root type folder (_memory/..) still gets Prettier's override on a root Record", async () => {
+    const r = await init("--folder", "Decision=_memory/..");
+    expect(r.exitCode).toBe(0);
+    writeFileSync(join(dir, "x.md"), "# x\n");
+    const resolved = await prettier.resolveConfig(join(dir, "x.md"), { editorconfig: false });
+    expect(resolved).toEqual({ embeddedLanguageFormatting: "off" });
   });
 });
 

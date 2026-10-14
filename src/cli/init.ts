@@ -202,9 +202,14 @@ function configText(name: string, prefixes: string[], folders: Partial<Record<Me
   return `${lines.join("\n")}\n`;
 }
 
+// `_memory/../docs/adr` stores as written but lives at docs/adr; anything that names the path to a
+// formatter or CODEOWNERS has to use where the Records really are.
+function realFolder(config: BankConfig, type: MemoryType): string {
+  return posix.normalize(config.folders[type]);
+}
+
 function overrideFiles(config: BankConfig, templateFiles: unknown): unknown {
-  // `_memory/../docs/adr` stores as written but lives at docs/adr; a formatter glob has to name the real path.
-  const folders = MEMORY_TYPES.map((t) => posix.normalize(config.folders[t]));
+  const folders = MEMORY_TYPES.map((t) => realFolder(config, t));
   if (folders.every((f) => f.startsWith("_memory/"))) return templateFiles;
   return [...new Set(folders.map((f) => `${f.replace(/\/+$/, "")}/**/*.md`))];
 }
@@ -378,7 +383,7 @@ export const init: Command = {
 
     const owners = join(dir, "CODEOWNERS.example");
     if (!existsSync(owners) && !isLink(owners)) {
-      const lines = MEMORY_TYPES.map((t) => `/${config.folders[t].replace(/\/+$/, "")}/ @your-org/memory-maintainers\n`);
+      const lines = MEMORY_TYPES.map((t) => `/${realFolder(config, t).replace(/\/+$/, "")}/ @your-org/memory-maintainers\n`);
       writeIfChanged(owners, [...new Set(lines)].join(""), null);
     }
 
