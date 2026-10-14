@@ -14,7 +14,12 @@ describe("today", () => {
     expect(today({}, new Date(2026, 0, 5))).toBe("2026-01-05");
   });
 
-  test.each(["2026-13-40", "2026-02-30", "26-10-09", "2026-10-9", "2026-10-09T00:00", "yesterday"])(
+  // Date.UTC reads years 0-99 as 1900-1999, so these are the cases a round trip through Date gets wrong.
+  test.each(["0001-01-01", "0099-12-31", "0000-02-29", "2000-02-29"])("LTM_TODAY %p is accepted", (value) => {
+    expect(today({ LTM_TODAY: value })).toBe(value);
+  });
+
+  test.each(["2026-13-40", "2026-02-30", "1900-02-29", "2026-04-31", "2026-00-10", "2026-10-00", "26-10-09", "2026-10-9", "2026-10-09T00:00", "yesterday"])(
     "LTM_TODAY %p is refused",
     (value) => {
       expect(() => today({ LTM_TODAY: value })).toThrow(`LTM_TODAY '${value}' is not a YYYY-MM-DD date`);
