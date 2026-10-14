@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, posix, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import pkg from "../../package.json" with { type: "json" };
 import { ConfigError, loadConfig, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
@@ -203,7 +203,8 @@ function configText(name: string, prefixes: string[], folders: Partial<Record<Me
 }
 
 function overrideFiles(config: BankConfig, templateFiles: unknown): unknown {
-  const folders = MEMORY_TYPES.map((t) => config.folders[t]);
+  // `_memory/../docs/adr` stores as written but lives at docs/adr; a formatter glob has to name the real path.
+  const folders = MEMORY_TYPES.map((t) => posix.normalize(config.folders[t]));
   if (folders.every((f) => f.startsWith("_memory/"))) return templateFiles;
   return [...new Set(folders.map((f) => `${f.replace(/\/+$/, "")}/**/*.md`))];
 }

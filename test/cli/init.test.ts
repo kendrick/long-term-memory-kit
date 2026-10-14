@@ -217,6 +217,46 @@ describe("ltm init", () => {
   });
 });
 
+describe("ltm init formatter globs", () => {
+  const overrideGlobs = (file: string) =>
+    (JSON.parse(read(file)).overrides as { files: string | string[] }[]).flatMap((o) => o.files);
+
+  test("--folder through _memory/.. gets the glob of where the Records live", async () => {
+    const r = await init("--folder", "Decision=_memory/../docs/adr");
+    expect(r.exitCode).toBe(0);
+    for (const file of [".prettierrc.json", ".oxfmtrc.json"]) {
+      const globs = overrideGlobs(file);
+      expect(globs).toContain("docs/adr/**/*.md");
+      expect(globs.filter((g) => g.includes(".."))).toEqual([]);
+    }
+  });
+
+  test("a . segment under _memory/ keeps the template glob", async () => {
+    const r = await init("--folder", "Decision=_memory/./adr");
+    expect(r.exitCode).toBe(0);
+    expect(overrideGlobs(".prettierrc.json")).toEqual(["_memory/**/*.md"]);
+    expect(overrideGlobs(".oxfmtrc.json")).toEqual(["_memory/**/*.md"]);
+  });
+
+  test("a hand-written memory-bank.yaml folder through _memory/.. gets the same glob", async () => {
+    writeFileSync(join(dir, "memory-bank.yaml"), "schema: 1\nname: acme\nfacet_prefixes: [team]\nfolders:\n  Decision: _memory/../docs/adr\n");
+    const r = await init();
+    expect(r.exitCode).toBe(0);
+    for (const file of [".prettierrc.json", ".oxfmtrc.json"]) {
+      const globs = overrideGlobs(file);
+      expect(globs).toContain("docs/adr/**/*.md");
+      expect(globs.filter((g) => g.includes(".."))).toEqual([]);
+    }
+  });
+
+  test("the default layout keeps the template glob", async () => {
+    const r = await init();
+    expect(r.exitCode).toBe(0);
+    expect(overrideGlobs(".prettierrc.json")).toEqual(["_memory/**/*.md"]);
+    expect(overrideGlobs(".oxfmtrc.json")).toEqual(["_memory/**/*.md"]);
+  });
+});
+
 describe("ltm init edges", () => {
   test("text outside the markers survives, and only the region changes", async () => {
     writeFileSync(join(dir, "AGENTS.md"), "# House rules\n\nBe kind.\n");
