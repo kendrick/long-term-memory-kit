@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { isMap, isScalar, isSeq, parse, parseDocument } from "yaml";
+import { type Document, isAlias, isMap, isScalar, isSeq, parse, parseDocument } from "yaml";
 import { isMapping, type MemoryType } from "./bank.ts";
 
 export type Split = { frontmatterLines: string[]; closingLine: number; body: string };
@@ -123,15 +123,21 @@ function roundedOnParse(source: string, value: number): boolean {
   return written.negative !== held.negative || written.digits !== held.digits || written.exponent !== held.exponent;
 }
 
-function hasRoundedScalar(node: unknown): boolean {
+// `visiting` stops a self-referencing alias (`a: &a [1, *a]`) from recursing forever.
+function hasRoundedScalar(node: unknown, doc: Document, visiting: Set<unknown> = new Set()): boolean {
+  if (isAlias(node)) {
+    // An alias can point at an anchor declared on a mapping key, which the pair.value walk never reaches.
+    return hasRoundedScalar(node.resolve(doc), doc, visiting);
+  }
   if (isScalar(node)) {
     const { value, source } = node;
     return typeof value === "number" && Number.isFinite(value) && !Object.is(value, -0) && typeof source === "string" && roundedOnParse(source, value);
   }
-  if (isMap(node)) return node.items.some((pair) => hasRoundedScalar(pair.value));
-  if (isSeq(node)) return node.items.some(hasRoundedScalar);
-  // An alias adds nothing, because its anchor was checked where it was defined.
-  return false;
+  if (!isMap(node) && !isSeq(node)) return false;
+  if (visiting.has(node)) return false;
+  visiting.add(node);
+  if (isMap(node)) return node.items.some((pair) => hasRoundedScalar(pair.value, doc, visiting));
+  return node.items.some((item) => hasRoundedScalar(item, doc, visiting));
 }
 
 // Every value reasonFor flags parses to a JS value that `JSON.stringify` rewrites without complaint (a rounded number, null, {}, an ISO string, 0 for -0.0), so `--json` would print something the Record doesn't say (#44). The value parse can't see a lost integer once it's a `number`, so this function parses again with `intAsBigInt`, apart from the parse every caller reads, where integers must stay `number`. The `intAsBigInt` parse reads an integer `-0` as `0n` and leaves it unflagged. YAML has no negative integer zero, so JSON's `0` is the same value. A float spelling (`9007199254740993.0`) is rounded before either parse returns, so the only trace is the scalar's source text, which the document walk compares digit for digit against the number JSON would print.
@@ -160,11 +166,23 @@ export function unrepresentable(src: string): Unrepresentable[] {
   for (const [key, value] of Object.entries(root)) {
     const before = found.length;
     walk(key, value);
-    if (found.length === before && hasRoundedScalar(nodes.get(key))) found.push({ key, reason: "number rounded on parse" });
+    if (found.length === before && hasRoundedScalar(nodes.get(key), doc)) found.push({ key, reason: "number rounded on parse" });
+  }
+  // The loop above looks nodes up by name, which misses root keys the JS parse renames (an alias key, `~`, a collection key), so those pairs are checked by position.
+  if (isMap(doc.contents)) {
+    const rootKeys = new Set(Object.keys(root));
+    for (const pair of doc.contents.items) {
+      if (isScalar(pair.key) && pair.key.tag === MERGE_TAG) continue;
+      const lookup = String(isScalar(pair.key) ? pair.key.value : pair.key);
+      if (rootKeys.has(lookup) || !hasRoundedScalar(pair.value, doc)) continue;
+      const trimmed = String(pair.key).trim();
+      const name = trimmed === "" || trimmed === "null" ? "~" : trimmed;
+      if (!found.some((f) => f.key === name)) found.push({ key: name, reason: "number rounded on parse" });
+    }
   }
   // A `!!merge <<:` pair spreads its value into the root, so the merged-in keys have no node of their own for the loop above. Only the tagged form merges; an untagged `<<` is an ordinary key.
   if (isMap(doc.contents) && !found.some((f) => f.key === "<<")) {
-    const merged = doc.contents.items.some((pair) => isScalar(pair.key) && pair.key.tag === MERGE_TAG && hasRoundedScalar(pair.value));
+    const merged = doc.contents.items.some((pair) => isScalar(pair.key) && pair.key.tag === MERGE_TAG && hasRoundedScalar(pair.value, doc));
     if (merged) found.push({ key: "<<", reason: "number rounded on parse" });
   }
   return found;

@@ -168,6 +168,15 @@ describe("unrepresentable", () => {
     ["!!merge <<: {x: 9007199254740993.0}\nb: 2", [{ key: "<<", reason: rounded }]],
     ["!!merge <<: {x: [9007199254740993.0]}", [{ key: "<<", reason: rounded }]],
     ["!!merge <<: {x: 1.5}\nb: 2", []],
+    ["? &n 9007199254740993.0\n: marker\nx: *n", [{ key: "x", reason: rounded }]],
+    ["a: &v 9007199254740993.0\nb: *v", [{ key: "a", reason: rounded }, { key: "b", reason: rounded }]],
+    ["a: &v 1.5\nb: *v", []],
+    ["a: &a [1, *a]", []],
+    ["k: &k foo\n*k : 9007199254740993.0", [{ key: "*k", reason: rounded }]],
+    ["k: &k foo\n*k : [9007199254740993.0]", [{ key: "*k", reason: rounded }]],
+    ["~: 9007199254740993.0", [{ key: "~", reason: rounded }]],
+    ["? [a]\n: 9007199254740993.0", [{ key: '["a"]', reason: rounded }]],
+    ["k: &k foo\n*k : 1.5", []],
   ] as const)("%p", (src, expected) => {
     expect(unrepresentable(src)).toEqual([...expected]);
   });

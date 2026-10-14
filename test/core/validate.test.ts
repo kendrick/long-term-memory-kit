@@ -1039,6 +1039,14 @@ describe("checkRecordText: values JSON can't carry exactly", () => {
     expect(fs[0]!.message).toContain("number rounded on parse");
   });
 
+  test("an alias to a rounded scalar anchored on a mapping key is one schema finding on the alias line", () => {
+    const text = withKey("? &n 9007199254740993.0\n: marker\nx: *n");
+    const fs = check(text);
+    expect(fs).toHaveLength(1);
+    expect(fs[0]).toMatchObject({ rule: "schema", severity: "error", key: "x", line: lineOf(text, "x:") });
+    expect(fs[0]!.message).toContain("number rounded on parse");
+  });
+
   test("the largest safe integer gives no finding", () => {
     expect(check(withKey("ok: 9007199254740991"))).toEqual([]);
   });
