@@ -235,6 +235,14 @@ describe("ltm init formatter globs", () => {
     expect(read("CODEOWNERS.example").split("\n")[0]).toBe("/docs/adr/ @your-org/memory-maintainers");
   });
 
+  test("a type folder that normalizes to the Bank root gets /** in CODEOWNERS.example, not /./", async () => {
+    const r = await init("--folder", "Decision=_memory/..");
+    expect(r.exitCode).toBe(0);
+    const lines = read("CODEOWNERS.example").split("\n");
+    expect(lines).toContain("/** @your-org/memory-maintainers");
+    expect(lines.filter((l) => l.startsWith("/./"))).toEqual([]);
+  });
+
   test.each(files)("a . segment under _memory/ keeps the template glob (%s)", async (file) => {
     const r = await init("--folder", "Decision=_memory/./adr");
     expect(r.exitCode).toBe(0);

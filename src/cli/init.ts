@@ -383,7 +383,12 @@ export const init: Command = {
 
     const owners = join(dir, "CODEOWNERS.example");
     if (!existsSync(owners) && !isLink(owners)) {
-      const lines = MEMORY_TYPES.map((t) => `/${realFolder(config, t).replace(/\/+$/, "")}/ @your-org/memory-maintainers\n`);
+      // CODEOWNERS matches gitignore-style, so `/./` matches nothing; a Bank-root folder needs `/**`.
+      const pattern = (t: MemoryType) => {
+        const folder = realFolder(config, t).replace(/\/+$/, "");
+        return folder === "." ? "/**" : `/${folder}/`;
+      };
+      const lines = MEMORY_TYPES.map((t) => `${pattern(t)} @your-org/memory-maintainers\n`);
       writeIfChanged(owners, [...new Set(lines)].join(""), null);
     }
 
