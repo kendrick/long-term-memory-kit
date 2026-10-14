@@ -35,8 +35,27 @@ describe("parseRemote", () => {
     expect(parseRemote(url)).toEqual(want);
   });
 
-  test.each(["ftp://x", "not a url", "", "https://github.com/acme", "C:/acme/order-service", "C:acme/order-service", "c:x/y"])("%p gives null", (url) => {
+  test.each(["ftp://x", "not a url", "", "https://github.com/acme"])("%p gives null", (url) => {
     expect(parseRemote(url)).toBeNull();
+  });
+
+  test.each([
+    ["C:/acme/order-service", "linux"],
+    ["C:/acme/order-service", "win32"],
+    ["C:/x/y", "linux"],
+    ["C:/x/y", "win32"],
+    ["C:acme/order-service", "win32"],
+    ["c:x/y", "win32"],
+    ["x:grp/repo.git", "win32"],
+  ])("%p gives null on %s", (url, platform) => {
+    expect(parseRemote(url, platform)).toBeNull();
+  });
+
+  test.each([
+    ["x:grp/repo.git", { host: "x", org: "grp", repo: "repo" }],
+    ["C:acme/order-service", { host: "c", org: "acme", repo: "order-service" }],
+  ])("%p parses as a host on linux", (url, want) => {
+    expect(parseRemote(url, "linux")).toEqual(want);
   });
 
   test.each([
@@ -48,9 +67,6 @@ describe("parseRemote", () => {
     ["work:grp/repo.git", { host: "work", org: "grp", repo: "repo" }],
     ["gh:acme/order-service", { host: "gh", org: "acme", repo: "order-service" }],
     ["localhost:a/b", { host: "localhost", org: "a", repo: "b" }],
-    ["C:/x/y", null],
-    ["C:acme/order-service", null],
-    ["c:x/y", null],
     ["https://h.com/a//b", null],
     ["https://h.com/only", null],
   ])("%s", (url, want) => {

@@ -47,13 +47,13 @@ function identityFromPath(host: string, path: string): RemoteIdentity | null {
   return { host: host.toLowerCase(), org: segs.join("/"), repo };
 }
 
-export function parseRemote(url: string): RemoteIdentity | null {
+export function parseRemote(url: string, platform: string = process.platform): RemoteIdentity | null {
   const s = url.trim();
   if (/\s/.test(s)) return null;
-  // scp-like syntax has no scheme, so URL can't parse it. A lone-letter host is a Windows drive (C:x), which git also refuses to read as a host.
+  // scp-like syntax has no scheme, so URL can't parse it. The single-letter guard is Windows-only, since drive paths (C:x) exist only there and git on POSIX reads x:path as host x.
   const scp = /^(?:([^@/:]+)@)?([^@/:]+):(?!\/)(.+)$/.exec(s);
   const scpHost = scp?.[2] ?? "";
-  if (scp && (scp[1] !== undefined || !/^[A-Za-z]$/.test(scpHost))) {
+  if (scp && (scp[1] !== undefined || platform !== "win32" || !/^[A-Za-z]$/.test(scpHost))) {
     return identityFromPath(scpHost, scp[3] ?? "");
   }
   let parsed: URL;
