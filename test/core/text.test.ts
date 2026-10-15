@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { firstLine } from "../../src/core/text.ts";
 
 describe("firstLine", () => {
-  // Expected values are literals, not a second split call: a helper that trims "\r" or falls back on "" must fail here.
+  // The literals are the real check, so a helper that trims "\r" or falls back on "" fails here. The split comparison only pins parity with the idiom the call sites used.
   test.each([
     ["a\nb", "a"],
     ["a\r\nb", "a\r"],
