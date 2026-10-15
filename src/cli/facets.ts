@@ -1,5 +1,6 @@
 import { ConfigError, findBank, loadConfig } from "../core/bank.ts";
 import { countFacets, listRecords } from "../core/query.ts";
+import { firstLine } from "../core/text.ts";
 import type { Command } from "./run.ts";
 
 export const facets: Command = {
@@ -28,7 +29,7 @@ export const facets: Command = {
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
-      const message = e.message.split("\n")[0];
+      const message = firstLine(e.message);
       ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${message}\n`);
       return 1;
     }

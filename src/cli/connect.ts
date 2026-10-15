@@ -1,5 +1,6 @@
 import { ConfigError } from "../core/bank.ts";
 import { noBankMessage, resolveBankFlag, resolveBanks, type ResolvedBank } from "../core/resolve.ts";
+import { firstLine } from "../core/text.ts";
 import type { Command } from "./run.ts";
 
 const bankLine = (b: ResolvedBank): string =>
@@ -25,7 +26,7 @@ export const connect: Command = {
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       // yaml appends a multi-line code frame; the first line is the diagnosis.
-      const message = e.message.split("\n")[0];
+      const message = firstLine(e.message);
       ctx.err(`ltm connect: ${e.path}${e.line === null ? "" : `:${e.line}`}: ${message}\n`);
       return 1;
     }

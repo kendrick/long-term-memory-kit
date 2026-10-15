@@ -1,5 +1,6 @@
 import { ConfigError, findBank } from "../core/bank.ts";
 import { toGithub, toGitlab, toJunit } from "../core/report.ts";
+import { firstLine } from "../core/text.ts";
 import { validateBankReport } from "../core/validate.ts";
 import type { Command } from "./run.ts";
 
@@ -28,7 +29,7 @@ export const validate: Command = {
     } catch (e) {
       // #7 makes findBank throw ConfigError for a symlinked memory-bank.yaml.
       if (!(e instanceof ConfigError)) throw e;
-      ctx.err(`ltm validate: ${e.path}: ${e.message.split("\n")[0]}\n`);
+      ctx.err(`ltm validate: ${e.path}: ${firstLine(e.message)}\n`);
       return 1;
     }
     if (root === null) {

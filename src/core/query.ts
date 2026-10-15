@@ -3,6 +3,7 @@ import { join, relative, resolve, sep } from "node:path";
 import { MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
 import { search } from "./recall.ts";
 import { parseRecordFile, RecordError, type ParsedRecord } from "./record.ts";
+import { firstLine } from "./text.ts";
 
 export type Filter = { key: string; value: string };
 
@@ -42,7 +43,7 @@ function walkMarkdown(
     // A Bank needn't have every type's folder; a missing one just holds no Records.
     // Anything else (EACCES, EIO) would silently drop matches, so surface it.
     if (code === "ENOENT" || code === "ENOTDIR") return;
-    onSkip(toRel(root, dir), (e as Error).message?.split("\n")[0] || code || "unreadable");
+    onSkip(toRel(root, dir), firstLine((e as Error).message ?? "") || code || "unreadable");
     return;
   }
   for (const e of entries) {
@@ -84,7 +85,7 @@ function folderIsWalkable(
       const code = (e as NodeJS.ErrnoException).code;
       // Same rule as walkMarkdown: missing is silent, anything else would drop matches unseen.
       if (code !== "ENOENT" && code !== "ENOTDIR") {
-        onSkip(rel, (e as Error).message?.split("\n")[0] || code || "unreadable");
+        onSkip(rel, firstLine((e as Error).message ?? "") || code || "unreadable");
       }
       return false;
     }

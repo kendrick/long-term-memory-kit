@@ -4,6 +4,7 @@ import { parse } from "yaml";
 import { isMapping, type BankConfig } from "./bank.ts";
 import { listRecords } from "./query.ts";
 import { splitFrontmatter, type ParsedRecord } from "./record.ts";
+import { firstLine } from "./text.ts";
 
 export type Kind = "adr" | "pr" | "transcript" | "prd" | "document";
 export type Entry = { path: string; kind: Kind; title: string; bytes: number; cited_by: string[] | null };
@@ -193,7 +194,7 @@ export function discover(
     try {
       dirents = readdirSync(dir, { withFileTypes: true });
     } catch (e) {
-      onSkip(toRel(dir), (e as Error).message?.split("\n")[0] || "unreadable");
+      onSkip(toRel(dir), firstLine((e as Error).message ?? "") || "unreadable");
       return;
     }
     dirents.sort((a, b) => byCodeUnit(a.name, b.name));
@@ -247,7 +248,7 @@ export function discover(
       }
       text = readFileSync(abs, "utf8");
     } catch (e) {
-      onSkip(rel, (e as Error).message?.split("\n")[0] || "unreadable");
+      onSkip(rel, firstLine((e as Error).message ?? "") || "unreadable");
       continue;
     }
     const root = repoRootOf(dirname(abs), repoRoots);

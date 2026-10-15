@@ -6,6 +6,7 @@ import { isMap, isScalar, isSeq, parseDocument, type Document, type Pair } from 
 import { ConfigError, isInside, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
 import { listRecordFiles } from "./query.ts";
 import { splitFrontmatter, unrepresentable, type Unrepresentable } from "./record.ts";
+import { firstLine } from "./text.ts";
 
 export type Rule =
   | "config-schema"
@@ -69,8 +70,6 @@ const finding = (
   key,
   message,
 });
-
-const firstLine = (s: string): string => s.split("\n")[0] ?? s;
 
 type KeyLines = Map<string, { line: number; pair: Pair }>;
 

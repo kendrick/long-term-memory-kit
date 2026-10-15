@@ -5,6 +5,7 @@ import { ConfigError, findBank, isInside, isMapping, loadConfig, type BankConfig
 import { formatRecordText } from "../core/fmt.ts";
 import { listRecordFiles, type RecordFile } from "../core/query.ts";
 import { splitFrontmatter } from "../core/record.ts";
+import { firstLine } from "../core/text.ts";
 import type { Command } from "./run.ts";
 
 const toPosix = (p: string): string => p.split(sep).join("/");
@@ -38,7 +39,7 @@ export const fmt: Command = {
       root = findBank(ctx.cwd);
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
-      ctx.err(`ltm fmt: ${e.path}: ${e.message.split("\n")[0]}\n`);
+      ctx.err(`ltm fmt: ${e.path}: ${firstLine(e.message)}\n`);
       return 1;
     }
     if (root === null) {
@@ -68,7 +69,7 @@ export const fmt: Command = {
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
-      ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${e.message.split("\n")[0]}\n`);
+      ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${firstLine(e.message)}\n`);
       return 1;
     }
 
@@ -112,7 +113,7 @@ export const fmt: Command = {
     for (const f of targets) {
       const text = texts.get(f.abs)!;
       if (text instanceof Error) {
-        ctx.err(`ltm fmt: ${f.rel}: ${text.message.split("\n")[0]}\n`);
+        ctx.err(`ltm fmt: ${f.rel}: ${firstLine(text.message)}\n`);
         failed = true;
         continue;
       }
@@ -131,7 +132,7 @@ export const fmt: Command = {
         try {
           writeFileSync(f.abs, result.text);
         } catch (e) {
-          ctx.err(`ltm fmt: ${f.rel}: ${(e as Error).message.split("\n")[0]}\n`);
+          ctx.err(`ltm fmt: ${f.rel}: ${firstLine((e as Error).message)}\n`);
           failed = true;
         }
       }

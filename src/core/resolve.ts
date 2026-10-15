@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import Ajv2020Module, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import { isMap, isScalar, isSeq, LineCounter, parseDocument, type Document } from "yaml";
 import { ConfigError, isMapping, loadConfig, type BankConfig } from "./bank.ts";
+import { firstLine } from "./text.ts";
 
 // Callers pass env in, so `ltm mcp` can resolve for another environment and tests
 // never read a developer's real HOME.
@@ -33,8 +34,6 @@ export type LoadedUserConfig = { path: string; config: UserConfig | null };
 
 const REPO_CONFIG = ".ltm.yaml";
 const BANK_CONFIG = "memory-bank.yaml";
-
-const firstLine = (s: string): string => s.split("\n")[0] ?? s;
 
 const stripGit = (s: string): string => (s.endsWith(".git") ? s.slice(0, -4) : s);
 

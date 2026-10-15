@@ -1,6 +1,7 @@
 import { lstatSync, readFileSync, type Stats } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse, YAMLParseError } from "yaml";
+import { firstLine } from "./text.ts";
 
 export type MemoryType = "Decision" | "PolicyRule" | "Exception" | "Context";
 
@@ -61,7 +62,7 @@ export function findBank(cwd: string): string | null {
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
       if (code !== "ENOENT" && code !== "ENOTDIR") {
-        throw new ConfigError(candidate, null, (e as Error).message.split("\n")[0]!);
+        throw new ConfigError(candidate, null, firstLine((e as Error).message));
       }
     }
     if (stat?.isSymbolicLink()) throw new ConfigError(candidate, null, SYMLINK_REFUSAL);
@@ -105,7 +106,7 @@ export function loadConfig(root: string): BankConfig {
     // yaml throws a bare ReferenceError once alias expansion passes its limit. Keying on
     // "alias" keeps any other ReferenceError (a real bug) from being reported as a bad config.
     if (e instanceof ReferenceError && e.message.includes("alias")) {
-      throw new ConfigError(path, null, e.message.split("\n")[0] ?? e.message);
+      throw new ConfigError(path, null, firstLine(e.message));
     }
     throw e;
   }

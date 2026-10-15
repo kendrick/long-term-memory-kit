@@ -14,6 +14,7 @@ import {
   replaceRegion,
   stringList,
 } from "../core/init.ts";
+import { firstLine } from "../core/text.ts";
 import type { Command } from "./run.ts";
 
 const CONFIG_FILE = "memory-bank.yaml";
@@ -271,7 +272,7 @@ export const init: Command = {
         config = loadConfig(dir);
       } catch (e) {
         if (!(e instanceof ConfigError)) throw e;
-        ctx.err(`ltm init --check: ${e.path}${e.line === null ? "" : `:${e.line}`}: ${e.message.split("\n")[0]}\n`);
+        ctx.err(`ltm init --check: ${e.path}${e.line === null ? "" : `:${e.line}`}: ${firstLine(e.message)}\n`);
         return 1;
       }
       let stale = false;
@@ -330,7 +331,7 @@ export const init: Command = {
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       // yaml appends a multi-line code frame; the first line is the diagnosis.
-      ctx.err(`ltm init: ${e.path}${e.line === null ? "" : `:${e.line}`}: ${e.message.split("\n")[0]}\n`);
+      ctx.err(`ltm init: ${e.path}${e.line === null ? "" : `:${e.line}`}: ${firstLine(e.message)}\n`);
       return 1;
     }
 

@@ -2,6 +2,7 @@ import { lstatSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ConfigError, findBank, loadConfig, type BankConfig } from "../core/bank.ts";
 import { discover as discoverEntries } from "../core/discover.ts";
+import { firstLine } from "../core/text.ts";
 import type { Command } from "./run.ts";
 
 export const discover: Command = {
@@ -33,7 +34,7 @@ export const discover: Command = {
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
-      const message = e.message.split("\n")[0];
+      const message = firstLine(e.message);
       ctx.err(`ltm discover: ${e.path}${e.line === null ? "" : `:${e.line}`}: ${message}\n`);
       return 1;
     }

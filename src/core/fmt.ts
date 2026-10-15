@@ -4,6 +4,7 @@ import { type Document, isNode, isPair, isScalar, parseDocument, visit } from "y
 import { isMapping, type MemoryType } from "./bank.ts";
 import { canonicalFrontmatter, canonicalScalar, SCHEMA_KEY_ORDER, type Refusal } from "./canonical.ts";
 import { splitFrontmatter } from "./record.ts";
+import { firstLine } from "./text.ts";
 
 // Warnings carry no `ltm fmt: warning: <path>: ` prefix: this module never sees a
 // path, so the CLI prepends it.
@@ -87,7 +88,7 @@ function wordResult(line: string): { status: string | null; word: string } {
 
 const isFenceLine = (line: string): boolean => line === "---" || line === "---\r";
 
-function firstLine(text: string): { line: string; eol: "\n" | "\r\n" } {
+function firstLineWithEol(text: string): { line: string; eol: "\n" | "\r\n" } {
   const nl = text.indexOf("\n");
   if (nl === -1) return { line: text, eol: "\n" };
   const line = text.slice(0, nl);
@@ -119,7 +120,7 @@ function nonCanonicalNumber(doc: Document, yaml: string): Refusal | null {
 function parseFrontmatter(yaml: string): { data: Record<string, unknown> } | Refusal {
   const doc = parseDocument(yaml);
   if (doc.errors.length > 0) {
-    return { reason: `invalid YAML: ${doc.errors[0]!.message.split("\n")[0]}` };
+    return { reason: `invalid YAML: ${firstLine(doc.errors[0]!.message)}` };
   }
   // Canonical output has nowhere to put a comment, so rewriting would silently drop it.
   let commented = Boolean(doc.commentBefore || doc.comment);
@@ -141,7 +142,7 @@ function parseFrontmatter(yaml: string): { data: Record<string, unknown> } | Ref
   try {
     data = doc.toJS();
   } catch (e) {
-    return { reason: `frontmatter can't be expanded: ${(e as Error).message.split("\n")[0]}` };
+    return { reason: `frontmatter can't be expanded: ${firstLine((e as Error).message)}` };
   }
   if (!isMapping(data)) return { reason: "frontmatter is not a YAML mapping" };
   return { data };
@@ -162,15 +163,15 @@ export function formatRecordText(text: string, ctx: FmtContext): FmtResult {
     if ("reason" in parsed) return parsed;
     data = parsed.data;
     body = split.body;
-    eol = firstLine(text).eol;
+    eol = firstLineWithEol(text).eol;
     // `body` is empty both for `---\n` and for a bare `---` at EOF; only the text's
     // last byte tells which one the closing fence was.
     closingEol = body !== "" || text.endsWith("\n");
   } else {
-    if (isFenceLine(firstLine(text).line)) return { reason: "unterminated frontmatter" };
+    if (isFenceLine(firstLineWithEol(text).line)) return { reason: "unterminated frontmatter" };
     data = {};
     body = text;
-    eol = firstLine(text).eol;
+    eol = firstLineWithEol(text).eol;
     closingEol = true;
   }
 

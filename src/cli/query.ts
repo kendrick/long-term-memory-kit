@@ -9,6 +9,7 @@ import {
   type ResolvedBank,
   type ResolvedBy,
 } from "../core/resolve.ts";
+import { firstLine } from "../core/text.ts";
 import type { Command, CommandContext } from "./run.ts";
 
 const scalar = (v: unknown): string | number | boolean | null =>
@@ -32,7 +33,7 @@ function line(r: ParsedRecord): string {
 }
 
 const configErrorLine = (e: ConfigError): string =>
-  `ltm query: ${e.path}${e.line === null ? "" : `:${e.line}`}: ${e.message.split("\n")[0]}\n`;
+  `ltm query: ${e.path}${e.line === null ? "" : `:${e.line}`}: ${firstLine(e.message)}\n`;
 
 // The Consumer repo's own Facets, from this Bank's `consumers` map. null means the Bank
 // has no entry for the repo, or there's no origin to look one up by.
@@ -156,7 +157,7 @@ export const query: Command = {
       root = findBank(ctx.cwd);
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
-      ctx.err(`ltm query: ${e.path}: ${e.message.split("\n")[0]}\n`);
+      ctx.err(`ltm query: ${e.path}: ${firstLine(e.message)}\n`);
       return 1;
     }
     if (root === null) return runResolved(ctx, opts);
@@ -173,7 +174,7 @@ export const query: Command = {
       if (!(e instanceof ConfigError)) throw e;
       // A null line (unreadable file, non-mapping config) has no position to print.
       // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
-      const message = e.message.split("\n")[0];
+      const message = firstLine(e.message);
       ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${message}\n`);
       return 1;
     }

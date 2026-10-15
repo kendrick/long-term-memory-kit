@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { type Document, isAlias, isMap, isScalar, isSeq, parse, parseDocument } from "yaml";
 import { isMapping, type MemoryType } from "./bank.ts";
+import { firstLine } from "./text.ts";
 
 export type Split = { frontmatterLines: string[]; closingLine: number; body: string };
 
@@ -62,7 +63,7 @@ export function parseRecordFile(absPath: string, relPath: string, memoryType: Me
   try {
     frontmatter = parse(source);
   } catch (e) {
-    throw new RecordError(relPath, (e as Error).message.split("\n")[0] ?? "invalid YAML");
+    throw new RecordError(relPath, firstLine((e as Error).message));
   }
   if (!isMapping(frontmatter)) throw new RecordError(relPath, "frontmatter is not a YAML mapping");
   // A recursive alias (`x: &a { self: *a }`) parses to a cyclic object that crashes
@@ -71,7 +72,7 @@ export function parseRecordFile(absPath: string, relPath: string, memoryType: Me
   try {
     JSON.stringify(frontmatter);
   } catch (e) {
-    const first = (e as Error).message.split("\n")[0] || "unserializable";
+    const first = firstLine((e as Error).message) || "unserializable";
     throw new RecordError(relPath, `frontmatter can't be serialized: ${first}`);
   }
   const [first] = unrepresentable(source);
