@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { run } from "../../src/cli/run.ts";
 import { loadConfig } from "../../src/core/bank.ts";
 import type { ChangeRequest, ForgeAdapter } from "../../src/core/forge.ts";
-import { proposeRecord, slugify, templateBody, type ProposalInput, type ProposeResult } from "../../src/core/propose.ts";
+import { proposeRecord, redactRemote, slugify, templateBody, type ProposalInput, type ProposeResult } from "../../src/core/propose.ts";
 import { listRecords } from "../../src/core/query.ts";
 import { splitFrontmatter } from "../../src/core/record.ts";
 import { checkRecordText } from "../../src/core/validate.ts";
@@ -348,6 +348,76 @@ describe("proposeRecord", () => {
     });
   }, GIT_TEST_TIMEOUT);
 
+  // `link` is a path in the Bank that origin's default branch replaces with a symlink to a dir outside every repo.
+  for (const link of ["_memory/decisions", "_memory"]) {
+    test(`origin's default branch turning ${link} into a symlink refuses before writing through it`, async () => {
+      await withGitBank(async ({ bare, clone }) => {
+        const other = mkdtempSync(join(tmpdir(), "ltm-other-"));
+        const outside = mkdtempSync(join(tmpdir(), "ltm-outside-"));
+        try {
+          git(other, "clone", "--quiet", bare, ".");
+          git(other, "config", "user.name", "ltm test");
+          git(other, "config", "user.email", "ltm@example.invalid");
+          git(other, "config", "commit.gpgsign", "false");
+          git(other, "rm", "-r", "--quiet", link);
+          symlinkSync(outside, join(other, link));
+          git(other, "add", "--", link);
+          git(other, "commit", "--quiet", "-m", `make ${link} a symlink`);
+          git(other, "push", "--quiet", "origin", "main");
+          expect(git(bare, "ls-tree", "main", link)).toMatch(/^120000 blob /);
+
+          const before = snapshot(bare, clone);
+          const forge = fakeAdapter();
+          const r = await propose(clone, forge);
+          expect(readdirSync(outside, { recursive: true })).toEqual([]);
+          expect("refusal" in r && r.refusal).toBe(`${link} on main is a symlink; ltm propose won't write through it`);
+          expect(forge.calls).toHaveLength(0);
+          expect(snapshot(bare, clone)).toEqual(before);
+        } finally {
+          rmSync(other, { recursive: true, force: true });
+          rmSync(outside, { recursive: true, force: true });
+        }
+      });
+    }, GIT_TEST_TIMEOUT);
+  }
+
+  test("an origin that pushes somewhere other than it fetches from is refused before any ref moves", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      const fork = mkdtempSync(join(tmpdir(), "ltm-fork-"));
+      try {
+        git(fork, "init", "--quiet", "--bare", "--initial-branch=main");
+        git(clone, "config", "remote.origin.pushurl", fork);
+        expect(git(clone, "remote", "get-url", "--push", "origin").trim()).toBe(fork);
+
+        const before = snapshot(bare, clone);
+        const forkBefore = git(fork, "for-each-ref");
+        const forge = fakeAdapter();
+        const r = await propose(clone, forge);
+        expect(r).toEqual({ refusal: "origin pushes somewhere other than it fetches from; ltm propose can't open a review across repositories" });
+        expect(forge.calls).toHaveLength(0);
+        expect(snapshot(bare, clone)).toEqual(before);
+        expect(git(fork, "for-each-ref")).toBe(forkBefore);
+      } finally {
+        rmSync(fork, { recursive: true, force: true });
+      }
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("a fetch that fails against a credentialed origin keeps the secret out of the refusal", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      git(clone, "config", "remote.origin.url", "https://user:s3cret@git.example.com/acme/bank.git");
+      // A closed local port makes the fetch fail at once without leaving the machine.
+      git(clone, "config", "http.proxy", "http://127.0.0.1:9");
+      const before = snapshot(bare, clone);
+      const forge = fakeAdapter();
+      const r = await propose(clone, forge);
+      expect("refusal" in r && r.refusal).toMatch(/^git fetch: /);
+      expect(JSON.stringify(r)).not.toContain("s3cret");
+      expect(forge.calls).toHaveLength(0);
+      expect(snapshot(bare, clone)).toEqual(before);
+    });
+  }, GIT_TEST_TIMEOUT);
+
   test("a given body is written verbatim after the fence", async () => {
     await withGitBank(async ({ clone }) => {
       const body = "## Context\n\nx\n";
@@ -356,6 +426,20 @@ describe("proposeRecord", () => {
       expect(splitFrontmatter(r.text)!.body).toBe(body);
     });
   }, GIT_TEST_TIMEOUT);
+});
+
+describe("redactRemote", () => {
+  test("drops URL-form userinfo and leaves scp-form logins and local paths alone", () => {
+    expect(redactRemote("https://user:s3cret@git.example.com/acme/bank.git")).toBe("https://git.example.com/acme/bank.git");
+    expect(redactRemote("https://ghp_token@github.com/acme/bank.git")).toBe("https://github.com/acme/bank.git");
+    expect(redactRemote("ssh://git@ssh.dev.azure.com/v3/acme/proj/bank")).toBe("ssh://ssh.dev.azure.com/v3/acme/proj/bank");
+    expect(redactRemote("git push: unable to access 'https://u:p@ss@host/x.git/'")).toBe("git push: unable to access 'https://host/x.git/'");
+    expect(redactRemote("https://user:s3c?ret@git.example.com/acme/bank.git")).toBe("https://git.example.com/acme/bank.git");
+    expect(redactRemote("https://user:s3c#ret@git.example.com/acme/bank.git")).toBe("https://git.example.com/acme/bank.git");
+    expect(redactRemote("git@github.com:acme/bank.git")).toBe("git@github.com:acme/bank.git");
+    expect(redactRemote("/tmp/ltm-bare-x")).toBe("/tmp/ltm-bare-x");
+    expect(redactRemote("../bank.git")).toBe("../bank.git");
+  });
 });
 
 describe("templates and slugs", () => {

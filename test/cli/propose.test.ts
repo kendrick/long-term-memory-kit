@@ -30,6 +30,21 @@ describe("ltm propose", () => {
     });
   }, GIT_TEST_TIMEOUT);
 
+  test("a credentialed origin shows in the hint without its userinfo", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      const secret = "https://user:s3cret@git.example.com/acme/bank.git";
+      git(clone, "config", "remote.origin.url", secret);
+      git(clone, "config", `url.${bare}.insteadOf`, secret);
+      expect(git(clone, "ls-remote", "--get-url", "origin").trim()).toBe(bare);
+      const r = await ltm(clone, "propose", "--type", "Decision", "--title", TITLE);
+      expect(r.stderr).toBe("");
+      expect(r.exitCode).toBe(0);
+      const branch = /^branch: (.+)$/m.exec(r.stdout)?.[1];
+      expect(r.stdout).toEndWith(`review: open a change request for ${branch} on https://git.example.com/acme/bank.git\n`);
+      expect(r.stdout + r.stderr).not.toContain("s3cret");
+    });
+  }, GIT_TEST_TIMEOUT);
+
   test("a GitLab origin prints the fallback merge-request URL as json", async () => {
     await withGitBank(async ({ bare, clone }) => {
       const gitlab = "https://gitlab.example.com/acme/bank.git";

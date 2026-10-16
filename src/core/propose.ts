@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { ConfigError, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
@@ -51,6 +51,13 @@ export type Proposed = {
 export type ProposeResult = ProposeRefusal | ProposeDryRun | Proposed;
 
 export const NO_ORIGIN = "no origin remote; ltm propose pushes a branch there for review";
+export const SPLIT_ORIGIN = "origin pushes somewhere other than it fetches from; ltm propose can't open a review across repositories";
+
+// A token in an HTTPS remote ends up in terminal and CI logs if printed as is. The user in scp-form git@host:path is a login name, not a secret, so it stays.
+export function redactRemote(text: string): string {
+  // Userinfo runs to the last @ before the first /. Git stores the config string raw, so a ? or # in a token is still userinfo.
+  return text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s]*@/gi, "$1");
+}
 
 const TEMPLATES: Record<MemoryType, string[]> = {
   Decision: ["Context", "Decision", "Consequences"],
@@ -115,10 +122,11 @@ function buildRecord(input: ProposalInput, config: BankConfig, today: string): {
 
 class GitError extends Error {}
 
+// Git strips credentials from most of its own messages. A refusal echoes git's stderr, so redact it again here in case some git version doesn't.
 function git(dir: string, args: string[]): string {
   const r = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
-  if (r.error) throw new GitError(`git ${args[0]}: ${firstLine(r.error.message)}`);
-  if (r.status !== 0) throw new GitError(`git ${args[0]}: ${firstLine(r.stderr.trim()) || `exited ${r.status}`}`);
+  if (r.error) throw new GitError(redactRemote(`git ${args[0]}: ${firstLine(r.error.message)}`));
+  if (r.status !== 0) throw new GitError(redactRemote(`git ${args[0]}: ${firstLine(r.stderr.trim()) || `exited ${r.status}`}`));
   return r.stdout;
 }
 
@@ -135,6 +143,25 @@ function remoteDefaultBranch(root: string): string {
   if (m?.[1]) return m[1];
   const local = gitMaybe(root, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])?.replace(/^refs\/remotes\/origin\//, "");
   return local || "main";
+}
+
+// The worktree holds whatever origin's default branch committed, and writeFileSync follows a symlink there to anywhere on disk before git add gets a chance to refuse the path. A missing component ends the walk, because mkdir only makes plain dirs.
+function destinationRefusal(tmp: string, inTree: string, base: string): string | null {
+  const segs = inTree.split("/");
+  for (let i = 0; i < segs.length; i++) {
+    const rel = segs.slice(0, i + 1).join("/");
+    let st;
+    try {
+      st = lstatSync(join(tmp, rel));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw e;
+    }
+    if (st.isSymbolicLink()) return `${rel} on ${base} is a symlink; ltm propose won't write through it`;
+    if (i === segs.length - 1) return `${rel} already exists on ${base}`;
+    if (!st.isDirectory()) return `${rel} on ${base} is not a directory`;
+  }
+  return null;
 }
 
 const facetPrefixesOf = (config: BankConfig): string[] | null => {
@@ -164,6 +191,10 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
   let base: string;
   let tmp: string | null = null;
   try {
+    // The adapter and the fallback link name the fetch URL's repository, so a branch pushed anywhere else would be a review of a branch that isn't there. Both lookups apply insteadOf, so a rewrite alone doesn't count as a split.
+    const fetchUrl = git(root, ["remote", "get-url", "origin"]).trim();
+    const pushUrls = git(root, ["remote", "get-url", "--push", "--all", "origin"]).trim().split("\n");
+    if (pushUrls.length !== 1 || pushUrls[0] !== fetchUrl) return { refusal: SPLIT_ORIGIN };
     base = remoteDefaultBranch(root);
     // An empty --refmap writes only FETCH_HEAD, so no ref under refs/ moves in the caller's repo.
     git(root, ["fetch", "--quiet", "--refmap=", "origin", `refs/heads/${base}`]);
@@ -181,6 +212,8 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
     if (recheckErrors.length > 0) return { refusal: recheckErrors.map(formatFinding).join("\n") };
     if (takenIds(fetched).has(id)) return { refusal: `id ${id} is already used by a Record on ${base}; run ltm propose again` };
     const inTree = bankInRepo === "" ? path : join(bankInRepo, path).split(sep).join("/");
+    const refused = destinationRefusal(tmp, inTree, base);
+    if (refused) return { refusal: refused };
     const abs = join(tmp, inTree);
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, text);
@@ -206,7 +239,7 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
     return { dryRun: false, id, path, text, branch, url, adapter: forge.name, remoteUrl };
   } catch (e) {
     // The branch is already on origin, so the fallback link still gets a person to the review.
-    const message = firstLine(e instanceof Error ? e.message : String(e));
+    const message = redactRemote(firstLine(e instanceof Error ? e.message : String(e)));
     const url = fallbackUrl(remoteUrl, base, branch);
     return { refusal: `pushed ${branch}, but opening the review failed: ${message}`, ...(url ? { url } : {}) };
   }

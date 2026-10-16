@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { MEMORY_TYPES, type MemoryType } from "../core/bank.ts";
 import { today } from "../core/clock.ts";
-import { proposeRecord, type ListField, type ProposalInput } from "../core/propose.ts";
+import { proposeRecord, redactRemote, type ListField, type ProposalInput } from "../core/propose.ts";
 import { firstLine } from "../core/text.ts";
 import { openBank } from "./bank.ts";
 import type { Command } from "./run.ts";
@@ -104,7 +104,7 @@ export const propose: Command = {
     }
     ctx.out(`path: ${result.path}\nbranch: ${result.branch}\n`);
     if (result.url) ctx.out(`review: ${result.url}\n`);
-    else ctx.out(`review: open a change request for ${result.branch} on ${result.remoteUrl}\n`);
+    else ctx.out(`review: open a change request for ${result.branch} on ${redactRemote(result.remoteUrl)}\n`);
     return 0;
   },
 };
