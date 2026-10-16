@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, posix, relative, sep } from "node:path";
-import type { BankConfig, MemoryType } from "./bank.ts";
+import { ConfigError, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
 import { canonicalFrontmatter, SCHEMA_KEY_ORDER } from "./canonical.ts";
 import { newId } from "./fmt.ts";
 import { chooseAdapter, fallbackUrl, type ForgeAdapter } from "./forge.ts";
@@ -81,7 +81,7 @@ export function formatFinding(f: Finding): string {
   return `${f.file}:${f.line}: ${f.severity} ${f.rule}: ${f.key ?? "-"}: ${f.message}`;
 }
 
-// The caller's Bank is the only id space checked. A file that won't parse can't claim an id, and `ltm validate` reports it on its own.
+// Ids are checked against the caller's Bank and, once fetched, the default branch's. Other branches aren't checked. A file that won't parse can't claim an id, and `ltm validate` reports it on its own.
 function takenIds(config: BankConfig): Set<string> {
   const taken = new Set<string>();
   for (const { abs, rel, type } of listRecordFiles(config, () => {})) {
@@ -128,24 +128,28 @@ function gitMaybe(dir: string, args: string[]): string | null {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
-// A clone made by git init plus git remote add has no origin/HEAD, and its default branch needn't be main. ls-remote asks the remote and writes no ref locally.
+// Ask the remote first: origin/HEAD goes stale when the remote switches default branches and keeps the old one, and git init plus git remote add leaves none at all. ls-remote writes no ref locally.
 function remoteDefaultBranch(root: string): string {
-  const local = gitMaybe(root, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])?.replace(/^refs\/remotes\/origin\//, "");
-  if (local) return local;
   const remote = gitMaybe(root, ["ls-remote", "--symref", "origin", "HEAD"]);
   const m = remote?.match(/^ref: refs\/heads\/(\S+)\tHEAD$/m);
-  return m?.[1] ?? "main";
+  if (m?.[1]) return m[1];
+  const local = gitMaybe(root, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])?.replace(/^refs\/remotes\/origin\//, "");
+  return local || "main";
 }
+
+const facetPrefixesOf = (config: BankConfig): string[] | null => {
+  const facets = config.raw.facet_prefixes;
+  return Array.isArray(facets) && facets.every((x) => typeof x === "string") ? (facets as string[]) : null;
+};
 
 export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Promise<ProposeResult> {
   const { config } = deps;
   const built = buildRecord(input, config, deps.today);
   if ("refusal" in built) return built;
-  const { id, path, text } = built;
+  const { id, text } = built;
+  let path = built.path;
 
-  const facets = config.raw.facet_prefixes;
-  const prefixes = Array.isArray(facets) && facets.every((x) => typeof x === "string") ? (facets as string[]) : null;
-  const { findings } = checkRecordText(path, input.type, text, prefixes, config.folders[input.type]);
+  const { findings } = checkRecordText(path, input.type, text, facetPrefixesOf(config), config.folders[input.type]);
   const errors = findings.filter((f) => f.severity === "error");
   if (errors.length > 0) return { refusal: errors.map(formatFinding).join("\n") };
   for (const f of findings) deps.onWarning?.(formatFinding(f));
@@ -169,6 +173,13 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
     tmp = mkdtempSync(join(tmpdir(), "ltm-propose-"));
     // Detached, so the caller's repo gains no branch and its checkout is never touched.
     git(root, ["worktree", "add", "--quiet", "--detach", tmp, "FETCH_HEAD"]);
+    // The caller's checkout can be behind origin, and a folder remapped there would put the file where that branch's validate and queries never look. The commit carries the fetched config, so path and checks follow it.
+    const fetched = loadConfig(bankInRepo === "" ? tmp : join(tmp, bankInRepo));
+    path = posix.join(fetched.folders[input.type], posix.basename(path));
+    const recheck = checkRecordText(path, input.type, text, facetPrefixesOf(fetched), fetched.folders[input.type]);
+    const recheckErrors = recheck.findings.filter((f) => f.severity === "error");
+    if (recheckErrors.length > 0) return { refusal: recheckErrors.map(formatFinding).join("\n") };
+    if (takenIds(fetched).has(id)) return { refusal: `id ${id} is already used by a Record on ${base}; run ltm propose again` };
     const inTree = bankInRepo === "" ? path : join(bankInRepo, path).split(sep).join("/");
     const abs = join(tmp, inTree);
     mkdirSync(dirname(abs), { recursive: true });
@@ -180,6 +191,7 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
     const pushUrl = git(root, ["remote", "get-url", "--push", "origin"]).trim();
     git(root, ["push", "--quiet", pushUrl, `${sha}:refs/heads/${branch}`]);
   } catch (e) {
+    if (e instanceof ConfigError) return { refusal: `the fetched default branch has no usable Bank config: ${firstLine(e.message)}` };
     if (!(e instanceof GitError)) throw e;
     return { refusal: e.message };
   } finally {

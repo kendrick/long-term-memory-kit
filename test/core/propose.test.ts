@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
@@ -255,6 +255,72 @@ describe("proposeRecord", () => {
       const afterBareRefs = after.bareRefs.split("\n").filter((l) => !l.endsWith(newRef)).join("\n");
       expect({ ...after, bareRefs: afterBareRefs }).toEqual(before);
       expect(git(bare, "for-each-ref", "--format=%(refname)", "refs/heads/ltm/")).toBe(`refs/heads/ltm/propose/${r.id}\n`);
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("origin's default branch changing a folder mapping puts the file in the fetched folder, not the stale local one", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      const other = mkdtempSync(join(tmpdir(), "ltm-other-"));
+      const fresh = mkdtempSync(join(tmpdir(), "ltm-fresh-"));
+      try {
+        git(other, "clone", "--quiet", bare, ".");
+        git(other, "config", "user.name", "ltm test");
+        git(other, "config", "user.email", "ltm@example.invalid");
+        git(other, "config", "commit.gpgsign", "false");
+        const yaml = join(other, "memory-bank.yaml");
+        writeFileSync(yaml, readFileSync(yaml, "utf8") + "folders:\n  Decision: _memory/adrs\n");
+        git(other, "mv", "_memory/decisions", "_memory/adrs");
+        git(other, "commit", "--quiet", "-am", "move decisions to adrs");
+        git(other, "push", "--quiet", "origin", "main");
+        // The clone never fetched that commit, so its own config still maps Decision to _memory/decisions.
+        expect(loadConfig(clone).folders.Decision).toBe("_memory/decisions");
+
+        const r = proposed(await propose(clone, fakeAdapter()));
+        expect(r.path).toBe(`_memory/adrs/use-postgres-for-new-services-${r.id}.md`);
+        expect(git(bare, "diff-tree", "--no-commit-id", "--name-status", "-r", r.branch)).toBe(`A\t${r.path}\n`);
+
+        git(fresh, "clone", "--quiet", "--branch", r.branch, bare, ".");
+        const validated = await run({ argv: ["validate"], cwd: fresh, env: {} });
+        expect(validated.stdout + validated.stderr).toBe("");
+        expect(validated.exitCode).toBe(0);
+        expect(listRecords(loadConfig(fresh), () => {}).map((rec) => rec.path)).toContain(r.path);
+      } finally {
+        rmSync(other, { recursive: true, force: true });
+        rmSync(fresh, { recursive: true, force: true });
+      }
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("a remote HEAD that moved to a new branch beats a stale origin/HEAD, and the clone gains no ref", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      const other = mkdtempSync(join(tmpdir(), "ltm-other-"));
+      try {
+        git(other, "clone", "--quiet", bare, ".");
+        git(other, "config", "user.name", "ltm test");
+        git(other, "config", "user.email", "ltm@example.invalid");
+        git(other, "config", "commit.gpgsign", "false");
+        git(other, "switch", "--quiet", "-c", "trunk");
+        git(other, "commit", "--quiet", "--allow-empty", "-m", "trunk diverges from main");
+        git(other, "push", "--quiet", "origin", "trunk");
+        git(bare, "symbolic-ref", "HEAD", "refs/heads/trunk");
+        // Without this, propose's own fetch would refresh origin/HEAD and hide the staleness.
+        git(clone, "config", "remote.origin.followRemoteHEAD", "never");
+        expect(git(clone, "symbolic-ref", "refs/remotes/origin/HEAD").trim()).toBe("refs/remotes/origin/main");
+
+        const before = snapshot(bare, clone);
+        const forge = fakeAdapter();
+        const r = proposed(await propose(clone, forge));
+        const after = snapshot(bare, clone);
+
+        expect(forge.calls).toHaveLength(1);
+        expect(forge.calls[0]!.base).toBe("trunk");
+        expect(git(bare, "rev-parse", `${r.branch}^`).trim()).toBe(git(bare, "rev-parse", "trunk").trim());
+        const newRef = `\trefs/heads/ltm/propose/${r.id}`;
+        const afterBareRefs = after.bareRefs.split("\n").filter((l) => !l.endsWith(newRef)).join("\n");
+        expect({ ...after, bareRefs: afterBareRefs }).toEqual(before);
+      } finally {
+        rmSync(other, { recursive: true, force: true });
+      }
     });
   }, GIT_TEST_TIMEOUT);
 

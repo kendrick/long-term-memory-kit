@@ -626,6 +626,53 @@ describe("supersession checks", () => {
       expect(fs.map((f) => f.rule)).toEqual(["supersession-missing-target"]);
     });
 
+    test("a target that already has a successor is supersession-incomplete on the Proposal", async () => {
+      const record = (id: string, title: string, status: string, link: string) =>
+        [
+          "---",
+          "schema: 1",
+          `id: ${id}`,
+          "memory_type: Decision",
+          `title: ${title}`,
+          `status: ${status}`,
+          "date: 2026-10-09",
+          "summary: A pair.",
+          link,
+          "related: [constrained_by::cA9wE6uJr3]",
+          "applies_to: [domain:commerce]",
+          "---",
+          "",
+          "## Context",
+          "c",
+          "",
+          "## Decision",
+          "d",
+          "",
+          "## Consequences",
+          "e",
+          "",
+        ].join("\n");
+      const oldFile = "_memory/decisions/pair-old-aAaAaAaAaA.md";
+      const newFile = "_memory/decisions/pair-new-bBbBbBbBbB.md";
+      const pair = (dir: string) => {
+        writeFileSync(join(dir, oldFile), record("aAaAaAaAaA", "Old", "superseded", "superseded_by: bBbBbBbBbB"));
+        writeFileSync(join(dir, newFile), record("bBbBbBbBbB", "New", "accepted", "supersedes: [aAaAaAaAaA]"));
+      };
+      const without = await withScratch(demoBank, async (dir) => {
+        pair(dir);
+        return supersession(validateBankReport(dir, null, dir).findings);
+      });
+      expect(without).toEqual([]);
+
+      const fs = await withScratch(demoBank, async (dir) => {
+        pair(dir);
+        writeFileSync(join(dir, file), proposal("proposed", "aAaAaAaAaA", "[domain:commerce]"));
+        return supersession(validateBankReport(dir, null, dir).findings);
+      });
+      expect(fs.map((f) => f.rule)).toEqual(["supersession-incomplete"]);
+      expect(fs[0]!).toMatchObject({ file, key: "supersedes" });
+    });
+
     test("a scope the target doesn't share is still supersession-facets", async () => {
       const fs = await run(proposal("proposed", target, "[domain:billing]"));
       expect(fs.map((f) => f.rule)).toEqual(["supersession-facets"]);

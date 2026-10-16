@@ -347,6 +347,7 @@ function checkSupersession(nodes: Node[]): Pending[] {
     if (!e) edges.set(k, (e = { old: o, new: n, byOld: false, byNew: false }));
     return e;
   };
+  const hasSuccessor = (n: Node) => typeof n.fm.data.superseded_by === "string" && n.fm.data.superseded_by !== "";
   const missing = (n: Node, key: string, id: string) =>
     out.push({
       finding: finding(n.file, n.fm.lineOf(key), "supersession-missing-target", key, `${key} names '${id}', which no Record has`),
@@ -394,8 +395,8 @@ function checkSupersession(nodes: Node[]): Pending[] {
         ),
         also: e.new.file,
       });
-    } else if (resolvable && e.byNew && !e.byOld && e.new.fm.data.status !== "proposed") {
-      // A Proposal names what it supersedes before Acceptance; `ltm accept` (#11) writes the old half at Acceptance.
+    } else if (resolvable && e.byNew && !e.byOld && !(e.new.fm.data.status === "proposed" && !hasSuccessor(e.old))) {
+      // A Proposal names what it supersedes before Acceptance; `ltm accept` (#11) writes the old half at Acceptance. Only while the target is still unsuperseded: superseded_by is a scalar, so a target already pointing at another successor can't be reciprocal to both, and accepting would either overwrite that pair or leave this one half-written.
       out.push({
         finding: finding(
           e.new.file,
