@@ -157,15 +157,18 @@ describe("ltm accept", () => {
     }
   });
 
-  test("a write that fails mid-plan reports what landed and what failed", async () => {
+  test("a write that fails on the first file reports that nothing landed", async () => {
     if (process.getuid?.() === 0) return; // root ignores file modes
     await withScratch(demo, async (dir) => {
       patch(dir, P, "applies_to: [platform:kubernetes, system:observability]", "applies_to: [domain:commerce]\nsupersedes: [hT5cY8dUa6]");
+      // Edits apply in path order and H sorts before P, so H is the first file written and P stays untouched.
       chmodSync(join(dir, H), 0o444);
+      const before = hashes(dir);
       const r = await accept(dir, "pL2sG4nVq0");
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toBe("");
-      expect(r.stderr).toMatch(new RegExp(`^ltm accept: wrote (nothing|${P.replace(/[.]/g, "\\.")}), then failed on ${H.replace(/[.]/g, "\\.")}: .+\\n$`));
+      expect(r.stderr).toMatch(new RegExp(`^ltm accept: wrote nothing, then failed on ${H.replace(/[.]/g, "\\.")}: .+\\n$`));
+      expect(hashes(dir)).toEqual(before);
     });
   });
 });

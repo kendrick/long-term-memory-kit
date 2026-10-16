@@ -153,6 +153,19 @@ describe("ltm supersede", () => {
     });
   });
 
+  test("a write failure on the first file reports that nothing landed", async () => {
+    if (process.getuid?.() === 0) return; // root ignores file modes
+    await withScratch(demoBank, async (dir) => {
+      chmodSync(join(dir, H), 0o444);
+      const before = hashes(dir);
+      const r = await sup(dir, "hT5cY8dUa6", "kQ7vN2xLp4");
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toMatch(new RegExp(`^ltm supersede: wrote nothing, then failed on ${H}: .+\\n$`));
+      expect(hashes(dir)).toEqual(before);
+    });
+  });
+
   test("from a dir with no Bank exits 1 and names the missing Bank", async () => {
     const empty = mkdtempSync(join(tmpdir(), "ltm-nobank-"));
     try {
