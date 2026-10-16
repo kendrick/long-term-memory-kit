@@ -46,6 +46,7 @@ export type Proposed = {
   branch: string;
   url: string | null;
   adapter: ForgeAdapter["name"];
+  remoteUrl: string;
 };
 export type ProposeResult = ProposeRefusal | ProposeDryRun | Proposed;
 
@@ -95,6 +96,7 @@ function takenIds(config: BankConfig): Set<string> {
 }
 
 const LIST_FIELDS = ["applies_to", "owners", "tags", "related", "supersedes", "source_refs"] as const;
+export type ListField = (typeof LIST_FIELDS)[number];
 
 function buildRecord(input: ProposalInput, config: BankConfig, today: string): { id: string; path: string; text: string } | ProposeRefusal {
   const id = newId(takenIds(config));
@@ -164,9 +166,10 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
     writeFileSync(abs, text);
     git(tmp, ["add", "--", inTree]);
     git(tmp, ["commit", "--quiet", "-m", `Propose ${input.type}: ${input.title}`]);
-    // A URL rather than the remote name, so git adds no remote-tracking ref in the caller's repo.
+    const sha = git(tmp, ["rev-parse", "HEAD"]).trim();
+    // A URL rather than the remote name, so git adds no remote-tracking ref in the caller's repo. Push from root, never tmp, because git resolves a relative URL like ../bank.git against the -C dir. The worktree shares root's object store, so root already has the commit.
     const pushUrl = git(root, ["remote", "get-url", "--push", "origin"]).trim();
-    git(tmp, ["push", "--quiet", pushUrl, `HEAD:refs/heads/${branch}`]);
+    git(root, ["push", "--quiet", pushUrl, `${sha}:refs/heads/${branch}`]);
   } catch (e) {
     if (!(e instanceof GitError)) throw e;
     return { refusal: e.message };
@@ -179,7 +182,7 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
   const body = [`Title: ${input.title}`, `Type: ${input.type}`, ...summary, `Path: ${path}`].join("\n") + "\n";
   try {
     const { url } = await forge.openChangeRequest({ remoteUrl, base, head: branch, title: `Propose ${input.type}: ${input.title}`, body });
-    return { dryRun: false, id, path, text, branch, url, adapter: forge.name };
+    return { dryRun: false, id, path, text, branch, url, adapter: forge.name, remoteUrl };
   } catch (e) {
     // The branch is already on origin, so the fallback link still gets a person to the review.
     const message = firstLine(e instanceof Error ? e.message : String(e));

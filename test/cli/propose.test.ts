@@ -46,6 +46,52 @@ describe("ltm propose", () => {
     });
   });
 
+  test("a GitHub origin with a token passes the created PR's URL through to --json and the human output", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      const github = "https://github.com/acme/bank.git";
+      git(clone, "config", "remote.origin.url", github);
+      git(clone, "config", `url.${bare}.insteadOf`, github);
+      // The rewrite keeps the push local, and the fetch stub keeps the GraphQL calls local.
+      expect(git(clone, "config", "--get", "remote.origin.url").trim()).toBe(github);
+      expect(git(clone, "config", "--get", `url.${bare}.insteadOf`).trim()).toBe(github);
+      expect(git(clone, "ls-remote", "--get-url", "origin").trim()).toBe(bare);
+
+      const prUrl = "https://github.com/acme/bank/pull/42";
+      const seen: { url: string; query: string; variables: Record<string, unknown> }[] = [];
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        const { query, variables } = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, unknown> };
+        seen.push({ url: String(input), query, variables });
+        const data = query.includes("createPullRequest") ? { createPullRequest: { pullRequest: { url: prUrl } } } : { repository: { id: "R_kgDOtest" } };
+        return new Response(JSON.stringify({ data }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }) as typeof fetch;
+      try {
+        const ghEnv = { ...env, GH_TOKEN: "test-token" };
+        const r = await run({ argv: ["propose", "--type", "Decision", "--title", TITLE, "--json"], cwd: clone, env: ghEnv });
+        expect(r.stderr).toBe("");
+        expect(r.exitCode).toBe(0);
+        const out = JSON.parse(r.stdout);
+        expect(Object.keys(out)).toEqual(["id", "path", "branch", "url", "adapter"]);
+        expect(out.adapter).toBe("github");
+        expect(out.url).toBe(prUrl);
+
+        expect(seen).toHaveLength(2);
+        expect(seen.every((s) => s.url === "https://api.github.com/graphql")).toBe(true);
+        const creates = seen.filter((s) => s.query.includes("createPullRequest"));
+        expect(creates).toHaveLength(1);
+        expect(creates[0]!.variables).toMatchObject({ baseRefName: "main", headRefName: `ltm/propose/${out.id}`, title: `Propose Decision: ${TITLE}` });
+
+        const human = await run({ argv: ["propose", "--type", "Decision", "--title", TITLE], cwd: clone, env: ghEnv });
+        expect(human.stderr).toBe("");
+        expect(human.exitCode).toBe(0);
+        expect(human.stdout).toEndWith(`review: ${prUrl}\n`);
+        expect(seen).toHaveLength(4);
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+    });
+  });
+
   test("an empty --title exits 1 and the bare repo gains no ref", async () => {
     await withGitBank(async ({ bare, clone }) => {
       const before = refs(bare);

@@ -1,21 +1,19 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { MEMORY_TYPES, type MemoryType } from "../core/bank.ts";
 import { today } from "../core/clock.ts";
-import { proposeRecord, type ProposalInput } from "../core/propose.ts";
+import { proposeRecord, type ListField, type ProposalInput } from "../core/propose.ts";
 import { firstLine } from "../core/text.ts";
 import { openBank } from "./bank.ts";
 import type { Command } from "./run.ts";
 
-// Flag name -> Record key. Every one is repeatable.
-const LIST_FLAGS = {
+const LIST_FLAGS: Record<string, ListField> = {
   "applies-to": "applies_to",
   owners: "owners",
   tags: "tags",
   related: "related",
   supersedes: "supersedes",
   "source-ref": "source_refs",
-} as const;
+};
 
 const many = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) : []);
 
@@ -70,7 +68,7 @@ export const propose: Command = {
     if (typeof ctx.values.summary === "string") input.summary = ctx.values.summary;
     for (const [flag, key] of Object.entries(LIST_FLAGS)) {
       const v = many(ctx.values[flag]);
-      if (v.length > 0) input[key as (typeof LIST_FLAGS)[keyof typeof LIST_FLAGS]] = v;
+      if (v.length > 0) input[key] = v;
     }
     if (body !== undefined) input.body = body;
 
@@ -106,13 +104,7 @@ export const propose: Command = {
     }
     ctx.out(`path: ${result.path}\nbranch: ${result.branch}\n`);
     if (result.url) ctx.out(`review: ${result.url}\n`);
-    else ctx.out(`review: open a change request for ${result.branch} on ${remoteOf(config.root)}\n`);
+    else ctx.out(`review: open a change request for ${result.branch} on ${result.remoteUrl}\n`);
     return 0;
   },
 };
-
-// The core result doesn't carry the remote URL, and the no-URL hint has to name it.
-function remoteOf(root: string): string {
-  const r = spawnSync("git", ["-C", root, "config", "--get", "remote.origin.url"], { encoding: "utf8" });
-  return r.stdout.trim();
-}

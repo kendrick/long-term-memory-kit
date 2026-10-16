@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
@@ -61,6 +61,29 @@ describe("proposeRecord", () => {
       expect(added).toHaveLength(1);
       expect(added[0]).toMatch(new RegExp(`^[0-9a-f]{40} commit\trefs/heads/ltm/propose/${r.id}$`));
       expect(lines(after.bareRefs).filter((l) => l !== added[0])).toEqual(lines(before.bareRefs));
+    });
+  });
+
+  test("a relative origin URL still pushes, and still changes only the new branch on origin", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      // Git resolves a relative URL against the -C dir. The scratch worktree is a mkdtemp sibling of the clone, so a ../ URL resolves the same from both and misses the bug. A URL through the clone's own .git dir resolves only from the clone, like ../bank.git in a real checkout.
+      symlinkSync(bare, join(clone, ".git", "origin.git"));
+      const rel = ".git/origin.git";
+      git(clone, "config", "remote.origin.url", rel);
+      expect(git(clone, "config", "--get", "remote.origin.url").trim()).toBe(rel);
+      expect(realpathSync(join(clone, rel))).toBe(realpathSync(bare));
+
+      const before = snapshot(bare, clone);
+      const r = proposed(await propose(clone, fakeAdapter()));
+      const after = snapshot(bare, clone);
+
+      expect({ ...after, bareRefs: "" }).toEqual({ ...before, bareRefs: "" });
+      const lines = (s: string) => s.split("\n").filter((l) => l !== "");
+      const added = lines(after.bareRefs).filter((l) => !lines(before.bareRefs).includes(l));
+      expect(added).toHaveLength(1);
+      expect(added[0]).toMatch(new RegExp(`^[0-9a-f]{40} commit\trefs/heads/ltm/propose/${r.id}$`));
+      expect(lines(after.bareRefs).filter((l) => l !== added[0])).toEqual(lines(before.bareRefs));
+      expect(git(bare, "diff-tree", "--no-commit-id", "--name-status", "-r", r.branch)).toBe(`A\t${r.path}\n`);
     });
   });
 
