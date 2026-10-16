@@ -171,4 +171,23 @@ describe("ltm accept", () => {
       expect(hashes(dir)).toEqual(before);
     });
   });
+
+  test("a write that fails on the second file names the first as landed and leaves it written", async () => {
+    if (process.getuid?.() === 0) return; // root ignores file modes
+    await withScratch(demo, async (dir) => {
+      patch(dir, P, "applies_to: [platform:kubernetes, system:observability]", "applies_to: [domain:commerce]\nsupersedes: [hT5cY8dUa6]");
+      // H sorts before P, so H lands first and the read-only P fails second: the partial-write outcome.
+      chmodSync(join(dir, P), 0o444);
+      try {
+        const r = await accept(dir, "pL2sG4nVq0");
+        const esc = (s: string) => s.replace(/[.\\^$*+?()[\]{}|]/g, "\\$&");
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toBe("");
+        expect(r.stderr).toMatch(new RegExp(`^ltm accept: wrote ${esc(H)}, then failed on ${esc(P)}: .+\\n$`));
+        expect(fm(dir, H).superseded_by).toBe("pL2sG4nVq0");
+      } finally {
+        chmodSync(join(dir, P), 0o644);
+      }
+    });
+  });
 });
