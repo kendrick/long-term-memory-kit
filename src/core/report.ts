@@ -26,7 +26,8 @@ const fingerprint = (f: Finding, index: number): string =>
   createHash("sha256").update(`${f.rule}\0${f.file}\0${f.key ?? ""}\0${index}`).digest("hex");
 
 // Sorting by line, then message, gives a finding the same index whatever order validate
-// emits it in.
+// emits it in. The message tie-break is byCodeUnit because the index goes into the
+// fingerprint, and every CI runner has to compute the same one whatever its locale.
 function groupIndexes(findings: Finding[]): number[] {
   const groups = new Map<string, number[]>();
   findings.forEach((f, i) => {
