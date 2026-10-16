@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import * as fs from "node:fs";
+import { chmod, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { loadConfig } from "../../src/core/bank.ts";
 import { splitFrontmatter } from "../../src/core/record.ts";
-import { applyEdits, type BankIndex, type Edit, planAccept, planSupersede, readBankIndex } from "../../src/core/supersede.ts";
+import { applyEdits, type BankIndex, type Edit, type EditFs, planAccept, planSupersede, readBankIndex } from "../../src/core/supersede.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const demoBank = fileURLToPath(new URL("../../fixtures/demo-bank", import.meta.url));
@@ -135,6 +136,20 @@ describe("planSupersede", () => {
       });
     });
 
+    test("5b: the new Record is not accepted", async () => {
+      await withScratch(demoBank, async (dir) => {
+        // Share a Facet with H so the scope refusal can't answer first.
+        await patch(dir, P, "applies_to: [platform:kubernetes, system:observability]", "applies_to: [domain:commerce]");
+        expect(planSupersede(indexOf(dir), "hT5cY8dUa6", "pL2sG4nVq0")).toEqual({
+          refusal: `${P} has status 'proposed', not 'accepted'`,
+        });
+        await patch(dir, P, "status: proposed\n", "");
+        expect(planSupersede(indexOf(dir), "hT5cY8dUa6", "pL2sG4nVq0")).toEqual({
+          refusal: `${P} has status 'undefined', not 'accepted'`,
+        });
+      });
+    });
+
     test("6: the old Record already reaches the new one through supersedes", async () => {
       await withScratch(demoBank, async (dir) => {
         await patch(dir, H, "status: accepted\n", "status: accepted\nsupersedes: [kQ7vN2xLp4]\n");
@@ -253,19 +268,71 @@ describe("planAccept", () => {
 });
 
 describe("applyEdits", () => {
-  test("stops at the first failure and reports what it already wrote", async () => {
+  const temps = async (dir: string) => (await readdir(join(dir, "_memory/decisions"))).filter((f) => f.includes(".ltm-"));
+
+  async function withPlannedPair(fn: (dir: string, edits: Edit[], before: string[]) => Promise<void>): Promise<void> {
     await withScratch(demoBank, async (dir) => {
-      await mkdir(join(dir, "blocked.md"));
-      const result = applyEdits([
-        { abs: join(dir, "a.md"), rel: "a.md", text: "a" },
-        { abs: join(dir, "blocked.md"), rel: "blocked.md", text: "b" },
-        { abs: join(dir, "c.md"), rel: "c.md", text: "c" },
-      ]);
-      expect(result.written).toEqual(["a.md"]);
-      expect(result.failed?.rel).toBe("blocked.md");
-      expect(result.failed?.message).not.toContain("\n");
-      expect(await readFile(join(dir, "a.md"), "utf8")).toBe("a");
-      await expect(readFile(join(dir, "c.md"), "utf8")).rejects.toThrow();
+      const edits = editsOf(planSupersede(indexOf(dir), "hT5cY8dUa6", "kQ7vN2xLp4"));
+      expect(edits.map((e) => e.rel)).toEqual([H, K]);
+      const before = [await readFile(join(dir, H), "utf8"), await readFile(join(dir, K), "utf8")];
+      await fn(dir, edits, before);
+    });
+  }
+
+  const after = async (dir: string) => [await readFile(join(dir, H), "utf8"), await readFile(join(dir, K), "utf8")];
+
+  function failingRename(n: number): EditFs["renameSync"] {
+    let calls = 0;
+    return (from, to) => {
+      if (++calls === n) throw new Error(`EIO: injected rename failure\nsecond line`);
+      fs.renameSync(from, to);
+    };
+  }
+
+  test("writes every edit and leaves no temp file behind", async () => {
+    await withPlannedPair(async (dir, edits) => {
+      expect(applyEdits(edits)).toEqual({ written: [H, K], failed: null });
+      expect(await after(dir)).toEqual(edits.map((e) => e.text));
+      expect(await temps(dir)).toEqual([]);
+    });
+  });
+
+  test("a staging failure on the second edit changes neither target and leaves no temp file", async () => {
+    if (process.getuid?.() === 0) return; // root ignores file modes
+    await withPlannedPair(async (dir, edits, before) => {
+      await chmod(join(dir, K), 0o444);
+      try {
+        const result = applyEdits(edits);
+        expect(result.written).toEqual([]);
+        expect(result.failed?.rel).toBe(K);
+        expect(result.failed?.message).not.toContain("\n");
+        expect(await after(dir)).toEqual(before);
+        expect(await temps(dir)).toEqual([]);
+      } finally {
+        await chmod(join(dir, K), 0o644);
+      }
+    });
+  });
+
+  test("a failed second rename restores the first target and leaves no temp file", async () => {
+    await withPlannedPair(async (dir, edits, before) => {
+      const result = applyEdits(edits, { ...fs, renameSync: failingRename(2) });
+      expect(result).toEqual({ written: [], failed: { rel: K, message: "EIO: injected rename failure" } });
+      expect(await after(dir)).toEqual(before);
+      expect(await temps(dir)).toEqual([]);
+    });
+  });
+
+  test("a restore that also fails names the target it left changed", async () => {
+    await withPlannedPair(async (dir, edits, before) => {
+      const writeFileSync: EditFs["writeFileSync"] = (path, data, options) => {
+        if (path === join(dir, H)) throw new Error("EIO: injected restore failure");
+        fs.writeFileSync(path, data, options);
+      };
+      const result = applyEdits(edits, { ...fs, renameSync: failingRename(2), writeFileSync });
+      expect(result).toEqual({ written: [H], failed: { rel: K, message: "EIO: injected rename failure" } });
+      expect(await after(dir)).toEqual([edits[0]!.text, before[1]!]);
+      expect(await temps(dir)).toEqual([]);
     });
   });
 });

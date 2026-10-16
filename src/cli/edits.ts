@@ -5,7 +5,7 @@ export const skipLine = (ctx: CommandContext, command: string) => (rel: string, 
   ctx.err(`ltm ${command}: skipped ${rel}: ${reason}\n`);
 };
 
-// Writes aren't atomic across files and a written file can't be unwritten safely, so a failure names what landed.
+// applyEdits rolls back a failed set, but a restore can fail too, so a failure still names any file left changed.
 // stdout lists paths only on success, so a script reading it never mistakes a partial run for a finished one.
 export function writeEdits(ctx: CommandContext, command: string, edits: Edit[]): 0 | 1 {
   const { written, failed } = applyEdits(edits);

@@ -15,6 +15,7 @@ const demoBank = fileURLToPath(new URL("../../fixtures/demo-bank", import.meta.u
 const H = "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md";
 const K = "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md";
 const M = "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md";
+const P = "_memory/decisions/adopt-opentelemetry-tracing-pL2sG4nVq0.md";
 
 function hashes(dir: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -120,6 +121,14 @@ describe("ltm supersede", () => {
       );
     });
 
+    test("5b: the new Record is not accepted", () =>
+      refuses(
+        // Share a Facet with H so the scope refusal can't answer first.
+        (dir) => patch(dir, P, "applies_to: [platform:kubernetes, system:observability]", "applies_to: [domain:commerce]"),
+        ["hT5cY8dUa6", "pL2sG4nVq0"],
+        () => `${P} has status 'proposed', not 'accepted'`,
+      ));
+
     test("6: the old Record already reaches the new one through supersedes", () =>
       refuses(
         (dir) => patch(dir, H, "status: accepted\n", "status: accepted\nsupersedes: [kQ7vN2xLp4]\n"),
@@ -142,14 +151,21 @@ describe("ltm supersede", () => {
       ));
   });
 
-  test("a write failure names what landed and the path that failed", async () => {
+  test("a write failure on the second file rolls back the first and reports that nothing landed", async () => {
+    if (process.getuid?.() === 0) return; // root ignores file modes
     await withScratch(demoBank, async (dir) => {
       chmodSync(join(dir, K), 0o444);
-      const r = await sup(dir, "hT5cY8dUa6", "kQ7vN2xLp4");
-      expect(r.exitCode).toBe(1);
-      expect(r.stdout).toBe("");
-      expect(r.stderr).toMatch(new RegExp(`^ltm supersede: wrote ${H}, then failed on ${K}: .+\\n$`));
-      expect(r.stderr.trimEnd().split("\n")).toHaveLength(1);
+      try {
+        const before = hashes(dir);
+        const r = await sup(dir, "hT5cY8dUa6", "kQ7vN2xLp4");
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toBe("");
+        expect(r.stderr).toMatch(new RegExp(`^ltm supersede: wrote nothing, then failed on ${K}: .+\\n$`));
+        expect(r.stderr.trimEnd().split("\n")).toHaveLength(1);
+        expect(hashes(dir)).toEqual(before);
+      } finally {
+        chmodSync(join(dir, K), 0o644);
+      }
     });
   });
 
@@ -157,12 +173,16 @@ describe("ltm supersede", () => {
     if (process.getuid?.() === 0) return; // root ignores file modes
     await withScratch(demoBank, async (dir) => {
       chmodSync(join(dir, H), 0o444);
-      const before = hashes(dir);
-      const r = await sup(dir, "hT5cY8dUa6", "kQ7vN2xLp4");
-      expect(r.exitCode).toBe(1);
-      expect(r.stdout).toBe("");
-      expect(r.stderr).toMatch(new RegExp(`^ltm supersede: wrote nothing, then failed on ${H}: .+\\n$`));
-      expect(hashes(dir)).toEqual(before);
+      try {
+        const before = hashes(dir);
+        const r = await sup(dir, "hT5cY8dUa6", "kQ7vN2xLp4");
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toBe("");
+        expect(r.stderr).toMatch(new RegExp(`^ltm supersede: wrote nothing, then failed on ${H}: .+\\n$`));
+        expect(hashes(dir)).toEqual(before);
+      } finally {
+        chmodSync(join(dir, H), 0o644);
+      }
     });
   });
 

@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import * as fs from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { type BankConfig } from "./bank.ts";
 import { isCalendarDate } from "./clock.ts";
 import { canonicalFrontmatter, SCHEMA_KEY_ORDER } from "./canonical.ts";
@@ -22,7 +23,7 @@ export function readBankIndex(config: BankConfig, onSkip: (rel: string, reason: 
     let text: string;
     let data: Record<string, unknown>;
     try {
-      text = readFileSync(abs, "utf8");
+      text = fs.readFileSync(abs, "utf8");
       data = parseRecordFile(abs, rel, type).frontmatter;
     } catch (e) {
       if (e instanceof RecordError) onSkip(rel, e.message);
@@ -101,6 +102,9 @@ function stepSupersede(w: Work, oldId: string, newId: string): string | null {
     return `${oldRec.rel} is already superseded by '${String(o.superseded_by)}'`;
   }
   if (n.status === "superseded" || hasSupersededBy(n)) return `${newRec.rel} is itself superseded`;
+  // A proposed or retired new Record would retire the old one with nothing accepted in its place.
+  // planAccept stamps its Proposal accepted in the working copy before this runs, so accept passes.
+  if (n.status !== "accepted") return `${newRec.rel} has status '${String(n.status)}', not 'accepted'`;
   if (reaches(w, oldRec, newId)) return `superseding ${oldRec.rel} with ${newRec.rel} would make a cycle`;
   if (!sharesScope(o.applies_to, n.applies_to)) return `${oldRec.rel} and ${newRec.rel} share no applies_to entry`;
   if (Object.hasOwn(n, "supersedes") && !isIdList(n.supersedes)) return `${newRec.rel}: supersedes is not a list of ids`;
@@ -166,16 +170,58 @@ export function planAccept(index: BankIndex, id: string, today: string): Planned
   return finish(w);
 }
 
-// No rollback: a file already written can't be unwritten safely, so the caller reports what landed.
-export function applyEdits(edits: Edit[]): { written: string[]; failed: { rel: string; message: string } | null } {
-  const written: string[] = [];
-  for (const { abs, rel, text } of edits) {
+export type EditFs = Pick<typeof fs, "accessSync" | "readFileSync" | "renameSync" | "unlinkSync" | "writeFileSync">;
+
+const failure = (rel: string, e: unknown) => ({ rel, message: firstLine((e as Error).message) });
+
+function unlinkAll(io: EditFs, paths: string[]): void {
+  for (const path of paths) {
     try {
-      writeFileSync(abs, text);
-    } catch (e) {
-      return { written, failed: { rel, message: firstLine((e as Error).message) } };
+      io.unlinkSync(path);
+    } catch {
+      // A leftover temp is clutter, not a Bank change; the reported failure matters more.
     }
-    written.push(rel);
   }
-  return { written, failed: null };
+}
+
+// A Supersession spans two files, so an I/O error partway must not leave half of it on disk. Every edit is staged
+// before any target changes, and a failed rename restores the targets already renamed. A kill mid-rename can still split it.
+// `written` lists files left changed on disk, which is only ever a target whose restore also failed.
+// `io` exists so tests can fail a rename, which no file mode can provoke once staging has passed.
+export function applyEdits(
+  edits: Edit[],
+  io: EditFs = fs,
+): { written: string[]; failed: { rel: string; message: string } | null } {
+  const staged: { abs: string; rel: string; tmp: string; original: Buffer }[] = [];
+  for (const [n, { abs, rel, text }] of edits.entries()) {
+    let tmp: string | undefined;
+    try {
+      // rename ignores the target's own mode, so a read-only Record would be replaced without this check.
+      io.accessSync(abs, fs.constants.W_OK);
+      const original = io.readFileSync(abs);
+      tmp = join(dirname(abs), `.${basename(abs)}.ltm-${process.pid}-${n}.tmp`);
+      io.writeFileSync(tmp, text);
+      staged.push({ abs, rel, tmp, original });
+    } catch (e) {
+      unlinkAll(io, [...staged.map((s) => s.tmp), ...(tmp === undefined ? [] : [tmp])]);
+      return { written: [], failed: failure(rel, e) };
+    }
+  }
+  for (const [i, { rel, tmp, abs }] of staged.entries()) {
+    try {
+      io.renameSync(tmp, abs);
+    } catch (e) {
+      const written: string[] = [];
+      for (const done of staged.slice(0, i)) {
+        try {
+          io.writeFileSync(done.abs, done.original);
+        } catch {
+          written.push(done.rel);
+        }
+      }
+      unlinkAll(io, staged.slice(i).map((s) => s.tmp));
+      return { written, failed: failure(rel, e) };
+    }
+  }
+  return { written: staged.map((s) => s.rel), failed: null };
 }
