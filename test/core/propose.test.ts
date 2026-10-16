@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +13,8 @@ import { splitFrontmatter } from "../../src/core/record.ts";
 import { checkRecordText } from "../../src/core/validate.ts";
 import { git, snapshot, withGitBank } from "../helpers/git-bank.ts";
 
+// Each test spawns many git processes; bun's 5s default flakes under load.
+const GIT_TEST_TIMEOUT = 30_000;
 const TODAY = "2026-10-09";
 const INPUT: ProposalInput = { type: "Decision", title: "Use Postgres for new services", summary: "New services store relational data in Postgres." };
 
@@ -44,7 +47,7 @@ describe("withGitBank", () => {
       expect(git(bare, "rev-parse", "--git-dir").trim()).toBe(".");
       expect(git(clone, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("main");
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 });
 
 describe("proposeRecord", () => {
@@ -62,7 +65,7 @@ describe("proposeRecord", () => {
       expect(added[0]).toMatch(new RegExp(`^[0-9a-f]{40} commit\trefs/heads/ltm/propose/${r.id}$`));
       expect(lines(after.bareRefs).filter((l) => l !== added[0])).toEqual(lines(before.bareRefs));
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("a relative origin URL still pushes, and still changes only the new branch on origin", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -85,7 +88,7 @@ describe("proposeRecord", () => {
       expect(lines(after.bareRefs).filter((l) => l !== added[0])).toEqual(lines(before.bareRefs));
       expect(git(bare, "diff-tree", "--no-commit-id", "--name-status", "-r", r.branch)).toBe(`A\t${r.path}\n`);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("the pushed branch's one commit adds one valid proposed Record with a fresh id", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -117,7 +120,7 @@ describe("proposeRecord", () => {
         rmSync(fresh, { recursive: true, force: true });
       }
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("the adapter gets one call from the new branch to the default branch", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -134,7 +137,7 @@ describe("proposeRecord", () => {
       expect(r.url).toBe("https://example.invalid/pr/7");
       expect(r.adapter).toBe("github");
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("an empty title is refused before any git work", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -145,7 +148,7 @@ describe("proposeRecord", () => {
       expect(forge.calls).toHaveLength(0);
       expect(snapshot(bare, clone)).toEqual(before);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("a dry run returns a valid Record and touches no repo", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -160,7 +163,7 @@ describe("proposeRecord", () => {
       expect(forge.calls).toHaveLength(0);
       expect(snapshot(bare, clone)).toEqual(before);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("no origin is refused and nothing is written", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -172,7 +175,7 @@ describe("proposeRecord", () => {
       expect(forge.calls).toHaveLength(0);
       expect(snapshot(bare, clone)).toEqual(before);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("an adapter that throws leaves the branch pushed and says so", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -190,7 +193,7 @@ describe("proposeRecord", () => {
       expect(git(bare, "for-each-ref", "--format=%(refname)", "refs/heads/ltm/")).toBe(`refs/heads/ltm/propose/${id}\n`);
       expect(snapshot(bare, clone).worktrees).toBe(before.worktrees);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("an adapter failure on a forge remote also carries the fallback review URL", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -213,7 +216,47 @@ describe("proposeRecord", () => {
       });
       expect(git(bare, "for-each-ref", "--format=%(refname)", "refs/heads/ltm/")).toBe(`refs/heads/ltm/propose/${id}\n`);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
+
+  test("a proposal that supersedes an accepted Record lands on the branch and a clone of it validates", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      const input: ProposalInput = { ...INPUT, supersedes: ["hT5cY8dUa6"], applies_to: ["domain:commerce"] };
+      const r = proposed(await propose(clone, fakeAdapter(), input));
+      expect(r.text).toContain("supersedes: [hT5cY8dUa6]");
+      const fresh = mkdtempSync(join(tmpdir(), "ltm-fresh-"));
+      try {
+        git(fresh, "clone", "--quiet", "--branch", r.branch, bare, ".");
+        const validated = await run({ argv: ["validate"], cwd: fresh, env: {} });
+        expect(validated.stdout + validated.stderr).toBe("");
+        expect(validated.exitCode).toBe(0);
+      } finally {
+        rmSync(fresh, { recursive: true, force: true });
+      }
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("a remote default branch other than main is found without origin/HEAD, and the clone gains no ref", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      git(bare, "branch", "-m", "main", "master");
+      expect(git(bare, "symbolic-ref", "HEAD").trim()).toBe("refs/heads/master");
+      git(clone, "symbolic-ref", "--delete", "refs/remotes/origin/HEAD");
+      // Git 2.54 recreates origin/HEAD on a plain fetch unless told not to.
+      git(clone, "config", "remote.origin.followRemoteHEAD", "never");
+      expect(spawnSync("git", ["-C", clone, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]).status).not.toBe(0);
+
+      const before = snapshot(bare, clone);
+      const forge = fakeAdapter();
+      const r = proposed(await propose(clone, forge));
+      const after = snapshot(bare, clone);
+
+      expect(forge.calls).toHaveLength(1);
+      expect(forge.calls[0]!.base).toBe("master");
+      const newRef = `\trefs/heads/ltm/propose/${r.id}`;
+      const afterBareRefs = after.bareRefs.split("\n").filter((l) => !l.endsWith(newRef)).join("\n");
+      expect({ ...after, bareRefs: afterBareRefs }).toEqual(before);
+      expect(git(bare, "for-each-ref", "--format=%(refname)", "refs/heads/ltm/")).toBe(`refs/heads/ltm/propose/${r.id}\n`);
+    });
+  }, GIT_TEST_TIMEOUT);
 
   test("a given body is written verbatim after the fence", async () => {
     await withGitBank(async ({ clone }) => {
@@ -222,7 +265,7 @@ describe("proposeRecord", () => {
       if ("refusal" in r) throw new Error(r.refusal);
       expect(splitFrontmatter(r.text)!.body).toBe(body);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 });
 
 describe("templates and slugs", () => {

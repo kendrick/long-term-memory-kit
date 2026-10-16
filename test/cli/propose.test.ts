@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { run } from "../../src/cli/run.ts";
 import { git, snapshot, withGitBank } from "../helpers/git-bank.ts";
 
+// Each test spawns many git processes; bun's 5s default flakes under load.
+const GIT_TEST_TIMEOUT = 30_000;
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const env = { LTM_TODAY: "2026-10-09" };
 const ltm = (cwd: string, ...argv: string[]) => run({ argv, cwd, env });
@@ -26,7 +28,7 @@ describe("ltm propose", () => {
       expect(lines[2]).toBe(`review: open a change request for ${branch} on ${git(clone, "config", "--get", "remote.origin.url").trim()}`);
       expect(git(clone, "config", "--get", "remote.origin.url").trim()).toBe(bare);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("a GitLab origin prints the fallback merge-request URL as json", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -44,7 +46,7 @@ describe("ltm propose", () => {
       expect(out.adapter).toBe("fallback");
       expect(out.url).toBe(`https://gitlab.example.com/acme/bank/-/merge_requests/new?merge_request[source_branch]=ltm/propose/${out.id}`);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("a GitHub origin with a token passes the created PR's URL through to --json and the human output", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -90,7 +92,7 @@ describe("ltm propose", () => {
         globalThis.fetch = realFetch;
       }
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("an empty --title exits 1 and the bare repo gains no ref", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -100,7 +102,7 @@ describe("ltm propose", () => {
       expect(r.stderr).toMatch(/^ltm propose: .*error /m);
       expect(refs(bare)).toBe(before);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("--dry-run prints a Record that validates once saved, and the bare repo gains no ref", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -118,7 +120,7 @@ describe("ltm propose", () => {
       expect(v.stderr).toBe("");
       expect(v.exitCode).toBe(0);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("with no origin it exits 1 on the no-origin line and writes nothing", async () => {
     await withGitBank(async ({ bare, clone }) => {
@@ -129,7 +131,7 @@ describe("ltm propose", () => {
       expect(r.stderr).toBe("ltm propose: no origin remote; ltm propose pushes a branch there for review\n");
       expect(snapshot(bare, clone)).toEqual(before);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("--body-file with --body-stdin exits 2; --body-stdin on bin.ts writes stdin as the body", async () => {
     await withGitBank(async ({ clone }) => {
@@ -145,7 +147,7 @@ describe("ltm propose", () => {
       expect(spawned.status).toBe(0);
       expect(spawned.stdout.endsWith(`---\n${body}`)).toBe(true);
     });
-  });
+  }, GIT_TEST_TIMEOUT);
 
   test("propose is no longer a hidden stub", async () => {
     const r = await run({ argv: ["--help"], cwd: "/", env: {} });

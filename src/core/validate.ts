@@ -394,7 +394,8 @@ function checkSupersession(nodes: Node[]): Pending[] {
         ),
         also: e.new.file,
       });
-    } else if (resolvable && e.byNew && !e.byOld) {
+    } else if (resolvable && e.byNew && !e.byOld && e.new.fm.data.status !== "proposed") {
+      // A Proposal names what it supersedes before Acceptance; `ltm accept` (#11) writes the old half at Acceptance.
       out.push({
         finding: finding(
           e.new.file,

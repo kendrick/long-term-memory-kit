@@ -576,6 +576,62 @@ describe("supersession checks", () => {
     });
   });
 
+  describe("a proposed newer Record", () => {
+    const target = "hT5cY8dUa6";
+    const file = "_memory/decisions/proposal-xX1xX1xX1x.md";
+    const proposal = (status: string, supersedes: string, scope: string) =>
+      [
+        "---",
+        "schema: 1",
+        "id: xX1xX1xX1x",
+        "memory_type: Decision",
+        "title: Proposal",
+        `status: ${status}`,
+        "date: 2026-10-09",
+        "summary: A one-sided supersedes.",
+        `supersedes: [${supersedes}]`,
+        "related: [constrained_by::cA9wE6uJr3]",
+        `applies_to: ${scope}`,
+        "---",
+        "",
+        "## Context",
+        "c",
+        "",
+        "## Decision",
+        "d",
+        "",
+        "## Consequences",
+        "e",
+        "",
+      ].join("\n");
+    const run = async (text: string) =>
+      withScratch(demoBank, async (dir) => {
+        writeFileSync(join(dir, file), text);
+        expect(readFileSync(join(dir, file), "utf8")).toBe(text);
+        return supersession(validateBankReport(dir, null, dir).findings);
+      });
+
+    test("a one-sided supersedes of an accepted Record passes", async () => {
+      expect(await run(proposal("proposed", target, "[domain:commerce]"))).toEqual([]);
+    });
+
+    test("the same Record as accepted is supersession-incomplete again", async () => {
+      const fs = await run(proposal("accepted", target, "[domain:commerce]"));
+      expect(fs.map((f) => f.rule)).toEqual(["supersession-incomplete"]);
+      expect(fs[0]!).toMatchObject({ file, key: "supersedes" });
+    });
+
+    test("an unknown id is still supersession-missing-target", async () => {
+      const fs = await run(proposal("proposed", "zZ9zZ9zZ9z", "[domain:commerce]"));
+      expect(fs.map((f) => f.rule)).toEqual(["supersession-missing-target"]);
+    });
+
+    test("a scope the target doesn't share is still supersession-facets", async () => {
+      const fs = await run(proposal("proposed", target, "[domain:billing]"));
+      expect(fs.map((f) => f.rule)).toEqual(["supersession-facets"]);
+    });
+  });
+
   describe("supersession-facets", () => {
     // A fresh cross-linked pair, so scope is the only thing that can fail.
     const pair = (oldScope: string | null, newScope: string | null, extra = { old: "", new: "" }) => {

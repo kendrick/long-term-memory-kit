@@ -128,6 +128,15 @@ function gitMaybe(dir: string, args: string[]): string | null {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
+// A clone made by git init plus git remote add has no origin/HEAD, and its default branch needn't be main. ls-remote asks the remote and writes no ref locally.
+function remoteDefaultBranch(root: string): string {
+  const local = gitMaybe(root, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])?.replace(/^refs\/remotes\/origin\//, "");
+  if (local) return local;
+  const remote = gitMaybe(root, ["ls-remote", "--symref", "origin", "HEAD"]);
+  const m = remote?.match(/^ref: refs\/heads\/(\S+)\tHEAD$/m);
+  return m?.[1] ?? "main";
+}
+
 export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Promise<ProposeResult> {
   const { config } = deps;
   const built = buildRecord(input, config, deps.today);
@@ -151,7 +160,7 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
   let base: string;
   let tmp: string | null = null;
   try {
-    base = gitMaybe(root, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])?.replace(/^refs\/remotes\/origin\//, "") || "main";
+    base = remoteDefaultBranch(root);
     // An empty --refmap writes only FETCH_HEAD, so no ref under refs/ moves in the caller's repo.
     git(root, ["fetch", "--quiet", "--refmap=", "origin", `refs/heads/${base}`]);
     // Realpath both sides: on macOS tmpdir() is /var/... while git reports /private/var/..., and relative() across the two climbs out of the repo.
