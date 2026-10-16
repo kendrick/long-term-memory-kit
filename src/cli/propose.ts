@@ -1,12 +1,118 @@
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { MEMORY_TYPES, type MemoryType } from "../core/bank.ts";
+import { today } from "../core/clock.ts";
+import { proposeRecord, type ProposalInput } from "../core/propose.ts";
+import { firstLine } from "../core/text.ts";
+import { openBank } from "./bank.ts";
 import type { Command } from "./run.ts";
 
-// Holds the slot until #13 lands; the lane that builds it replaces this file.
+// Flag name -> Record key. Every one is repeatable.
+const LIST_FLAGS = {
+  "applies-to": "applies_to",
+  owners: "owners",
+  tags: "tags",
+  related: "related",
+  supersedes: "supersedes",
+  "source-ref": "source_refs",
+} as const;
+
+const many = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) : []);
+
 export const propose: Command = {
   name: "propose",
   summary: "Open a Proposal on a new ltm/propose branch for review",
-  hidden: true,
+  options: {
+    type: { type: "string" },
+    title: { type: "string" },
+    summary: { type: "string" },
+    "applies-to": { type: "string", multiple: true },
+    owners: { type: "string", multiple: true },
+    tags: { type: "string", multiple: true },
+    related: { type: "string", multiple: true },
+    supersedes: { type: "string", multiple: true },
+    "source-ref": { type: "string", multiple: true },
+    "body-file": { type: "string" },
+    "body-stdin": { type: "boolean" },
+    "dry-run": { type: "boolean" },
+    json: { type: "boolean" },
+  },
+  // Exit 2 has to come before run() so a bad flag never reads the Bank or touches git.
+  checkArgs(_positionals, values) {
+    const type = values.type;
+    if (typeof type !== "string") return "missing required option --type";
+    if (typeof values.title !== "string") return "missing required option --title";
+    if (!(MEMORY_TYPES as readonly string[]).includes(type)) {
+      return `unknown memory type '${type}' (expected Decision, PolicyRule, Exception, or Context)`;
+    }
+    if (typeof values["body-file"] === "string" && values["body-stdin"] === true) {
+      return "--body-file and --body-stdin can't be used together";
+    }
+    if (values["dry-run"] === true && values.json === true) return "--dry-run and --json can't be used together";
+    return undefined;
+  },
   async run(ctx) {
-    ctx.err("ltm propose: not implemented yet (see #13)\n");
-    return 1;
+    const config = openBank(ctx, "propose");
+    if (config === 1) return 1;
+
+    let body: string | undefined;
+    try {
+      const file = ctx.values["body-file"];
+      if (typeof file === "string") body = readFileSync(file, "utf8");
+      // CommandContext carries no stdin, so the descriptor is read directly.
+      else if (ctx.values["body-stdin"] === true) body = readFileSync(0, "utf8");
+    } catch (e) {
+      ctx.err(`ltm propose: can't read the body: ${firstLine(e instanceof Error ? e.message : String(e))}\n`);
+      return 1;
+    }
+
+    const input: ProposalInput = { type: ctx.values.type as MemoryType, title: ctx.values.title as string };
+    if (typeof ctx.values.summary === "string") input.summary = ctx.values.summary;
+    for (const [flag, key] of Object.entries(LIST_FLAGS)) {
+      const v = many(ctx.values[flag]);
+      if (v.length > 0) input[key as (typeof LIST_FLAGS)[keyof typeof LIST_FLAGS]] = v;
+    }
+    if (body !== undefined) input.body = body;
+
+    let date: string;
+    try {
+      date = today(ctx.env);
+    } catch (e) {
+      ctx.err(`ltm propose: ${firstLine(e instanceof Error ? e.message : String(e))}\n`);
+      return 1;
+    }
+
+    const result = await proposeRecord(input, {
+      config,
+      today: date,
+      env: ctx.env,
+      dryRun: ctx.values["dry-run"] === true,
+      onWarning: (line) => ctx.err(`ltm propose: ${line}\n`),
+    });
+
+    if ("refusal" in result) {
+      for (const l of result.refusal.split("\n")) ctx.err(`ltm propose: ${l}\n`);
+      if (result.url) ctx.err(`${result.url}\n`);
+      return 1;
+    }
+    if (result.dryRun) {
+      ctx.out(result.text);
+      return 0;
+    }
+    if (ctx.values.json === true) {
+      const { id, path, branch, url, adapter } = result;
+      ctx.out(`${JSON.stringify({ id, path, branch, url, adapter }, null, 2)}\n`);
+      return 0;
+    }
+    ctx.out(`path: ${result.path}\nbranch: ${result.branch}\n`);
+    if (result.url) ctx.out(`review: ${result.url}\n`);
+    else ctx.out(`review: open a change request for ${result.branch} on ${remoteOf(config.root)}\n`);
+    return 0;
   },
 };
+
+// The core result doesn't carry the remote URL, and the no-URL hint has to name it.
+function remoteOf(root: string): string {
+  const r = spawnSync("git", ["-C", root, "config", "--get", "remote.origin.url"], { encoding: "utf8" });
+  return r.stdout.trim();
+}
