@@ -272,7 +272,7 @@ describe("ltm query", () => {
       writeFileSync(join(dir, "memory-bank.yaml"), "schema: 1\nname: [unclosed");
       const r = await ltm(dir, "query");
       expect(r.exitCode).toBe(1);
-      expect(r.stderr.startsWith(`${join(dir, "memory-bank.yaml")}:2: `)).toBe(true);
+      expect(r.stderr.startsWith(`ltm query: ${join(dir, "memory-bank.yaml")}:2: `)).toBe(true);
       expect(r.stderr.endsWith("\n")).toBe(true);
       expect(r.stderr.slice(0, -1)).not.toContain("\n");
     });
@@ -285,12 +285,12 @@ describe("ltm query", () => {
       const cfg = join(dir, "memory-bank.yaml");
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toBe("");
-      expect(r.stderr.startsWith(cfg)).toBe(true);
+      expect(r.stderr.startsWith(`ltm query: ${cfg}`)).toBe(true);
       expect(r.stderr).toContain("folders.Decision");
       expect(r.stderr.endsWith("\n")).toBe(true);
       expect(r.stderr.slice(0, -1)).not.toContain("\n");
       // Pins the line-less `<path>: <message>` form; the checks above let a changed separator through.
-      expect(r.stderr).toBe(`${cfg}: folders.Decision '../outside' is outside the Bank root\n`);
+      expect(r.stderr).toBe(`ltm query: ${cfg}: folders.Decision '../outside' is outside the Bank root\n`);
     });
   });
 });
@@ -327,7 +327,7 @@ describe("ltm query never reads outside the Bank", () => {
         expect(r.stdout).not.toContain(SECRET);
         expect(r.exitCode).toBe(1);
         expect(r.stderr).toBe(
-          `${join(dir, "memory-bank.yaml")}: folders.Decision 'q\\z' contains a backslash\n`,
+          `ltm query: ${join(dir, "memory-bank.yaml")}: folders.Decision 'q\\z' contains a backslash\n`,
         );
       });
     });
@@ -640,7 +640,7 @@ describe("ltm query and an alias-bombed config (#43)", () => {
       const r = await ltm(dir, "query");
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toBe("");
-      expect(r.stderr.startsWith(`${cfg}: `)).toBe(true);
+      expect(r.stderr.startsWith(`ltm query: ${cfg}: `)).toBe(true);
       expect(r.stderr).toContain("alias");
       expect(r.stderr.endsWith("\n")).toBe(true);
       expect(r.stderr.slice(0, -1)).not.toContain("\n");

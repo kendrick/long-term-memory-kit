@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Finding } from "./validate.ts";
+import { byCodeUnit } from "./text.ts";
 
 // GitHub unescapes only these three in a workflow command's message, so escaping more
 // there would leak `%2C` into the annotation text.
@@ -23,10 +24,6 @@ export function toGithub(findings: Finding[]): string {
 // dangling ids under one `supersedes`), since GitLab shows one issue per fingerprint.
 const fingerprint = (f: Finding, index: number): string =>
   createHash("sha256").update(`${f.rule}\0${f.file}\0${f.key ?? ""}\0${index}`).digest("hex");
-
-// Code-unit order, not localeCompare: locale rules vary by machine, and a fingerprint has
-// to come out the same in every CI runner.
-const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 // Sorting by line, then message, gives a finding the same index whatever order validate
 // emits it in.

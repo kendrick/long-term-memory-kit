@@ -3,7 +3,7 @@ import { join, relative, resolve, sep } from "node:path";
 import { MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
 import { search } from "./recall.ts";
 import { parseRecordFile, RecordError, type ParsedRecord } from "./record.ts";
-import { firstLine } from "./text.ts";
+import { byCodeUnit, firstLine } from "./text.ts";
 
 export type Filter = { key: string; value: string };
 
@@ -130,7 +130,7 @@ export function listRecordFiles(
   }
   const entries = [...owner].map(([abs, { type }]) => ({ abs, rel: toRel(config.root, abs), type }));
   // Plain code-unit comparison, not localeCompare, so order doesn't vary by locale.
-  entries.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
+  entries.sort((a, b) => byCodeUnit(a.rel, b.rel));
   return entries;
 }
 
@@ -243,5 +243,5 @@ export function countFacets(records: ParsedRecord[], all: boolean): { facet: str
   }
   return [...counts]
     .map(([facet, count]) => ({ facet, count }))
-    .sort((a, b) => (a.facet < b.facet ? -1 : a.facet > b.facet ? 1 : 0));
+    .sort((a, b) => byCodeUnit(a.facet, b.facet));
 }

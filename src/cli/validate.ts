@@ -1,7 +1,6 @@
-import { ConfigError, findBank } from "../core/bank.ts";
 import { toGithub, toGitlab, toJunit } from "../core/report.ts";
-import { firstLine } from "../core/text.ts";
 import { validateBankReport } from "../core/validate.ts";
+import { locateBank, noBankLine } from "./bank.ts";
 import type { Command } from "./run.ts";
 
 const FORMATS = ["github", "gitlab", "junit"] as const;
@@ -23,19 +22,13 @@ export const validate: Command = {
     return undefined;
   },
   async run(ctx) {
-    let root: string | null;
-    try {
-      root = findBank(ctx.cwd);
-    } catch (e) {
-      // #7 makes findBank throw ConfigError for a symlinked memory-bank.yaml.
-      if (!(e instanceof ConfigError)) throw e;
-      ctx.err(`ltm validate: ${e.path}: ${firstLine(e.message)}\n`);
-      return 1;
-    }
+    const root = locateBank(ctx, "validate");
+    if (root === 1) return 1;
     if (root === null) {
-      ctx.err(`ltm validate: no memory-bank.yaml in ${ctx.cwd} or any parent directory\n`);
+      ctx.err(noBankLine("validate", ctx.cwd));
       return 1;
     }
+    // No loadBankAt here: validateBankReport loads the config itself and reports a broken one as a config-schema finding on stdout, which --format github|gitlab|junit hands to CI and stderr would lose.
     const { findings, files } = validateBankReport(root, ctx.positionals.length > 0 ? ctx.positionals : null, ctx.cwd);
     const format = ctx.values.format as Format | undefined;
     if (format === "github") ctx.out(toGithub(findings));

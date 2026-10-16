@@ -1,4 +1,5 @@
 import type { ParsedRecord } from "./record.ts";
+import { byCodeUnit } from "./text.ts";
 
 export type Hit = { record: ParsedRecord; score: number };
 
@@ -54,7 +55,7 @@ export const lexical: RecallBackend = {
     // Code-unit path compare on ties, not localeCompare, so order doesn't vary by locale.
     hits.sort(
       (a, b) =>
-        b.score - a.score || (a.record.path < b.record.path ? -1 : a.record.path > b.record.path ? 1 : 0),
+        b.score - a.score || byCodeUnit(a.record.path, b.record.path),
     );
     return hits;
   },

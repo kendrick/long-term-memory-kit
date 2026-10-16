@@ -4,7 +4,7 @@ import { parse } from "yaml";
 import { isMapping, type BankConfig } from "./bank.ts";
 import { listRecords } from "./query.ts";
 import { splitFrontmatter, type ParsedRecord } from "./record.ts";
-import { firstLine } from "./text.ts";
+import { byCodeUnit, firstLine } from "./text.ts";
 
 export type Kind = "adr" | "pr" | "transcript" | "prd" | "document";
 export type Entry = { path: string; kind: Kind; title: string; bytes: number; cited_by: string[] | null };
@@ -20,8 +20,6 @@ const SPEAKER = /^[A-Z][\w .'-]{0,40}: /;
 const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const CLOSE_FENCE = /^ {0,3}(`{3,}|~{3,})\s*$/;
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//;
-
-const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 // Frontmatter is skipped so a `# comment` line in YAML can't pose as a heading.
 function headingsOf(text: string): Heading[] {

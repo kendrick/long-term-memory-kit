@@ -1,4 +1,4 @@
-import { ConfigError, findBank, isMapping, loadConfig, MEMORY_TYPES, type MemoryType } from "../core/bank.ts";
+import { ConfigError, isMapping, MEMORY_TYPES, type MemoryType } from "../core/bank.ts";
 import { isOrgWide, listRecords, parseFilter, selectRecords, type Filter, type QueryOptions } from "../core/query.ts";
 import type { ParsedRecord } from "../core/record.ts";
 import {
@@ -9,7 +9,7 @@ import {
   type ResolvedBank,
   type ResolvedBy,
 } from "../core/resolve.ts";
-import { firstLine } from "../core/text.ts";
+import { configErrorLine, loadBankAt, locateBank } from "./bank.ts";
 import type { Command, CommandContext } from "./run.ts";
 
 const scalar = (v: unknown): string | number | boolean | null =>
@@ -31,9 +31,6 @@ function line(r: ParsedRecord): string {
   const title = scalar(r.frontmatter.title);
   return `${r.path}  ${r.memoryType}  ${status ?? ""}  ${title ?? ""}${status === "proposed" ? "  (proposal)" : ""}\n`;
 }
-
-const configErrorLine = (e: ConfigError): string =>
-  `ltm query: ${e.path}${e.line === null ? "" : `:${e.line}`}: ${firstLine(e.message)}\n`;
 
 // The Consumer repo's own Facets, from this Bank's `consumers` map. null means the Bank
 // has no entry for the repo, or there's no origin to look one up by.
@@ -93,7 +90,7 @@ function runResolved(ctx: CommandContext, opts: QueryOptions): 0 | 1 {
     }
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e;
-    ctx.err(configErrorLine(e));
+    ctx.err(configErrorLine("query", e));
     return 1;
   }
   if (ctx.values.json === true) {
@@ -152,32 +149,17 @@ export const query: Command = {
       all: ctx.values.all === true,
     };
     if (typeof ctx.values.bank === "string") return runResolved(ctx, opts);
-    let root;
-    try {
-      root = findBank(ctx.cwd);
-    } catch (e) {
-      if (!(e instanceof ConfigError)) throw e;
-      ctx.err(`ltm query: ${e.path}: ${firstLine(e.message)}\n`);
-      return 1;
-    }
+    const root = locateBank(ctx, "query");
+    if (root === 1) return 1;
     if (root === null) return runResolved(ctx, opts);
-    let records;
-    try {
-      const config = loadConfig(root);
-      records = selectRecords(
-        listRecords(config, (path, reason) => {
-          ctx.err(`ltm query: skipped ${path}: ${reason}\n`);
-        }),
-        opts,
-      );
-    } catch (e) {
-      if (!(e instanceof ConfigError)) throw e;
-      // A null line (unreadable file, non-mapping config) has no position to print.
-      // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
-      const message = firstLine(e.message);
-      ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${message}\n`);
-      return 1;
-    }
+    const config = loadBankAt(ctx, "query", root);
+    if (config === 1) return 1;
+    const records = selectRecords(
+      listRecords(config, (path, reason) => {
+        ctx.err(`ltm query: skipped ${path}: ${reason}\n`);
+      }),
+      opts,
+    );
     if (ctx.values.json === true) {
       ctx.out(`${JSON.stringify(records.map(row), null, 2)}\n`);
       return 0;

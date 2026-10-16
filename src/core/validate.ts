@@ -6,7 +6,7 @@ import { isMap, isScalar, isSeq, parseDocument, type Document, type Pair } from 
 import { ConfigError, isInside, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
 import { listRecordFiles } from "./query.ts";
 import { splitFrontmatter, unrepresentable, type Unrepresentable } from "./record.ts";
-import { firstLine } from "./text.ts";
+import { byCodeUnit as cmp, firstLine } from "./text.ts";
 
 export type Rule =
   | "config-schema"
@@ -445,8 +445,6 @@ function checkBrightLine(nodes: Node[]): Finding[] {
   }
   return out;
 }
-
-const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 export function checkUniqueIds(ids: { file: string; line: number; id: string }[], named: Set<string> | null): Finding[] {
   const groups = new Map<string, { file: string; line: number }[]>();

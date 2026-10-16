@@ -1,11 +1,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { parse } from "yaml";
-import { ConfigError, findBank, isInside, isMapping, loadConfig, type BankConfig } from "../core/bank.ts";
+import { isInside, isMapping, type BankConfig } from "../core/bank.ts";
 import { formatRecordText } from "../core/fmt.ts";
 import { listRecordFiles, type RecordFile } from "../core/query.ts";
 import { splitFrontmatter } from "../core/record.ts";
 import { firstLine } from "../core/text.ts";
+import { openBank } from "./bank.ts";
 import type { Command } from "./run.ts";
 
 const toPosix = (p: string): string => p.split(sep).join("/");
@@ -34,20 +35,9 @@ export const fmt: Command = {
   options: { check: { type: "boolean" } },
   positionals: [{ name: "path", required: false, variadic: true }],
   async run(ctx) {
-    let root: string | null;
-    try {
-      root = findBank(ctx.cwd);
-    } catch (e) {
-      if (!(e instanceof ConfigError)) throw e;
-      ctx.err(`ltm fmt: ${e.path}: ${firstLine(e.message)}\n`);
-      return 1;
-    }
-    if (root === null) {
-      ctx.err(`ltm fmt: no memory-bank.yaml in ${ctx.cwd} or any parent directory\n`);
-      return 1;
-    }
-    let config: BankConfig;
-    let files: RecordFile[];
+    const config = openBank(ctx, "fmt");
+    if (config === 1) return 1;
+    const root = config.root;
     const skipped = new Set<string>();
     let failed = false;
     const namedRels = ctx.positionals.map((p) => {
@@ -59,19 +49,11 @@ export const fmt: Command = {
     // A skipped directory hides every named file beneath it, hence the prefix test.
     const touchesNamed = (rel: string): boolean =>
       namedRels.length === 0 || namedRels.some((n) => n === rel || n.startsWith(`${rel}/`));
-    try {
-      config = loadConfig(root);
-      files = listRecordFiles(config, (path, reason) => {
-        skipped.add(path);
-        ctx.err(`ltm fmt: skipped ${path}: ${reason}\n`);
-        if (touchesNamed(path)) failed = true;
-      });
-    } catch (e) {
-      if (!(e instanceof ConfigError)) throw e;
-      // yaml appends a multi-line code frame to its messages; the first line is the diagnosis.
-      ctx.err(`${e.path}${e.line === null ? "" : `:${e.line}`}: ${firstLine(e.message)}\n`);
-      return 1;
-    }
+    const files: RecordFile[] = listRecordFiles(config, (path, reason) => {
+      skipped.add(path);
+      ctx.err(`ltm fmt: skipped ${path}: ${reason}\n`);
+      if (touchesNamed(path)) failed = true;
+    });
 
     let targets = files;
     if (ctx.positionals.length > 0) {
