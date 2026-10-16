@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
-import { chmod, readFile, readdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, lstat, mkdtemp, readFile, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { loadConfig } from "../../src/core/bank.ts";
@@ -332,6 +333,60 @@ describe("applyEdits", () => {
       const result = applyEdits(edits, { ...fs, renameSync: failingRename(2), writeFileSync });
       expect(result).toEqual({ written: [H], failed: { rel: K, message: "EIO: injected rename failure" } });
       expect(await after(dir)).toEqual([edits[0]!.text, before[1]!]);
+      expect(await temps(dir)).toEqual([]);
+    });
+  });
+
+  const fixedNonce = () => "0123456789ab";
+  const plantedName = `.${basename(K)}.ltm-0123456789ab.tmp`;
+
+  test("a symlink planted at the temp path is not followed or removed", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "ltm-outside-"));
+    try {
+      const victim = join(outside, "victim.txt");
+      await writeFile(victim, "not a Record\n");
+      await withPlannedPair(async (dir, edits, before) => {
+        const planted = join(dir, "_memory/decisions", plantedName);
+        await symlink(victim, planted);
+        const result = applyEdits(edits, fs, fixedNonce);
+        expect(result.written).toEqual([]);
+        expect(result.failed?.rel).toBe(K);
+        expect(result.failed?.message).toContain("EEXIST");
+        expect(await readFile(victim, "utf8")).toBe("not a Record\n");
+        expect((await lstat(planted)).isSymbolicLink()).toBe(true);
+        expect(await readlink(planted)).toBe(victim);
+        expect(await after(dir)).toEqual(before);
+        expect(await temps(dir)).toEqual([plantedName]);
+      });
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("a regular file already at the temp path is neither overwritten nor deleted", async () => {
+    await withPlannedPair(async (dir, edits, before) => {
+      const planted = join(dir, "_memory/decisions", plantedName);
+      await writeFile(planted, "someone else's bytes\n");
+      const result = applyEdits(edits, fs, fixedNonce);
+      expect(result.written).toEqual([]);
+      expect(result.failed?.rel).toBe(K);
+      expect(await readFile(planted, "utf8")).toBe("someone else's bytes\n");
+      expect(await after(dir)).toEqual(before);
+      expect(await temps(dir)).toEqual([plantedName]);
+    });
+  });
+
+  test("each staged temp gets its own unpredictable name", async () => {
+    await withPlannedPair(async (dir, edits) => {
+      const created: string[] = [];
+      const writeFileSync: EditFs["writeFileSync"] = (path, data, options) => {
+        if (String(path).includes(".ltm-")) created.push(basename(String(path)));
+        fs.writeFileSync(path, data, options);
+      };
+      expect(applyEdits(edits, { ...fs, writeFileSync })).toEqual({ written: [H, K], failed: null });
+      expect(created).toHaveLength(2);
+      for (const name of created) expect(name).toMatch(/^\.[^/]+\.ltm-[0-9a-f]{12}\.tmp$/);
+      expect(new Set(created.map((n) => n.split(".ltm-")[1])).size).toBe(2);
       expect(await temps(dir)).toEqual([]);
     });
   });

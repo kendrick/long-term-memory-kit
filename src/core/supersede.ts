@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { type BankConfig } from "./bank.ts";
@@ -188,22 +189,27 @@ function unlinkAll(io: EditFs, paths: string[]): void {
 // before any target changes, and a failed rename restores the targets already renamed. A kill mid-rename can still split it.
 // `written` lists files left changed on disk, which is only ever a target whose restore also failed.
 // `io` exists so tests can fail a rename, which no file mode can provoke once staging has passed.
+// `nonce` exists so tests can predict a temp name and plant something there first.
 export function applyEdits(
   edits: Edit[],
   io: EditFs = fs,
+  nonce: () => string = () => randomBytes(6).toString("hex"),
 ): { written: string[]; failed: { rel: string; message: string } | null } {
   const staged: { abs: string; rel: string; tmp: string; original: Buffer }[] = [];
-  for (const [n, { abs, rel, text }] of edits.entries()) {
+  for (const { abs, rel, text } of edits) {
     let tmp: string | undefined;
     try {
       // rename ignores the target's own mode, so a read-only Record would be replaced without this check.
       io.accessSync(abs, fs.constants.W_OK);
       const original = io.readFileSync(abs);
-      tmp = join(dirname(abs), `.${basename(abs)}.ltm-${process.pid}-${n}.tmp`);
-      io.writeFileSync(tmp, text);
+      tmp = join(dirname(abs), `.${basename(abs)}.ltm-${nonce()}.tmp`);
+      // A cloned Bank can plant a symlink at a temp path; plain write would follow it and truncate the file behind it.
+      io.writeFileSync(tmp, text, { flag: "wx" });
       staged.push({ abs, rel, tmp, original });
     } catch (e) {
-      unlinkAll(io, [...staged.map((s) => s.tmp), ...(tmp === undefined ? [] : [tmp])]);
+      // EEXIST means the path was someone else's before we tried, so it isn't ours to delete.
+      const ours = tmp !== undefined && (e as NodeJS.ErrnoException).code !== "EEXIST";
+      unlinkAll(io, [...staged.map((s) => s.tmp), ...(ours ? [tmp!] : [])]);
       return { written: [], failed: failure(rel, e) };
     }
   }
