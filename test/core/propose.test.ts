@@ -291,6 +291,30 @@ describe("proposeRecord", () => {
     });
   }, GIT_TEST_TIMEOUT);
 
+  test("a fetched default branch whose config won't load refuses, pushes nothing, and leaves no worktree", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      const other = mkdtempSync(join(tmpdir(), "ltm-other-"));
+      try {
+        git(other, "clone", "--quiet", bare, ".");
+        git(other, "config", "user.name", "ltm test");
+        git(other, "config", "user.email", "ltm@example.invalid");
+        git(other, "config", "commit.gpgsign", "false");
+        writeFileSync(join(other, "memory-bank.yaml"), "schema: 1\nname: [unclosed\n");
+        git(other, "commit", "--quiet", "-am", "break the config");
+        git(other, "push", "--quiet", "origin", "main");
+      } finally {
+        rmSync(other, { recursive: true, force: true });
+      }
+
+      const before = snapshot(bare, clone);
+      const forge = fakeAdapter();
+      const r = await propose(clone, forge);
+      expect("refusal" in r && r.refusal).toMatch(/^the fetched default branch has no usable Bank config: /);
+      expect(forge.calls).toHaveLength(0);
+      expect(snapshot(bare, clone)).toEqual(before);
+    });
+  }, GIT_TEST_TIMEOUT);
+
   test("a remote HEAD that moved to a new branch beats a stale origin/HEAD, and the clone gains no ref", async () => {
     await withGitBank(async ({ bare, clone }) => {
       const other = mkdtempSync(join(tmpdir(), "ltm-other-"));
