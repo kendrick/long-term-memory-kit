@@ -1,7 +1,8 @@
 import { today } from "../core/clock.ts";
-import { applyEdits, planAccept, readBankIndex } from "../core/supersede.ts";
+import { planAccept, readBankIndex } from "../core/supersede.ts";
 import { firstLine } from "../core/text.ts";
 import { openBank } from "./bank.ts";
+import { skipLine, writeEdits } from "./edits.ts";
 import type { Command } from "./run.ts";
 
 export const accept: Command = {
@@ -19,23 +20,12 @@ export const accept: Command = {
     }
     const config = openBank(ctx, "accept");
     if (config === 1) return 1;
-    const index = readBankIndex(config, (rel, reason) => {
-      ctx.err(`ltm accept: skipped ${rel}: ${reason}\n`);
-    });
+    const index = readBankIndex(config, skipLine(ctx, "accept"));
     const planned = planAccept(index, ctx.positionals[0]!, date);
     if ("refusal" in planned) {
       ctx.err(`ltm accept: ${planned.refusal}\n`);
       return 1;
     }
-    const { written, failed } = applyEdits(planned.edits);
-    for (const rel of written) ctx.out(`${rel}\n`);
-    if (failed !== null) {
-      // Files already written can't be unwritten, so say which landed.
-      ctx.err(
-        `ltm accept: wrote ${written.length === 0 ? "nothing" : written.join(", ")}, then failed on ${failed.rel}: ${failed.message}\n`,
-      );
-      return 1;
-    }
-    return 0;
+    return writeEdits(ctx, "accept", planned.edits);
   },
 };

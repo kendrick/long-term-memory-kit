@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmodSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { splitFrontmatter } from "../../src/core/record.ts";
+import { noBankLine } from "../../src/cli/bank.ts";
 import { run } from "../../src/cli/run.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
@@ -146,12 +148,13 @@ describe("ltm accept", () => {
   });
 
   test("outside a Bank it exits 1 with the no-Bank line", async () => {
-    await withScratch(demo, async (dir) => {
-      const r = await run({ argv: ["accept", "pL2sG4nVq0"], cwd: "/", env: { LTM_TODAY: TODAY } });
-      expect(r.exitCode).toBe(1);
-      expect(r.stderr).toBe("ltm accept: no memory-bank.yaml in / or any parent directory\n");
-      expect(dir).toBeTruthy();
-    });
+    const dir = mkdtempSync(join(tmpdir(), "ltm-nobank-"));
+    try {
+      const r = await accept(dir, "pL2sG4nVq0");
+      expect(r).toEqual({ exitCode: 1, stdout: "", stderr: noBankLine("accept", dir) });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("a write that fails mid-plan reports what landed and what failed", async () => {
@@ -161,6 +164,7 @@ describe("ltm accept", () => {
       chmodSync(join(dir, H), 0o444);
       const r = await accept(dir, "pL2sG4nVq0");
       expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("");
       expect(r.stderr).toMatch(new RegExp(`^ltm accept: wrote (nothing|${P.replace(/[.]/g, "\\.")}), then failed on ${H.replace(/[.]/g, "\\.")}: .+\\n$`));
     });
   });

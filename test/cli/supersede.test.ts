@@ -4,6 +4,7 @@ import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { noBankLine } from "../../src/cli/bank.ts";
 import { defaultCommands } from "../../src/cli/commands.ts";
 import { run } from "../../src/cli/run.ts";
 import { splitFrontmatter } from "../../src/core/record.ts";
@@ -156,9 +157,7 @@ describe("ltm supersede", () => {
     const empty = mkdtempSync(join(tmpdir(), "ltm-nobank-"));
     try {
       const r = await sup(empty, "hT5cY8dUa6", "kQ7vN2xLp4");
-      expect(r.exitCode).toBe(1);
-      expect(r.stdout).toBe("");
-      expect(r.stderr).toStartWith("ltm supersede: ");
+      expect(r).toEqual({ exitCode: 1, stdout: "", stderr: noBankLine("supersede", empty) });
     } finally {
       rmSync(empty, { recursive: true, force: true });
     }

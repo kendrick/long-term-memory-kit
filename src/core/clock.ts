@@ -4,7 +4,7 @@ const isLeap = (y: number): boolean => (y % 4 === 0 && y % 100 !== 0) || y % 400
 
 // The regex alone passes 2026-02-30, so month lengths are checked by hand. A round trip through Date.UTC
 // can't do it, because Date.UTC reads years 0-99 as 1900-1999.
-function isCalendarDate(s: string): boolean {
+export function isCalendarDate(s: string): boolean {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (!m) return false;
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];

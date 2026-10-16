@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { type BankConfig } from "./bank.ts";
+import { isCalendarDate } from "./clock.ts";
 import { canonicalFrontmatter, SCHEMA_KEY_ORDER } from "./canonical.ts";
 import { listRecordFiles } from "./query.ts";
 import { parseRecordFile, RecordError, splitFrontmatter } from "./record.ts";
@@ -59,7 +60,8 @@ function resolveId(index: BankIndex, id: string): IndexedRecord | string {
   return held[0]!;
 }
 
-const isNonEmptyString = (v: unknown): v is string => typeof v === "string" && v !== "";
+const hasSupersededBy = (data: Record<string, unknown>): boolean =>
+  data.superseded_by !== undefined && data.superseded_by !== null && data.superseded_by !== "";
 
 const isIdList = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
 
@@ -85,23 +87,20 @@ function reaches(w: Work, from: IndexedRecord, target: string): boolean {
 // Checks run against the working copy, so accept's later targets see edits its earlier ones planned.
 function stepSupersede(w: Work, oldId: string, newId: string): string | null {
   if (oldId === newId) return `old and new are the same Record ('${oldId}')`;
-  const oldHit = w.index.byId.get(oldId);
-  const newHit = w.index.byId.get(newId);
-  if (!oldHit) return `'${oldId}' matches no Record`;
-  if (!newHit) return `'${newId}' matches no Record`;
+  // Both ids are checked for existence, old first, before either is checked for duplicates, so resolveId can't reorder the refusals.
+  if (!w.index.byId.has(oldId)) return `'${oldId}' matches no Record`;
+  if (!w.index.byId.has(newId)) return `'${newId}' matches no Record`;
   const oldRec = resolveId(w.index, oldId);
   if (typeof oldRec === "string") return oldRec;
   const newRec = resolveId(w.index, newId);
   if (typeof newRec === "string") return newRec;
   const o = dataOf(w, oldRec);
   const n = dataOf(w, newRec);
-  if (isNonEmptyString(o.superseded_by) && o.superseded_by !== newId) {
-    return `${oldRec.rel} is already superseded by '${o.superseded_by}'`;
+  // The old Record may already point at newId (a re-run is a no-op); the new Record may not point anywhere.
+  if (hasSupersededBy(o) && o.superseded_by !== newId) {
+    return `${oldRec.rel} is already superseded by '${String(o.superseded_by)}'`;
   }
-  const nBy = n.superseded_by;
-  if (n.status === "superseded" || (nBy !== undefined && nBy !== null && nBy !== "")) {
-    return `${newRec.rel} is itself superseded`;
-  }
+  if (n.status === "superseded" || hasSupersededBy(n)) return `${newRec.rel} is itself superseded`;
   if (reaches(w, oldRec, newId)) return `superseding ${oldRec.rel} with ${newRec.rel} would make a cycle`;
   if (!sharesScope(o.applies_to, n.applies_to)) return `${oldRec.rel} and ${newRec.rel} share no applies_to entry`;
   if (Object.hasOwn(n, "supersedes") && !isIdList(n.supersedes)) return `${newRec.rel}: supersedes is not a list of ids`;
@@ -143,15 +142,13 @@ export function planSupersede(index: BankIndex, oldId: string, newId: string): P
   return refusal === null ? finish(w) : { refusal };
 }
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-
 export function planAccept(index: BankIndex, id: string, today: string): Planned {
   const rec = resolveId(index, id);
   if (typeof rec === "string") return { refusal: rec };
   const { status, last_confirmed: confirmed, supersedes } = rec.data;
   if (status !== "proposed") return { refusal: `${rec.rel} has status '${String(status)}', not 'proposed'` };
   const hasConfirmed = Object.hasOwn(rec.data, "last_confirmed");
-  if (hasConfirmed && !(typeof confirmed === "string" && DATE.test(confirmed))) {
+  if (hasConfirmed && !(typeof confirmed === "string" && isCalendarDate(confirmed))) {
     return { refusal: `${rec.rel}: last_confirmed '${String(confirmed)}' is not a YYYY-MM-DD date` };
   }
   if (Object.hasOwn(rec.data, "supersedes") && !isIdList(supersedes)) {

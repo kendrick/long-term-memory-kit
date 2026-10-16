@@ -241,6 +241,15 @@ describe("planAccept", () => {
       });
     });
   });
+
+  test("refuses a last_confirmed that matches the pattern but is not a calendar day", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await patch(dir, P, "date: 2026-09-30\n", "date: 2026-09-30\nlast_confirmed: 2026-02-30\n");
+      expect(planAccept(indexOf(dir), "pL2sG4nVq0", "2026-10-09")).toEqual({
+        refusal: `${P}: last_confirmed '2026-02-30' is not a YYYY-MM-DD date`,
+      });
+    });
+  });
 });
 
 describe("applyEdits", () => {
