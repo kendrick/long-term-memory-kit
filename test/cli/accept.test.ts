@@ -195,4 +195,40 @@ describe("ltm accept", () => {
       }
     });
   });
+
+  describe("a skipped file makes the command refuse, since it could hide an id holder or an edge", () => {
+    const BROKEN = "_memory/decisions/broken-pL2sG4nVq0.md";
+
+    test("an unparseable Record that would duplicate the Proposal's id", async () => {
+      await withScratch(demo, async (dir) => {
+        writeFileSync(join(dir, BROKEN), "---\nid: pL2sG4nVq0\ntitle: [unclosed\n---\nbody\n");
+        const before = hashes(dir);
+        const r = await accept(dir, "pL2sG4nVq0");
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toBe("");
+        expect(r.stderr).toContain(`ltm accept: skipped ${BROKEN}: `);
+        expect(r.stderr.endsWith("ltm accept: 1 file skipped, so nothing was written\n")).toBe(true);
+        expect(hashes(dir)).toEqual(before);
+      });
+    });
+
+    test("an unreadable Record", async () => {
+      if (process.getuid?.() === 0) return; // root ignores file modes
+      await withScratch(demo, async (dir) => {
+        writeFileSync(join(dir, BROKEN), readFileSync(join(dir, P), "utf8"));
+        const before = hashes(dir);
+        chmodSync(join(dir, BROKEN), 0o000);
+        try {
+          const r = await accept(dir, "pL2sG4nVq0");
+          expect(r.exitCode).toBe(1);
+          expect(r.stdout).toBe("");
+          expect(r.stderr).toContain(`ltm accept: skipped ${BROKEN}: `);
+          expect(r.stderr.endsWith("ltm accept: 1 file skipped, so nothing was written\n")).toBe(true);
+        } finally {
+          chmodSync(join(dir, BROKEN), 0o644);
+        }
+        expect(hashes(dir)).toEqual(before);
+      });
+    });
+  });
 });

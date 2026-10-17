@@ -1,6 +1,6 @@
 import { planSupersede, readBankIndex } from "../core/supersede.ts";
 import { openBank } from "./bank.ts";
-import { skipLine, writeEdits } from "./edits.ts";
+import { skipTally, writeEdits } from "./edits.ts";
 import type { Command } from "./run.ts";
 
 export const supersede: Command = {
@@ -14,7 +14,9 @@ export const supersede: Command = {
     const config = openBank(ctx, "supersede");
     if (config === 1) return 1;
     const [oldId, newId] = ctx.positionals as [string, string];
-    const index = readBankIndex(config, skipLine(ctx, "supersede"));
+    const skips = skipTally(ctx, "supersede");
+    const index = readBankIndex(config, skips.onSkip);
+    if (skips.refuse()) return 1;
     const planned = planSupersede(index, oldId, newId);
     if ("refusal" in planned) {
       ctx.err(`ltm supersede: ${planned.refusal}\n`);

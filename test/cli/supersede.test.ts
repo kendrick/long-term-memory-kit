@@ -195,4 +195,52 @@ describe("ltm supersede", () => {
       rmSync(empty, { recursive: true, force: true });
     }
   });
+
+  describe("a skipped file makes the command refuse, since it could hide an id holder or an edge", () => {
+    const BROKEN = "_memory/decisions/broken-hT5cY8dUa6.md";
+
+    test("an unparseable Record that would duplicate the old id", async () => {
+      await withScratch(demoBank, async (dir) => {
+        writeFileSync(join(dir, BROKEN), "---\nid: hT5cY8dUa6\ntitle: [unclosed\n---\nbody\n");
+        const before = hashes(dir);
+        const r = await sup(dir, "hT5cY8dUa6", "kQ7vN2xLp4");
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toBe("");
+        expect(r.stderr).toContain(`ltm supersede: skipped ${BROKEN}: `);
+        expect(r.stderr.endsWith("ltm supersede: 1 file skipped, so nothing was written\n")).toBe(true);
+        expect(hashes(dir)).toEqual(before);
+      });
+    });
+
+    test("an unreadable Record", async () => {
+      if (process.getuid?.() === 0) return; // root ignores file modes
+      await withScratch(demoBank, async (dir) => {
+        writeFileSync(join(dir, BROKEN), read(dir, H));
+        const before = hashes(dir);
+        chmodSync(join(dir, BROKEN), 0o000);
+        try {
+          const r = await sup(dir, "hT5cY8dUa6", "kQ7vN2xLp4");
+          expect(r.exitCode).toBe(1);
+          expect(r.stdout).toBe("");
+          expect(r.stderr).toContain(`ltm supersede: skipped ${BROKEN}: `);
+          expect(r.stderr.endsWith("ltm supersede: 1 file skipped, so nothing was written\n")).toBe(true);
+        } finally {
+          chmodSync(join(dir, BROKEN), 0o644);
+        }
+        expect(hashes(dir)).toEqual(before);
+      });
+    });
+
+    test("two skipped files are counted in the plural", async () => {
+      await withScratch(demoBank, async (dir) => {
+        writeFileSync(join(dir, BROKEN), "---\n: [\n---\n");
+        writeFileSync(join(dir, "_memory/decisions/broken-two.md"), "---\n: [\n---\n");
+        const before = hashes(dir);
+        const r = await sup(dir, "hT5cY8dUa6", "kQ7vN2xLp4");
+        expect(r.exitCode).toBe(1);
+        expect(r.stderr.endsWith("ltm supersede: 2 files skipped, so nothing was written\n")).toBe(true);
+        expect(hashes(dir)).toEqual(before);
+      });
+    });
+  });
 });

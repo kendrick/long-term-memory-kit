@@ -2,7 +2,7 @@ import { today } from "../core/clock.ts";
 import { planAccept, readBankIndex } from "../core/supersede.ts";
 import { firstLine } from "../core/text.ts";
 import { openBank } from "./bank.ts";
-import { skipLine, writeEdits } from "./edits.ts";
+import { skipTally, writeEdits } from "./edits.ts";
 import type { Command } from "./run.ts";
 
 export const accept: Command = {
@@ -20,7 +20,9 @@ export const accept: Command = {
     }
     const config = openBank(ctx, "accept");
     if (config === 1) return 1;
-    const index = readBankIndex(config, skipLine(ctx, "accept"));
+    const skips = skipTally(ctx, "accept");
+    const index = readBankIndex(config, skips.onSkip);
+    if (skips.refuse()) return 1;
     const planned = planAccept(index, ctx.positionals[0]!, date);
     if ("refusal" in planned) {
       ctx.err(`ltm accept: ${planned.refusal}\n`);
