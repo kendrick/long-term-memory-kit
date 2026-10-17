@@ -403,6 +403,18 @@ describe("proposeRecord", () => {
     });
   }, GIT_TEST_TIMEOUT);
 
+  test("a credentialed origin reaches the adapter as configured but comes back redacted in the result", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      const raw = "https://oauth2:s3cret@gitlab.example.com/acme/bank.git";
+      git(clone, "config", "remote.origin.url", raw);
+      git(clone, "config", `url.${bare}.insteadOf`, raw);
+      const forge = fakeAdapter();
+      const r = proposed(await propose(clone, forge));
+      expect(forge.calls[0]!.remoteUrl).toBe(raw);
+      expect(r.remoteUrl).toBe("https://gitlab.example.com/acme/bank.git");
+    });
+  }, GIT_TEST_TIMEOUT);
+
   test("a fetch that fails against a credentialed origin keeps the secret out of the refusal", async () => {
     await withGitBank(async ({ bare, clone }) => {
       git(clone, "config", "remote.origin.url", "https://user:s3cret@git.example.com/acme/bank.git");

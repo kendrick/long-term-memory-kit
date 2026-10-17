@@ -236,7 +236,8 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
   const body = [`Title: ${input.title}`, `Type: ${input.type}`, ...summary, `Path: ${path}`].join("\n") + "\n";
   try {
     const { url } = await forge.openChangeRequest({ remoteUrl, base, head: branch, title: `Propose ${input.type}: ${input.title}`, body });
-    return { dryRun: false, id, path, text, branch, url, adapter: forge.name, remoteUrl };
+    // Callers print this field. The adapter has already had the raw URL, so only the copy handed back loses its userinfo.
+    return { dryRun: false, id, path, text, branch, url, adapter: forge.name, remoteUrl: redactRemote(remoteUrl) };
   } catch (e) {
     // The branch is already on origin, so the fallback link still gets a person to the review.
     const message = redactRemote(firstLine(e instanceof Error ? e.message : String(e)));
