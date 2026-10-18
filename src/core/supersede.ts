@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { type BankConfig } from "./bank.ts";
 import { isCalendarDate } from "./clock.ts";
 import { canonicalFrontmatter, SCHEMA_KEY_ORDER } from "./canonical.ts";
@@ -14,7 +14,8 @@ export type IndexedRecord = { abs: string; rel: string; text: string; data: Reco
 // `records` keeps listRecordFiles' path order, which is the order edits come back in.
 export type BankIndex = { records: IndexedRecord[]; byId: Map<string, IndexedRecord[]> };
 
-export type Edit = { abs: string; rel: string; text: string };
+// `base` is the text the edit was planned from, so a write can tell when another command changed the file in between.
+export type Edit = { abs: string; rel: string; base: string; text: string };
 export type Planned = { edits: Edit[] } | { refusal: string };
 
 export function readBankIndex(config: BankConfig, onSkip: (rel: string, reason: string) => void): BankIndex {
@@ -134,7 +135,7 @@ function finish(w: Work): Planned {
     if (!w.changed.has(rec)) continue;
     const text = render(rec, dataOf(w, rec));
     if (typeof text !== "string") return text;
-    if (text !== rec.text) edits.push({ abs: rec.abs, rel: rec.rel, text });
+    if (text !== rec.text) edits.push({ abs: rec.abs, rel: rec.rel, base: rec.text, text });
   }
   return { edits };
 }
@@ -196,13 +197,16 @@ export function applyEdits(
   nonce: () => string = () => randomBytes(6).toString("hex"),
 ): { written: string[]; failed: { rel: string; message: string } | null } {
   const staged: { abs: string; rel: string; tmp: string; original: Buffer }[] = [];
-  for (const { abs, rel, text } of edits) {
+  for (const { abs, rel, base, text } of edits) {
     let tmp: string | undefined;
     try {
       // rename ignores the target's own mode, so a read-only Record would be replaced without this check.
       io.accessSync(abs, fs.constants.W_OK);
       const original = io.readFileSync(abs);
-      tmp = join(dirname(abs), `.${basename(abs)}.ltm-${nonce()}.tmp`);
+      // Each render is a whole file, so renaming one planned from stale text would drop whatever a concurrent ltm command wrote there. The window between this check and the rename stays open; closing it would take a Bank lock.
+      if (original.toString("utf8") !== base) throw new Error("changed on disk since it was read; run the command again");
+      // The basename stays out of the temp name, since a Record name near NAME_MAX plus a suffix would fail with ENAMETOOLONG.
+      tmp = join(dirname(abs), `.ltm-${nonce()}.tmp`);
       // A cloned Bank can plant a symlink at a temp path; plain write would follow it and truncate the file behind it.
       io.writeFileSync(tmp, text, { flag: "wx" });
       // The temp file gets the umask's mode, and rename carries that over the target, so a private 0600 Record would come out 0644. writeFileSync's mode option is also filtered by the umask, hence chmod.

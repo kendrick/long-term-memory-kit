@@ -358,8 +358,12 @@ describe("applyEdits", () => {
     });
   });
 
-  const fixedNonce = () => "0123456789ab";
-  const plantedName = `.${basename(K)}.ltm-0123456789ab.tmp`;
+  // Temp names no longer carry the basename, so the first edit needs a different nonce for the planted path to collide with K's.
+  const fixedNonce = () => {
+    let calls = 0;
+    return () => (calls++ === 0 ? "aaaaaaaaaaaa" : "0123456789ab");
+  };
+  const plantedName = ".ltm-0123456789ab.tmp";
 
   test("a symlink planted at the temp path is not followed or removed", async () => {
     const outside = await mkdtemp(join(tmpdir(), "ltm-outside-"));
@@ -369,7 +373,7 @@ describe("applyEdits", () => {
       await withPlannedPair(async (dir, edits, before) => {
         const planted = join(dir, "_memory/decisions", plantedName);
         await symlink(victim, planted);
-        const result = applyEdits(edits, fs, fixedNonce);
+        const result = applyEdits(edits, fs, fixedNonce());
         expect(result.written).toEqual([]);
         expect(result.failed?.rel).toBe(K);
         expect(result.failed?.message).toContain("EEXIST");
@@ -388,7 +392,7 @@ describe("applyEdits", () => {
     await withPlannedPair(async (dir, edits, before) => {
       const planted = join(dir, "_memory/decisions", plantedName);
       await writeFile(planted, "someone else's bytes\n");
-      const result = applyEdits(edits, fs, fixedNonce);
+      const result = applyEdits(edits, fs, fixedNonce());
       expect(result.written).toEqual([]);
       expect(result.failed?.rel).toBe(K);
       expect(await readFile(planted, "utf8")).toBe("someone else's bytes\n");
@@ -406,9 +410,32 @@ describe("applyEdits", () => {
       };
       expect(applyEdits(edits, { ...fs, writeFileSync })).toEqual({ written: [H, K], failed: null });
       expect(created).toHaveLength(2);
-      for (const name of created) expect(name).toMatch(/^\.[^/]+\.ltm-[0-9a-f]{12}\.tmp$/);
-      expect(new Set(created.map((n) => n.split(".ltm-")[1])).size).toBe(2);
+      for (const name of created) expect(name).toMatch(/^\.ltm-[0-9a-f]{12}\.tmp$/);
+      expect(new Set(created).size).toBe(2);
       expect(await temps(dir)).toEqual([]);
     });
+  });
+  test("a Record changed on disk after planning is refused and neither target changes", async () => {
+    await withPlannedPair(async (dir, edits, before) => {
+      const changed = before[1]! + "\nAnother command's edit.\n";
+      await writeFile(join(dir, K), changed);
+      const result = applyEdits(edits);
+      expect(result).toEqual({ written: [], failed: { rel: K, message: "changed on disk since it was read; run the command again" } });
+      expect(await after(dir)).toEqual([before[0]!, changed]);
+      expect(await temps(dir)).toEqual([]);
+    });
+  });
+
+  test("a Record whose basename nears the filesystem's 255-byte limit can still be written", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ltm-longname-"));
+    try {
+      const name = `${"a".repeat(240)}.md`;
+      await writeFile(join(dir, name), "old\n");
+      const edit: Edit = { abs: join(dir, name), rel: name, base: "old\n", text: "new\n" };
+      expect(applyEdits([edit])).toEqual({ written: [name], failed: null });
+      expect(await readFile(join(dir, name), "utf8")).toBe("new\n");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
