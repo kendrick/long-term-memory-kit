@@ -171,7 +171,7 @@ export function planAccept(index: BankIndex, id: string, today: string): Planned
   return finish(w);
 }
 
-export type EditFs = Pick<typeof fs, "accessSync" | "readFileSync" | "renameSync" | "unlinkSync" | "writeFileSync">;
+export type EditFs = Pick<typeof fs, "accessSync" | "chmodSync" | "readFileSync" | "renameSync" | "statSync" | "unlinkSync" | "writeFileSync">;
 
 const failure = (rel: string, e: unknown) => ({ rel, message: firstLine((e as Error).message) });
 
@@ -205,6 +205,8 @@ export function applyEdits(
       tmp = join(dirname(abs), `.${basename(abs)}.ltm-${nonce()}.tmp`);
       // A cloned Bank can plant a symlink at a temp path; plain write would follow it and truncate the file behind it.
       io.writeFileSync(tmp, text, { flag: "wx" });
+      // The temp file gets the umask's mode, and rename carries that over the target, so a private 0600 Record would come out 0644. writeFileSync's mode option is also filtered by the umask, hence chmod.
+      io.chmodSync(tmp, io.statSync(abs).mode & 0o7777);
       staged.push({ abs, rel, tmp, original });
     } catch (e) {
       // EEXIST means the path was someone else's before we tried, so it isn't ours to delete.

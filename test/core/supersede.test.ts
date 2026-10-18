@@ -298,6 +298,27 @@ describe("applyEdits", () => {
     });
   });
 
+  const modes = async (dir: string) => [(await lstat(join(dir, H))).mode & 0o777, (await lstat(join(dir, K))).mode & 0o777];
+
+  test("each target keeps its own file mode after the write", async () => {
+    await withPlannedPair(async (dir, edits) => {
+      await chmod(join(dir, H), 0o600);
+      await chmod(join(dir, K), 0o640);
+      expect(applyEdits(edits)).toEqual({ written: [H, K], failed: null });
+      expect(await modes(dir)).toEqual([0o600, 0o640]);
+    });
+  });
+
+  test("a rollback after a failed rename leaves the first target's mode as it was", async () => {
+    await withPlannedPair(async (dir, edits, before) => {
+      await chmod(join(dir, H), 0o600);
+      const result = applyEdits(edits, { ...fs, renameSync: failingRename(2) });
+      expect(result.written).toEqual([]);
+      expect(await after(dir)).toEqual(before);
+      expect(await modes(dir)).toEqual([0o600, 0o644]);
+    });
+  });
+
   test("a staging failure on the second edit changes neither target and leaves no temp file", async () => {
     if (process.getuid?.() === 0) return; // root ignores file modes
     await withPlannedPair(async (dir, edits, before) => {
