@@ -10,7 +10,7 @@ import { listRecordFiles } from "./query.ts";
 import { parseRecordFile, RecordError } from "./record.ts";
 import type { Env } from "./resolve.ts";
 import { firstLine } from "./text.ts";
-import { checkRecordText, type Finding } from "./validate.ts";
+import { checkRecordText, validateBank, type Finding } from "./validate.ts";
 
 export type ProposalInput = {
   type: MemoryType;
@@ -207,7 +207,8 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
     // Detached, so the caller's repo gains no branch and its checkout is never touched.
     git(root, ["worktree", "add", "--quiet", "--detach", tmp, "FETCH_HEAD"]);
     // The caller's checkout can be behind origin, and a folder remapped there would put the file where that branch's validate and queries never look. The commit carries the fetched config, so path and checks follow it.
-    const fetched = loadConfig(bankInRepo === "" ? tmp : join(tmp, bankInRepo));
+    const bankDir = bankInRepo === "" ? tmp : join(tmp, bankInRepo);
+    const fetched = loadConfig(bankDir);
     path = posix.join(fetched.folders[input.type], posix.basename(path));
     const recheck = checkRecordText(path, input.type, text, facetPrefixesOf(fetched), fetched.folders[input.type]);
     const recheckErrors = recheck.findings.filter((f) => f.severity === "error");
@@ -219,6 +220,9 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
     const abs = join(tmp, inTree);
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, text);
+    // checkRecordText sees one file, so rules that span Records, like supersession-facets, only show up once the file sits in the fetched Bank. Naming the file keeps errors already on the default branch from blocking every Proposal.
+    const bankErrors = validateBank(bankDir, [path], bankDir).filter((f) => f.severity === "error");
+    if (bankErrors.length > 0) return { refusal: bankErrors.map(formatFinding).join("\n") };
     git(tmp, ["add", "--", inTree]);
     git(tmp, ["commit", "--quiet", "-m", `Propose ${input.type}: ${input.title}`]);
     const sha = git(tmp, ["rev-parse", "HEAD"]).trim();

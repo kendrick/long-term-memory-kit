@@ -218,6 +218,19 @@ describe("proposeRecord", () => {
     });
   }, GIT_TEST_TIMEOUT);
 
+  test("a proposal whose supersedes target shares no Facet is refused before anything is pushed", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      const before = snapshot(bare, clone);
+      const forge = fakeAdapter();
+      const input: ProposalInput = { ...INPUT, supersedes: ["hT5cY8dUa6"], applies_to: ["domain:payments"] };
+      const r = await propose(clone, forge, input);
+      expect("refusal" in r && r.refusal).toMatch(/error supersession-facets: applies_to: /);
+      expect(forge.calls).toHaveLength(0);
+      expect(git(bare, "for-each-ref", "--format=%(refname)", "refs/heads/ltm/")).toBe("");
+      expect(snapshot(bare, clone)).toEqual(before);
+    });
+  }, GIT_TEST_TIMEOUT);
+
   test("a proposal that supersedes an accepted Record lands on the branch and a clone of it validates", async () => {
     await withGitBank(async ({ bare, clone }) => {
       const input: ProposalInput = { ...INPUT, supersedes: ["hT5cY8dUa6"], applies_to: ["domain:commerce"] };
