@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { ConfigError, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
@@ -169,6 +169,25 @@ const facetPrefixesOf = (config: BankConfig): string[] | null => {
   return Array.isArray(facets) && facets.every((x) => typeof x === "string") ? (facets as string[]) : null;
 };
 
+const CONFIG_FILE = "memory-bank.yaml";
+
+// A dry run never writes into the caller's Bank, so the Bank-level rules run on a copy of its config and type folders with the Proposal added.
+function checkInLocalCopy(config: BankConfig, path: string, text: string): Finding[] {
+  const copy = mkdtempSync(join(tmpdir(), "ltm-propose-check-"));
+  try {
+    cpSync(join(config.root, CONFIG_FILE), join(copy, CONFIG_FILE));
+    for (const folder of new Set(Object.values(config.folders))) {
+      const from = join(config.root, folder);
+      if (existsSync(from)) cpSync(from, join(copy, folder), { recursive: true, verbatimSymlinks: true });
+    }
+    mkdirSync(dirname(join(copy, path)), { recursive: true });
+    writeFileSync(join(copy, path), text);
+    return validateBank(copy, [path], copy);
+  } finally {
+    rmSync(copy, { recursive: true, force: true });
+  }
+}
+
 export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Promise<ProposeResult> {
   const { config } = deps;
   const built = buildRecord(input, config, deps.today);
@@ -176,12 +195,23 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
   const { id, text } = built;
   let path = built.path;
 
-  const { findings } = checkRecordText(path, input.type, text, facetPrefixesOf(config), config.folders[input.type]);
-  const errors = findings.filter((f) => f.severity === "error");
-  if (errors.length > 0) return { refusal: errors.map(formatFinding).join("\n") };
-  for (const f of findings) deps.onWarning?.(formatFinding(f));
+  // validateBank repeats checkRecordText's per-file findings, so each warning goes out once however many checks report it.
+  const warned = new Set<string>();
+  const refusalOf = (findings: Finding[]): ProposeRefusal | null => {
+    const errors = findings.filter((f) => f.severity === "error");
+    if (errors.length > 0) return { refusal: errors.map(formatFinding).join("\n") };
+    for (const line of findings.map(formatFinding)) {
+      if (warned.has(line)) continue;
+      warned.add(line);
+      deps.onWarning?.(line);
+    }
+    return null;
+  };
 
-  if (deps.dryRun) return { dryRun: true, id, path, text };
+  const own = refusalOf(checkRecordText(path, input.type, text, facetPrefixesOf(config), config.folders[input.type]).findings);
+  if (own) return own;
+
+  if (deps.dryRun) return refusalOf(checkInLocalCopy(config, path, text)) ?? { dryRun: true, id, path, text };
 
   const root = config.root;
   const remoteUrl = gitMaybe(root, ["config", "--get", "remote.origin.url"]);
@@ -221,8 +251,8 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, text);
     // checkRecordText sees one file, so rules that span Records, like supersession-facets, only show up once the file sits in the fetched Bank. Naming the file keeps errors already on the default branch from blocking every Proposal.
-    const bankErrors = validateBank(bankDir, [path], bankDir).filter((f) => f.severity === "error");
-    if (bankErrors.length > 0) return { refusal: bankErrors.map(formatFinding).join("\n") };
+    const inBank = refusalOf(validateBank(bankDir, [path], bankDir));
+    if (inBank) return inBank;
     git(tmp, ["add", "--", inTree]);
     git(tmp, ["commit", "--quiet", "-m", `Propose ${input.type}: ${input.title}`]);
     const sha = git(tmp, ["rev-parse", "HEAD"]).trim();

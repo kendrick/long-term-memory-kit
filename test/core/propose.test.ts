@@ -165,6 +165,32 @@ describe("proposeRecord", () => {
     });
   }, GIT_TEST_TIMEOUT);
 
+  test.each([
+    ["a target that shares no Facet", ["hT5cY8dUa6"], /error supersession-facets: applies_to: /],
+    ["a target no Record has", ["NoSuchId00"], /error supersession-missing-target: supersedes: /],
+  ])("a dry run that supersedes %s is refused and touches no repo", async (_label, supersedes, refusal) => {
+    await withGitBank(async ({ bare, clone }) => {
+      const forge = fakeAdapter();
+      const before = snapshot(bare, clone);
+      const r = await propose(clone, forge, { ...INPUT, supersedes, applies_to: ["domain:payments"] }, true);
+      expect("refusal" in r && r.refusal).toMatch(refusal);
+      expect(forge.calls).toHaveLength(0);
+      expect(snapshot(bare, clone)).toEqual(before);
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("a Bank-level warning reaches onWarning once and the proposal still goes out", async () => {
+    await withGitBank(async ({ bare, clone }) => {
+      const warnings: string[] = [];
+      const forge = fakeAdapter();
+      const input: ProposalInput = { ...INPUT, applies_to: ["service:order-service"] };
+      const r = await proposeRecord(input, { config: loadConfig(clone), today: TODAY, env: {}, forge, onWarning: (w) => warnings.push(w) });
+      const p = proposed(r);
+      expect(warnings.filter((w) => w.includes("warning bright-line"))).toHaveLength(1);
+      expect(git(bare, "for-each-ref", "--format=%(refname)", "refs/heads/ltm/")).toBe(`refs/heads/${p.branch}\n`);
+    });
+  }, GIT_TEST_TIMEOUT);
+
   test("no origin is refused and nothing is written", async () => {
     await withGitBank(async ({ bare, clone }) => {
       git(clone, "remote", "remove", "origin");
