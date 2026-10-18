@@ -5,7 +5,7 @@ import { dirname, join, posix, relative, sep } from "node:path";
 import { ConfigError, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
 import { canonicalFrontmatter, SCHEMA_KEY_ORDER } from "./canonical.ts";
 import { newId } from "./fmt.ts";
-import { chooseAdapter, fallbackUrl, type ForgeAdapter } from "./forge.ts";
+import { chooseAdapter, fallbackUrl, forgeRemote, type ForgeAdapter } from "./forge.ts";
 import { listRecordFiles } from "./query.ts";
 import { parseRecordFile, RecordError } from "./record.ts";
 import type { Env } from "./resolve.ts";
@@ -190,11 +190,13 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
   const branch = proposalBranch(id);
   let base: string;
   let tmp: string | null = null;
+  let forgeUrl = remoteUrl;
   try {
     // The adapter and the fallback link name the fetch URL's repository, so a branch pushed anywhere else would be a review of a branch that isn't there. Both lookups apply insteadOf, so a rewrite alone doesn't count as a split.
     const fetchUrl = git(root, ["remote", "get-url", "origin"]).trim();
     const pushUrls = git(root, ["remote", "get-url", "--push", "--all", "origin"]).trim().split("\n");
     if (pushUrls.length !== 1 || pushUrls[0] !== fetchUrl) return { refusal: SPLIT_ORIGIN };
+    forgeUrl = forgeRemote(remoteUrl, fetchUrl);
     base = remoteDefaultBranch(root);
     // An empty --refmap writes only FETCH_HEAD, so no ref under refs/ moves in the caller's repo.
     git(root, ["fetch", "--quiet", "--refmap=", "origin", `refs/heads/${base}`]);
@@ -231,17 +233,17 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
     if (tmp) cleanup(root, tmp);
   }
 
-  const forge = deps.forge ?? chooseAdapter(remoteUrl, deps.env);
+  const forge = deps.forge ?? chooseAdapter(forgeUrl, deps.env);
   const summary = input.summary === undefined ? [] : [`Summary: ${input.summary}`];
   const body = [`Title: ${input.title}`, `Type: ${input.type}`, ...summary, `Path: ${path}`].join("\n") + "\n";
   try {
-    const { url } = await forge.openChangeRequest({ remoteUrl, base, head: branch, title: `Propose ${input.type}: ${input.title}`, body });
+    const { url } = await forge.openChangeRequest({ remoteUrl: forgeUrl, base, head: branch, title: `Propose ${input.type}: ${input.title}`, body });
     // Callers print this field. The adapter has already had the raw URL, so only the copy handed back loses its userinfo.
     return { dryRun: false, id, path, text, branch, url, adapter: forge.name, remoteUrl: redactRemote(remoteUrl) };
   } catch (e) {
     // The branch is already on origin, so the fallback link still gets a person to the review.
     const message = redactRemote(firstLine(e instanceof Error ? e.message : String(e)));
-    const url = fallbackUrl(remoteUrl, base, branch);
+    const url = fallbackUrl(forgeUrl, base, branch);
     return { refusal: `pushed ${branch}, but opening the review failed: ${message}`, ...(url ? { url } : {}) };
   }
 }

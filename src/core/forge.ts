@@ -23,6 +23,12 @@ export function fallbackUrl(remoteUrl: string, base: string, head: string): stri
   return null;
 }
 
+// An insteadOf shorthand such as gh:acme/bank.git parses as host "gh", so forge choice falls back to the URL git resolved it to. The configured URL still wins when it names a forge, since a test or mirror setup can rewrite a real forge URL to a local path.
+export function forgeRemote(configured: string, resolved: string): string {
+  if (fallbackUrl(configured, "", "") !== null) return configured;
+  return fallbackUrl(resolved, "", "") !== null ? resolved : configured;
+}
+
 export const fallbackAdapter: ForgeAdapter = {
   name: "fallback",
   async openChangeRequest(req) {

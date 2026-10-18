@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chooseAdapter, fallbackAdapter, fallbackUrl, githubAdapter, type ChangeRequest } from "../../src/core/forge.ts";
+import { chooseAdapter, fallbackAdapter, fallbackUrl, forgeRemote, githubAdapter, type ChangeRequest } from "../../src/core/forge.ts";
 
 const head = "ltm/propose/abc";
 
@@ -81,6 +81,25 @@ describe("chooseAdapter", () => {
   test("a token on a non-GitHub host falls back", () => {
     expect(chooseAdapter("https://gitlab.example.com/acme/bank.git", { GH_TOKEN: "t", GITHUB_TOKEN: "t" }).name).toBe("fallback");
     expect(chooseAdapter("https://github.example.com/acme/bank.git", { GH_TOKEN: "t" }).name).toBe("fallback");
+  });
+});
+
+describe("forgeRemote", () => {
+  const resolved = "https://github.com/acme/bank.git";
+
+  test("an insteadOf shorthand gives way to the URL git resolved it to", () => {
+    expect(forgeRemote("gh:acme/bank.git", resolved)).toBe(resolved);
+    expect(chooseAdapter(forgeRemote("gh:acme/bank.git", resolved), { GH_TOKEN: "t" }).name).toBe("github");
+  });
+
+  // Each of the next two drops one half of the rule from the passing case above.
+  test("a configured forge URL wins even when git rewrites it elsewhere", () => {
+    const gitlab = "https://gitlab.example.com/acme/bank.git";
+    expect(forgeRemote(gitlab, "/srv/git/bank.git")).toBe(gitlab);
+  });
+
+  test("when neither URL names a forge, the configured one stays", () => {
+    expect(forgeRemote("gh:acme/bank.git", "/srv/git/bank.git")).toBe("gh:acme/bank.git");
   });
 });
 
