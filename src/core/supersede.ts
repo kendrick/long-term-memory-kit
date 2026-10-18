@@ -153,6 +153,8 @@ export function planAccept(index: BankIndex, id: string, today: string): Planned
   if (typeof rec === "string") return { refusal: rec };
   const { status, last_confirmed: confirmed, supersedes } = rec.data;
   if (status !== "proposed") return { refusal: `${rec.rel} has status '${String(status)}', not 'proposed'` };
+  // Queries treat an accepted Record as active, so accepting one that still points at a successor would leave it live and retired at once.
+  if (hasSupersededBy(rec.data)) return { refusal: `${rec.rel} is already superseded by '${String(rec.data.superseded_by)}'` };
   const hasConfirmed = Object.hasOwn(rec.data, "last_confirmed");
   if (hasConfirmed && !(typeof confirmed === "string" && isCalendarDate(confirmed))) {
     return { refusal: `${rec.rel}: last_confirmed '${String(confirmed)}' is not a YYYY-MM-DD date` };

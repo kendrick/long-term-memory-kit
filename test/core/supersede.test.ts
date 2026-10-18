@@ -193,6 +193,13 @@ describe("planAccept", () => {
     });
   });
 
+  test("a Proposal that already carries superseded_by is refused", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await patch(dir, P, "date: 2026-09-30\n", "date: 2026-09-30\nsuperseded_by: kQ7vN2xLp4\n");
+      expect(planAccept(indexOf(dir), "pL2sG4nVq0", "2026-10-09")).toEqual({ refusal: `${P} is already superseded by 'kQ7vN2xLp4'` });
+    });
+  });
+
   test("last_confirmed moves forward to today from an earlier date", async () => {
     await withScratch(demoBank, async (dir) => {
       await patch(dir, P, "date: 2026-09-30\n", "date: 2026-09-30\nlast_confirmed: 2026-01-01\n");
