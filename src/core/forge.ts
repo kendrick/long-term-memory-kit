@@ -7,13 +7,23 @@ export type ForgeAdapter = { name: "github" | "fallback"; openChangeRequest(req:
 // Self-hosted GitLab usually lives on a gitlab.<domain> host. Matching a whole label keeps git.example.com and mygitlab.example.com out.
 const isGitLabHost = (host: string): boolean => host.split(".").includes("gitlab");
 
+// parseRemote keeps only the hostname. A self-hosted GitLab on https://host:8443 serves its web UI on that same port, so the link needs it back. An ssh:// port is sshd's, so it stays out.
+function webPort(remoteUrl: string): string {
+  try {
+    const u = new URL(remoteUrl.trim());
+    return (u.protocol === "https:" || u.protocol === "http:") && u.port ? `:${u.port}` : "";
+  } catch {
+    return "";
+  }
+}
+
 // Query params go out unencoded, as the forges' own "new MR/PR" links write them, so the printed URL reads cleanly in a terminal.
 export function fallbackUrl(remoteUrl: string, base: string, head: string): string | null {
   const id = parseRemote(remoteUrl);
   if (!id) return null;
   const { host, org, repo } = id;
   if (host === "github.com") return `https://github.com/${org}/${repo}/compare/${base}...${head}?expand=1`;
-  if (isGitLabHost(host)) return `https://${host}/${org}/${repo}/-/merge_requests/new?merge_request[source_branch]=${head}`;
+  if (isGitLabHost(host)) return `https://${host}${webPort(remoteUrl)}/${org}/${repo}/-/merge_requests/new?merge_request[source_branch]=${head}`;
   // Azure's two remote shapes put <organization>/<project> on either side of a marker segment: .../_git/<repo> over HTTPS, v3/... over SSH.
   const segs = org.split("/");
   let azure: string[] | null = null;

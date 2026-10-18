@@ -11,6 +11,15 @@ describe("fallbackUrl", () => {
     ],
     ["git@gitlab.com:acme/bank.git", "https://gitlab.com/acme/bank/-/merge_requests/new?merge_request[source_branch]=ltm/propose/abc"],
     [
+      "https://gitlab.example.com:8443/acme/bank.git",
+      "https://gitlab.example.com:8443/acme/bank/-/merge_requests/new?merge_request[source_branch]=ltm/propose/abc",
+    ],
+    // An SSH port belongs to sshd, not to the web UI.
+    [
+      "ssh://git@gitlab.example.com:2222/acme/bank.git",
+      "https://gitlab.example.com/acme/bank/-/merge_requests/new?merge_request[source_branch]=ltm/propose/abc",
+    ],
+    [
       "https://gitlab.com/acme/platform/bank.git",
       "https://gitlab.com/acme/platform/bank/-/merge_requests/new?merge_request[source_branch]=ltm/propose/abc",
     ],
