@@ -146,6 +146,22 @@ describe("readAdr", () => {
     expect(s.body).toBe(text);
   });
 
+  test("a # line inside a ~~~ fence isn't taken as the title", () => {
+    const text = "~~~\n# Not a title\n~~~\n\nBody.\n";
+    expect(source(readAdr("a.md", text)).title).toBeNull();
+  });
+
+  test("flow-style frontmatter refuses, since a stamp line would break the YAML", () => {
+    const r = refusal(readAdr("docs/adr/flow.md", "---\n{title: Example}\n---\n# Example\n"));
+    expect(r).toContain("docs/adr/flow.md");
+    expect(r).toContain("by hand");
+  });
+
+  test("block-style frontmatter with nested values still stamps", () => {
+    const text = "---\ntitle: X\ntags:\n  - a\n  - b\n---\n# X\n";
+    expect(source(readAdr("a.md", text)).stamp("promoted_to: b:1").text).toBe("---\ntitle: X\ntags:\n  - a\n  - b\npromoted_to: b:1\n---\n# X\n");
+  });
+
   test("invalid YAML refuses", () => {
     expect(refusal(readAdr("docs/adr/x.md", "---\nkey: [unclosed\n---\n# T\n"))).toStartWith("docs/adr/x.md: frontmatter isn't valid YAML: ");
   });
@@ -192,6 +208,29 @@ describe("readEntry", () => {
     const s = source(readEntry(LOG, text, "Keep order IDs as ULIDs"));
     const anchor = "## Keep order IDs as ULIDs\n";
     expect(s.body).toBe(text.slice(text.indexOf(anchor) + anchor.length));
+  });
+
+  test("a four-backtick fence around a triple-backtick example keeps its ## line inside the entry", () => {
+    const text = "# Log\n\n## A\n\n````md\n```\n## not a heading\n```\n````\n\nAfter.\n\n## B\n\nText.\n";
+    const s = source(readEntry("log.md", text, "A"));
+    expect(s.body).toBe("\n````md\n```\n## not a heading\n```\n````\n\nAfter.\n\n");
+    expect(refusal(readEntry("log.md", text, "not a heading"))).toContain("no '## not a heading'");
+  });
+
+  test("a ~~~ fence hides a ## line", () => {
+    const text = "# Log\n\n## A\n\n~~~\n## hidden\n~~~\n\n## B\n";
+    expect(source(readEntry("log.md", text, "A")).body).toBe("\n~~~\n## hidden\n~~~\n\n");
+    expect(refusal(readEntry("log.md", text, "hidden"))).toContain("no '## hidden'");
+  });
+
+  test("a promoted_to line inside a fenced block isn't a stamp", () => {
+    const text = "# Log\n\n## A\n\n```yaml\npromoted_to: acme:example\n```\n\n## B\n";
+    expect(source(readEntry("log.md", text, "A")).existing).toBeNull();
+  });
+
+  test("a promoted_to line directly under the heading still counts when an earlier entry has a fence", () => {
+    const text = "# Log\n\n## Z\n\n```\nx\n```\n\n## A\npromoted_to: acme:abc\n\nText.\n";
+    expect(source(readEntry("log.md", text, "A")).existing).toBe("acme:abc");
   });
 
   test("a promoted_to line in the entry gives existing", () => {
@@ -427,6 +466,21 @@ describe("promoteSource", () => {
         const r = await promote(clone, repo, untitled, fakeAdapter(), { title: "" });
         expect("refusal" in r).toBe(true);
         expect(readFileSync(join(repo, untitled), "utf8")).toBe("no heading here\n");
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("flow-style ADR frontmatter refuses before any push and leaves the file alone", async () => {
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const rel = "docs/adr/0009-flow.md";
+        const text = "---\n{title: Example}\n---\n# Example\n";
+        writeFileSync(join(repo, rel), text);
+        const forge = fakeAdapter();
+        const r = await promote(clone, repo, rel, forge);
+        expect("refusal" in r && r.refusal).toContain("by hand");
+        expect(forge.calls).toHaveLength(0);
+        expect(readFileSync(join(repo, rel), "utf8")).toBe(text);
       });
     });
   }, GIT_TEST_TIMEOUT);

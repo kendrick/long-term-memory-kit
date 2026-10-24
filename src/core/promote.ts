@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { readFileSync, writeFileSync } from "node:fs";
 import { parse } from "yaml";
 import { isMapping, type MemoryType } from "./bank.ts";
@@ -25,16 +26,25 @@ function scanLines(text: string): Line[] {
   return out;
 }
 
-// Drops ``` fence lines and everything between them, so a heading-shaped line in a code sample never matches.
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+
+// CommonMark fences: only a closing line of the same character and at least the opener's length ends one, so a ```-example inside a ````-fence stays hidden. An unclosed fence runs to the end of the text.
 function outsideFences(lines: Line[]): Line[] {
   const out: Line[] = [];
-  let fenced = false;
+  let opener: { char: string; len: number } | null = null;
   for (const line of lines) {
-    if (/^ {0,3}```/.test(line.content)) {
-      fenced = !fenced;
+    if (opener) {
+      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line.content);
+      if (close && close[1]![0] === opener.char && close[1]!.length >= opener.len) opener = null;
       continue;
     }
-    if (!fenced) out.push(line);
+    const open = FENCE_OPEN.exec(line.content);
+    // A backtick fence can't carry a backtick in its info string; that line is inline code, not a fence.
+    if (open && !(open[1]![0] === "`" && open[2]!.includes("`"))) {
+      opener = { char: open[1]![0]!, len: open[1]!.length };
+      continue;
+    }
+    out.push(line);
   }
   return out;
 }
@@ -64,6 +74,9 @@ export function readAdr(rel: string, text: string): PromoteSource | { refusal: s
   if (!isMapping(frontmatter)) return { refusal: `${rel}: frontmatter is not a mapping` };
   const title = typeof frontmatter.title === "string" && frontmatter.title !== "" ? frontmatter.title : headingTitle(split.body);
   const existing = Object.hasOwn(frontmatter, "promoted_to") ? render(frontmatter.promoted_to) : null;
+  if (existing === null && !stampsCleanly(frontmatter, split.frontmatterLines)) {
+    return { refusal: `${rel}: ltm promote can't add promoted_to to this frontmatter safely; add it by hand` };
+  }
   // splitFrontmatter only finds a closing fence that has a line before it, so this index exists.
   const fence = scanLines(text)[split.closingLine]!.start;
   return {
@@ -73,6 +86,20 @@ export function readAdr(rel: string, text: string): PromoteSource | { refusal: s
     existing,
     stamp: (line) => ({ text: text.slice(0, fence) + line + eol + text.slice(fence), line: split.closingLine + 1 }),
   };
+}
+
+// The stamp is a plain line appended to the block, which only keeps the YAML valid for block-style mappings; a flow mapping like {title: x} would break, so parse a trial stamp and compare.
+function stampsCleanly(original: Record<string, unknown>, frontmatterLines: string[]): boolean {
+  const marker = "x:placeholder";
+  let trial: unknown;
+  try {
+    trial = parse([...frontmatterLines, `promoted_to: ${marker}`].join("\n"));
+  } catch {
+    return false;
+  }
+  if (!isMapping(trial) || trial.promoted_to !== marker) return false;
+  const { promoted_to: _stamp, ...rest } = trial;
+  return isDeepStrictEqual(rest, original);
 }
 
 function headingTitle(body: string): string | null {
@@ -92,7 +119,8 @@ export function readEntry(rel: string, text: string, heading: string): PromoteSo
   const match = matches[0]!;
   const end = headings.find((l) => l.start > match.start)?.start ?? text.length;
   const body = text.slice(match.next, end);
-  const stamped = scanLines(body).find((l) => l.content.startsWith("promoted_to:"));
+  // Fence state comes from the whole file, so a fenced yaml sample in the entry never reads as a stamp.
+  const stamped = outsideFences(lines).find((l) => l.start >= match.next && l.start < end && l.content.startsWith("promoted_to:"));
   const eol = eolOf(text);
   const lineNo = lines.indexOf(match) + 2;
   return {
