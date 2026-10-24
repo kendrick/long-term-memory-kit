@@ -176,6 +176,31 @@ function staleProposal(ctx: DoctorContext): DoctorFinding[] {
   return out;
 }
 
+// Memoized per Record because enumerating every simple path is exponential once Records fork and merge.
+// A Record still being walked is a dead end, which ends a chain that runs into a cycle; inside a cycle the
+// length is a lower bound, since exact longest simple path is NP-hard there. Children arrive sorted by path
+// and only a strictly longer branch wins, so a tie goes to the first.
+function longestPath(
+  from: ParsedRecord,
+  olderOf: ReadonlyMap<ParsedRecord, readonly ParsedRecord[]>,
+  memo: Map<ParsedRecord, readonly ParsedRecord[]>,
+  walking: Set<ParsedRecord>,
+): readonly ParsedRecord[] {
+  const known = memo.get(from);
+  if (known) return known;
+  walking.add(from);
+  let best: readonly ParsedRecord[] = [];
+  for (const older of olderOf.get(from) ?? []) {
+    if (walking.has(older)) continue;
+    const sub = longestPath(older, olderOf, memo, walking);
+    if (sub.length > best.length) best = sub;
+  }
+  walking.delete(from);
+  const path = [from, ...best];
+  memo.set(from, path);
+  return path;
+}
+
 function longChain(ctx: DoctorContext): DoctorFinding[] {
   const t = ctx.thresholds.max_chain_length;
   const olderOf = new Map<ParsedRecord, ParsedRecord[]>();
@@ -186,24 +211,18 @@ function longChain(ctx: DoctorContext): DoctorFinding[] {
     if (list) list.push(e.old);
     else olderOf.set(e.new, [e.old]);
   }
+  for (const list of olderOf.values()) list.sort((x, y) => byCodeUnit(x.path, y.path));
+  const memo = new Map<ParsedRecord, readonly ParsedRecord[]>();
   const out: DoctorFinding[] = [];
   for (const head of olderOf.keys()) {
     // A closed cycle has no newest Record, so it's never walked or reported. `ltm supersede` refuses to
     // create one, but nothing reports a hand-written one. A chain that runs into a cycle still has a head.
     if (isOld.has(head)) continue;
-    const seen = new Set<ParsedRecord>([head]);
-    const stack = [head];
-    while (stack.length > 0) {
-      for (const o of olderOf.get(stack.pop()!) ?? []) {
-        if (seen.has(o)) continue;
-        seen.add(o);
-        stack.push(o);
-      }
-    }
-    // Counts Records, not links (per docs/doctor.md): A -> B -> C is 3.
-    if (seen.size <= t) continue;
-    const rest = [...seen].filter((r) => r !== head).map((r) => r.path);
-    out.push(finding(head.path, "long-chain", `Supersession chain holds ${seen.size} Records (threshold ${t})`, rest));
+    // A Record that supersedes several independent Records has branches, so only the longest one counts.
+    const path = longestPath(head, olderOf, memo, new Set());
+    if (path.length <= t) continue;
+    const rest = path.slice(1).map((r) => r.path);
+    out.push(finding(head.path, "long-chain", `Supersession chain holds ${path.length} Records (threshold ${t})`, rest));
   }
   return out;
 }

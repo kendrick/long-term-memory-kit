@@ -286,6 +286,71 @@ describe("long-chain", () => {
     });
   });
 
+  test("a Record superseding several independent Records is not a long chain", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, A, { ...base("AAAAAAAAAA", "superseded"), superseded_by: "DDDDDDDDDD" });
+      await writeRecord(dir, B, { ...base("BBBBBBBBBB", "superseded"), superseded_by: "DDDDDDDDDD" });
+      await writeRecord(dir, C, { ...base("CCCCCCCCCC", "superseded"), superseded_by: "DDDDDDDDDD" });
+      await writeRecord(dir, D, {
+        ...base("DDDDDDDDDD", "accepted"),
+        supersedes: "[AAAAAAAAAA, BBBBBBBBBB, CCCCCCCCCC]",
+      });
+      expect(chains(dir)).toEqual([]);
+    });
+  });
+
+  test("with two branches, the longest one sets the count and related_files", async () => {
+    await scratch(async (dir) => {
+      const E = "_memory/decisions/chain-e-EEEEEEEEEE.md";
+      const G = "_memory/decisions/chain-g-GGGGGGGGGG.md";
+      await writeRecord(dir, B, { ...base("BBBBBBBBBB", "superseded"), superseded_by: "CCCCCCCCCC" });
+      await writeRecord(dir, C, {
+        ...base("CCCCCCCCCC", "superseded"),
+        supersedes: "[BBBBBBBBBB]",
+        superseded_by: "DDDDDDDDDD",
+      });
+      await writeRecord(dir, E, { ...base("EEEEEEEEEE", "superseded"), superseded_by: "GGGGGGGGGG" });
+      await writeRecord(dir, D, {
+        ...base("DDDDDDDDDD", "superseded"),
+        supersedes: "[CCCCCCCCCC]",
+        superseded_by: "GGGGGGGGGG",
+      });
+      await writeRecord(dir, G, { ...base("GGGGGGGGGG", "accepted"), supersedes: "[DDDDDDDDDD, EEEEEEEEEE]" });
+      expect(chains(dir)).toEqual([
+        {
+          file: G,
+          check: "long-chain",
+          message: "Supersession chain holds 4 Records (threshold 3)",
+          related_files: [B, C, D],
+        },
+      ]);
+    });
+  });
+
+  // Each layer's two Records both supersede both Records in the layer below, so a walk that enumerates every
+  // path visits 2^30 of them. The memoized walk visits each Record once.
+  test("Records that fork and merge for 30 layers report in linear time", async () => {
+    await scratch(async (dir) => {
+      const L = 30;
+      const id = (layer: number, side: string) => `Layer${String(layer).padStart(2, "0")}${side}xxx`;
+      const file = (layer: number, side: string) => `_memory/decisions/${id(layer, side).toLowerCase()}-${id(layer, side)}.md`;
+      for (let i = 0; i < L; i++) {
+        for (const side of ["a", "b"]) {
+          const fields: Record<string, string> = { ...base(id(i, side), i === L - 1 ? "accepted" : "superseded") };
+          if (i > 0) fields.supersedes = `[${id(i - 1, "a")}, ${id(i - 1, "b")}]`;
+          await writeRecord(dir, file(i, side), fields);
+        }
+      }
+      const started = performance.now();
+      const found = chains(dir);
+      expect(performance.now() - started).toBeLessThan(5000);
+      expect(found.map((f) => [f.file, f.message])).toEqual([
+        [file(L - 1, "a"), `Supersession chain holds ${L} Records (threshold 3)`],
+        [file(L - 1, "b"), `Supersession chain holds ${L} Records (threshold 3)`],
+      ]);
+    });
+  });
+
   test("a cycle has no head and isn't reported", async () => {
     await scratch(async (dir) => {
       await writeABC(dir);
