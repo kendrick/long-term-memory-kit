@@ -163,6 +163,16 @@ const consumersOf = (raw: Record<string, unknown>, repo: string): string[] | und
   return Array.isArray(list) && list.every((x) => typeof x === "string") ? (list as string[]) : undefined;
 };
 
+// A name with ': ', ' #' or a leading indicator would corrupt the Consumer's frontmatter, and the stamp is written after the push.
+function stampsAsPlainScalar(bank: string): boolean {
+  try {
+    const parsed: unknown = parse(`promoted_to: ${bank}:x`);
+    return isMapping(parsed) && Object.keys(parsed).length === 1 && parsed.promoted_to === `${bank}:x`;
+  } catch {
+    return false;
+  }
+}
+
 export async function promoteSource(req: PromoteRequest, deps: ProposeDeps): Promise<PromoteResult> {
   const { rel } = req;
   let text: string;
@@ -177,6 +187,9 @@ export async function promoteSource(req: PromoteRequest, deps: ProposeDeps): Pro
 
   const bank = deps.config.raw.name;
   if (typeof bank !== "string") return { refusal: `${deps.config.root}/memory-bank.yaml has no name to stamp promoted_to with` };
+  if (!stampsAsPlainScalar(bank)) {
+    return { refusal: `${deps.config.root}/memory-bank.yaml name '${bank}' can't be written into a promoted_to line safely` };
+  }
   const title = source.title ?? req.title;
   if (title === undefined) return { refusal: `${rel} has no title; pass --title` };
 

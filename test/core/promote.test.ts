@@ -7,7 +7,7 @@ import type { ChangeRequest, ForgeAdapter } from "../../src/core/forge.ts";
 import { entrySlug, promoteSource, readAdr, readEntry, type PromoteRequest, type PromoteResult, type PromoteSource } from "../../src/core/promote.ts";
 import { splitFrontmatter } from "../../src/core/record.ts";
 import { withConsumerRepo } from "../helpers/consumer-repo.ts";
-import { withGitBank } from "../helpers/git-bank.ts";
+import { git, withGitBank } from "../helpers/git-bank.ts";
 
 const FIXTURE = join(import.meta.dir, "../../fixtures/consumer-repo");
 const ADR_3 = "docs/adr/0003-use-ioredis.md";
@@ -385,6 +385,27 @@ describe("promoteSource", () => {
         const r = await promote(clone, repo, ADR_3, forge, {}, true);
         expect("dryRun" in r && r.dryRun).toBe(true);
         expect(forge.calls).toHaveLength(0);
+        expect(readFileSync(join(repo, ADR_3), "utf8")).toBe(before);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test.each(["Acme: Engineering", "acme #1"])("a Bank named '%s' refuses before any push and leaves the ADR alone", async (name) => {
+    await withGitBank(async ({ bare, clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const before = readFileSync(join(repo, ADR_3), "utf8");
+        const refsBefore = git(bare, "for-each-ref");
+        const config = loadConfig(clone);
+        const forge = fakeAdapter();
+        const r = await promoteSource(
+          { abs: join(repo, ADR_3), rel: ADR_3, repo: REPO, type: "Decision" },
+          { config: { ...config, raw: { ...config.raw, name } }, today: TODAY, env: {}, forge, dryRun: false },
+        );
+        expect("refusal" in r && r.refusal).toContain("memory-bank.yaml");
+        expect("refusal" in r && r.refusal).toContain(name);
+        expect("refusal" in r && r.refusal).toContain("promoted_to line safely");
+        expect(forge.calls).toHaveLength(0);
+        expect(git(bare, "for-each-ref")).toBe(refsBefore);
         expect(readFileSync(join(repo, ADR_3), "utf8")).toBe(before);
       });
     });
