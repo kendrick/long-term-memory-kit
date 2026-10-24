@@ -1,5 +1,7 @@
+import { readFileSync, writeFileSync } from "node:fs";
 import { parse } from "yaml";
-import { isMapping } from "./bank.ts";
+import { isMapping, type MemoryType } from "./bank.ts";
+import { proposeRecord, type ProposalInput, type ProposeDeps, type ProposeDryRun, type ProposeRefusal, type Proposed } from "./propose.ts";
 import { splitFrontmatter } from "./record.ts";
 import { firstLine } from "./text.ts";
 
@@ -117,4 +119,67 @@ export function entrySlug(heading: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+export type PromoteRequest = {
+  abs: string;
+  rel: string;
+  repo: string;
+  entry?: string;
+  type: MemoryType;
+  title?: string;
+  summary?: string;
+  applies_to?: string[];
+};
+export type PromoteResult = ProposeRefusal | ProposeDryRun | (Proposed & { stamped: { path: string; line: number } });
+
+const consumersOf = (raw: Record<string, unknown>, repo: string): string[] | undefined => {
+  const consumers = raw.consumers;
+  const list = isMapping(consumers) ? consumers[repo] : undefined;
+  return Array.isArray(list) && list.every((x) => typeof x === "string") ? (list as string[]) : undefined;
+};
+
+export async function promoteSource(req: PromoteRequest, deps: ProposeDeps): Promise<PromoteResult> {
+  const { rel } = req;
+  let text: string;
+  try {
+    text = readFileSync(req.abs, "utf8");
+  } catch (e) {
+    return { refusal: `can't read ${rel}: ${firstLine((e as Error).message)}` };
+  }
+  const source = req.entry === undefined ? readAdr(rel, text) : readEntry(rel, text, req.entry);
+  if ("refusal" in source) return source;
+  if (source.existing !== null) return { refusal: `${rel} already has promoted_to '${source.existing}'` };
+
+  const bank = deps.config.raw.name;
+  if (typeof bank !== "string") return { refusal: `${deps.config.root}/memory-bank.yaml has no name to stamp promoted_to with` };
+  const title = source.title ?? req.title;
+  if (title === undefined) return { refusal: `${rel} has no title; pass --title` };
+
+  const appliesTo = req.applies_to ?? consumersOf(deps.config.raw, req.repo);
+  const input: ProposalInput = {
+    type: req.type,
+    title,
+    ...(req.summary !== undefined ? { summary: req.summary } : {}),
+    body: source.body,
+    promoted_from: `${req.repo}:${rel}${source.kind === "entry" ? `#${source.slug}` : ""}`,
+    ...(appliesTo ? { applies_to: appliesTo } : {}),
+  };
+  const result = await proposeRecord(input, deps);
+  if ("refusal" in result || result.dryRun) return result;
+
+  // The branch is already pushed, so a failure from here on can't undo it; the caller gets the line to add by hand.
+  const stampLine = `promoted_to: ${bank}:${result.id}`;
+  const byHand = `add '${stampLine}' to it by hand`;
+  try {
+    // Re-read: the forge call can take seconds, and an editor save in that window would be overwritten by a stamp built from the old bytes.
+    if (readFileSync(req.abs, "utf8") !== text) {
+      return { refusal: `pushed ${result.branch}, but ${rel} changed while the Proposal opened; ${byHand}` };
+    }
+    const stamped = source.stamp(stampLine);
+    writeFileSync(req.abs, stamped.text);
+    return { ...result, stamped: { path: rel, line: stamped.line } };
+  } catch (e) {
+    return { refusal: `pushed ${result.branch}, but stamping ${rel} failed: ${firstLine((e as Error).message)}; ${byHand}` };
+  }
 }

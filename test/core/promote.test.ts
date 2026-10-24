@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { entrySlug, readAdr, readEntry, type PromoteSource } from "../../src/core/promote.ts";
+import { parse } from "yaml";
+import { loadConfig } from "../../src/core/bank.ts";
+import type { ChangeRequest, ForgeAdapter } from "../../src/core/forge.ts";
+import { entrySlug, promoteSource, readAdr, readEntry, type PromoteRequest, type PromoteResult, type PromoteSource } from "../../src/core/promote.ts";
+import { splitFrontmatter } from "../../src/core/record.ts";
+import { withConsumerRepo } from "../helpers/consumer-repo.ts";
+import { withGitBank } from "../helpers/git-bank.ts";
 
 const FIXTURE = join(import.meta.dir, "../../fixtures/consumer-repo");
 const ADR_3 = "docs/adr/0003-use-ioredis.md";
@@ -244,4 +250,193 @@ describe("entrySlug", () => {
     const long = "word ".repeat(40).trim();
     expect(entrySlug(long)).toBe(Array(40).fill("word").join("-"));
   });
+});
+
+// Each test spawns many git processes; bun's 5s default flakes under load.
+const GIT_TEST_TIMEOUT = 30_000;
+const TODAY = "2026-10-09";
+const REPO = "acme/order-service";
+
+function fakeAdapter(onOpen?: () => void): ForgeAdapter & { calls: ChangeRequest[] } {
+  const calls: ChangeRequest[] = [];
+  return {
+    name: "github",
+    calls,
+    async openChangeRequest(req) {
+      calls.push(req);
+      onOpen?.();
+      return { url: "https://example.invalid/pr/1" };
+    },
+  };
+}
+
+const throwingAdapter = (): ForgeAdapter => ({
+  name: "github",
+  async openChangeRequest() {
+    throw new Error("forge is down");
+  },
+});
+
+function promote(clone: string, repoDir: string, rel: string, forge: ForgeAdapter, extra: Partial<PromoteRequest> = {}, dryRun = false): Promise<PromoteResult> {
+  return promoteSource(
+    { abs: join(repoDir, rel), rel, repo: REPO, type: "Decision", ...extra },
+    { config: loadConfig(clone), today: TODAY, env: {}, forge, dryRun },
+  );
+}
+
+function stamped(r: PromoteResult) {
+  if ("refusal" in r) throw new Error(`refused: ${r.refusal}`);
+  if (r.dryRun) throw new Error("expected a real run, got a dry run");
+  return r;
+}
+
+describe("promoteSource", () => {
+  test("an ADR opens one Proposal carrying its bytes, then gains the stamp", async () => {
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const before = readFileSync(join(repo, ADR_3), "utf8");
+        const forge = fakeAdapter();
+        const r = stamped(await promote(clone, repo, ADR_3, forge));
+        expect(forge.calls).toHaveLength(1);
+        const split = splitFrontmatter(r.text)!;
+        const fm = parse(split.frontmatterLines.join("\n")) as Record<string, unknown>;
+        expect(fm.memory_type).toBe("Decision");
+        expect(fm.status).toBe("proposed");
+        expect(fm.title).toBe("3. Use ioredis for the Redis client");
+        expect(fm.promoted_from).toBe(`${REPO}:${ADR_3}`);
+        expect(fm.applies_to).toEqual(["service:order-service", "domain:commerce"]);
+        expect(split.body).toBe(before);
+        expect(readFileSync(join(repo, ADR_3), "utf8")).toBe(`---\npromoted_to: acme:${r.id}\n---\n${before}`);
+        expect(r.stamped).toEqual({ path: ADR_3, line: 2 });
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("applies_to overrides the consumers mapping", async () => {
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const r = stamped(await promote(clone, repo, ADR_3, fakeAdapter(), { applies_to: ["domain:payments"] }));
+        const fm = parse(splitFrontmatter(r.text)!.frontmatterLines.join("\n")) as Record<string, unknown>;
+        expect(fm.applies_to).toEqual(["domain:payments"]);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("an entry run anchors promoted_from and stamps under its heading only", async () => {
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const before = readFileSync(join(repo, LOG), "utf8");
+        const heading = "Cap retries at three per request";
+        const r = stamped(await promote(clone, repo, LOG, fakeAdapter(), { entry: heading }));
+        const fm = parse(splitFrontmatter(r.text)!.frontmatterLines.join("\n")) as Record<string, unknown>;
+        expect(fm.promoted_from).toBe(`${REPO}:${LOG}#cap-retries-at-three-per-request`);
+        expect(fm.title).toBe(heading);
+        const marker = `## ${heading}\n`;
+        const at = before.indexOf(marker) + marker.length;
+        expect(readFileSync(join(repo, LOG), "utf8")).toBe(`${before.slice(0, at)}promoted_to: acme:${r.id}\n${before.slice(at)}`);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("a dry run returns the Proposal and leaves the source alone", async () => {
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const before = readFileSync(join(repo, ADR_3), "utf8");
+        const forge = fakeAdapter();
+        const r = await promote(clone, repo, ADR_3, forge, {}, true);
+        expect("dryRun" in r && r.dryRun).toBe(true);
+        expect(forge.calls).toHaveLength(0);
+        expect(readFileSync(join(repo, ADR_3), "utf8")).toBe(before);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("an adapter that throws refuses and leaves the ADR byte-identical", async () => {
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const before = readFileSync(join(repo, ADR_3), "utf8");
+        const r = await promote(clone, repo, ADR_3, throwingAdapter());
+        expect("refusal" in r && r.refusal).toContain("opening the review failed");
+        expect(readFileSync(join(repo, ADR_3), "utf8")).toBe(before);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("a source rewritten while the Proposal opened is not stamped over", async () => {
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const rewritten = "# Rewritten by someone else\n";
+        const forge = fakeAdapter(() => writeFileSync(join(repo, ADR_3), rewritten));
+        const r = await promote(clone, repo, ADR_3, forge);
+        expect("refusal" in r && r.refusal).toMatch(
+          new RegExp(`^pushed ltm/propose/\\S+, but ${ADR_3} changed while the Proposal opened; add 'promoted_to: acme:\\S+' to it by hand$`),
+        );
+        expect(readFileSync(join(repo, ADR_3), "utf8")).toBe(rewritten);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("a stamp that can't be written reports the pushed branch and the line to add", async () => {
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const abs = join(repo, ADR_3);
+        const before = readFileSync(abs, "utf8");
+        const forge = fakeAdapter(() => chmodSync(abs, 0o444));
+        const r = await promote(clone, repo, ADR_3, forge);
+        chmodSync(abs, 0o644);
+        // Root ignores the mode bit, so there the write succeeds and there's no failure to see.
+        if (!("refusal" in r)) return;
+        expect(r.refusal).toMatch(new RegExp(`^pushed ltm/propose/\\S+, but stamping ${ADR_3} failed: .+; add 'promoted_to: acme:\\S+' to it by hand$`));
+        expect(readFileSync(abs, "utf8")).toBe(before);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("refuses an already-stamped source, a nameless Bank, and a titleless source, touching nothing", async () => {
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const forge = fakeAdapter();
+        const stampedAdr = "---\npromoted_to: acme:X\n---\n# T\n";
+        writeFileSync(join(repo, ADR_3), stampedAdr);
+        const again = await promote(clone, repo, ADR_3, forge);
+        expect("refusal" in again && again.refusal).toBe(`${ADR_3} already has promoted_to 'acme:X'`);
+
+        const untitled = "docs/adr/0009-untitled.md";
+        writeFileSync(join(repo, untitled), "no heading here\n");
+        const notitle = await promote(clone, repo, untitled, forge);
+        expect("refusal" in notitle && notitle.refusal).toBe(`${untitled} has no title; pass --title`);
+
+        const cfg = loadConfig(clone);
+        const nameless = await promoteSource(
+          { abs: join(repo, ADR_4), rel: ADR_4, repo: REPO, type: "Decision" },
+          { config: { ...cfg, raw: { ...cfg.raw, name: undefined } }, today: TODAY, env: {}, forge },
+        );
+        expect("refusal" in nameless && nameless.refusal).toBe(`${cfg.root}/memory-bank.yaml has no name to stamp promoted_to with`);
+
+        expect(forge.calls).toHaveLength(0);
+        expect(readFileSync(join(repo, ADR_3), "utf8")).toBe(stampedAdr);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("an empty --title on a titleless source reaches proposeRecord, which refuses it", async () => {
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const untitled = "docs/adr/0009-untitled.md";
+        writeFileSync(join(repo, untitled), "no heading here\n");
+        const r = await promote(clone, repo, untitled, fakeAdapter(), { title: "" });
+        expect("refusal" in r).toBe(true);
+        expect(readFileSync(join(repo, untitled), "utf8")).toBe("no heading here\n");
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("a source reader refusal passes through", async () => {
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const r = await promote(clone, repo, LOG, fakeAdapter(), { entry: "No such heading" });
+        expect("refusal" in r && r.refusal).toBe(`${LOG} has no '## No such heading' heading`);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
 });

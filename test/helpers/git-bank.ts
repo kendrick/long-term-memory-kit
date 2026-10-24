@@ -6,7 +6,7 @@ import { join } from "node:path";
 const demo = new URL("../../fixtures/demo-bank", import.meta.url).pathname;
 
 // Pinned per call so a machine's global signing or identity config can't break the scratch commits.
-const IDENTITY = ["-c", "user.name=ltm test", "-c", "user.email=ltm@example.invalid", "-c", "commit.gpgsign=false"];
+export const IDENTITY = ["-c", "user.name=ltm test", "-c", "user.email=ltm@example.invalid", "-c", "commit.gpgsign=false"];
 
 export function git(dir: string, ...args: string[]): string {
   const r = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
