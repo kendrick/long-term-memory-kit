@@ -106,6 +106,74 @@ describe("ltm promote", () => {
     });
   }, GIT_TEST_TIMEOUT);
 
+  test("promote of 0003 lands a Decision Proposal whose body is the ADR's bytes, and stamps the ADR", async () => {
+    await withConsumerRepo(async (repo) => {
+      await withGitBank(async ({ bare, clone }) => {
+        const original = readFileSync(join(repo, ADR), "utf8");
+        const r = await ltm(repo, "promote", ADR, "--bank", clone, "--json");
+        expect(r.exitCode).toBe(0);
+        const out = JSON.parse(r.stdout);
+        const record = git(bare, "show", `${out.branch}:${out.path}`);
+        const closing = record.indexOf("\n---\n", 4);
+        const frontmatter = record.slice(0, closing);
+        expect(frontmatter).toContain("\nmemory_type: Decision\n");
+        expect(frontmatter).toContain("\nstatus: proposed\n");
+        expect(frontmatter).toContain(`\npromoted_from: acme/order-service:${ADR}\n`);
+        expect(frontmatter).toContain("\napplies_to: [service:order-service, domain:commerce]");
+        expect(record.slice(closing + "\n---\n".length)).toBe(original);
+        expect(readFileSync(join(repo, ADR), "utf8")).toBe(`---\npromoted_to: acme:${out.id}\n---\n${original}`);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("--applies-to domain:payments replaces the consumers mapping in the pushed Record", async () => {
+    await withConsumerRepo(async (repo) => {
+      await withGitBank(async ({ bare, clone }) => {
+        const r = await ltm(repo, "promote", ADR, "--bank", clone, "--applies-to", "domain:payments", "--json");
+        expect(r.exitCode).toBe(0);
+        const out = JSON.parse(r.stdout);
+        const record = git(bare, "show", `${out.branch}:${out.path}`);
+        expect(record).toContain("\napplies_to: [domain:payments]\n");
+        expect(record).not.toContain("service:order-service");
+        expect(record).not.toContain("domain:commerce");
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("promote of 0004 adds exactly one line to its frontmatter and removes none", async () => {
+    await withConsumerRepo(async (repo) => {
+      await withGitBank(async ({ clone }) => {
+        const adr = "docs/adr/0004-retry-budget.md";
+        const original = readFileSync(join(repo, adr), "utf8");
+        const r = await ltm(repo, "promote", adr, "--bank", clone, "--json");
+        expect(r.exitCode).toBe(0);
+        const id = JSON.parse(r.stdout).id;
+        const updated = readFileSync(join(repo, adr), "utf8");
+        const fence = original.indexOf("\n---\n", 4) + 1;
+        expect(updated).toBe(`${original.slice(0, fence)}promoted_to: acme:${id}\n${original.slice(fence)}`);
+        expect(git(repo, "diff", "--numstat", "--", adr)).toBe(`1\t0\t${adr}\n`);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("--entry stamps directly under its heading, leaves other entries byte-identical, and records the anchor", async () => {
+    await withConsumerRepo(async (repo) => {
+      await withGitBank(async ({ bare, clone }) => {
+        const log = "_working-memory/decisionLog.md";
+        const original = readFileSync(join(repo, log), "utf8");
+        const heading = "## Cap retries at three per request\n";
+        const r = await ltm(repo, "promote", log, "--entry", "Cap retries at three per request", "--bank", clone, "--json");
+        expect(r.stderr).toMatch(/^(ltm promote: .*warning body-sections.*\n)?$/);
+        expect(r.exitCode).toBe(0);
+        const out = JSON.parse(r.stdout);
+        const record = git(bare, "show", `${out.branch}:${out.path}`);
+        expect(record).toContain(`\npromoted_from: acme/order-service:${log}#cap-retries-at-three-per-request\n`);
+        const at = original.indexOf(heading) + heading.length;
+        expect(readFileSync(join(repo, log), "utf8")).toBe(`${original.slice(0, at)}promoted_to: acme:${out.id}\n${original.slice(at)}`);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
   test("--json carries the propose fields plus stamped.path and stamped.line", async () => {
     await withConsumerRepo(async (repo) => {
       await withGitBank(async ({ clone }) => {

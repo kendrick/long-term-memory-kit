@@ -11,8 +11,7 @@ export type PromoteSource =
 
 type Line = { content: string; start: number; next: number; newline: boolean };
 
-// Offsets into the original text, so every slice taken from them comes back byte for
-// byte; `content` drops the terminator and a trailing \r for matching only.
+// Offsets into the original text, so every slice taken from them comes back byte for byte; `content` drops the terminator and a trailing \r for matching only.
 function scanLines(text: string): Line[] {
   const out: Line[] = [];
   let start = 0;
@@ -26,8 +25,7 @@ function scanLines(text: string): Line[] {
   return out;
 }
 
-// Drops ``` fence lines and everything between them, so a heading-shaped line in a code
-// sample never matches.
+// Drops ``` fence lines and everything between them, so a heading-shaped line in a code sample never matches.
 function outsideFences(lines: Line[]): Line[] {
   const out: Line[] = [];
   let fenced = false;
@@ -103,8 +101,7 @@ export function readEntry(rel: string, text: string, heading: string): PromoteSo
     title: heading,
     body,
     existing: stamped ? stamped.content.slice("promoted_to:".length).trim() : null,
-    // A heading on the last line has no terminator to insert after, so the stamp brings its
-    // own leading one and the file keeps its missing final newline.
+    // A heading on the last line has no terminator to insert after, so the stamp brings its own leading one and the file keeps its missing final newline.
     stamp: (line) => ({
       text: match.newline ? text.slice(0, match.next) + line + eol + text.slice(match.next) : text + eol + line,
       line: lineNo,
@@ -112,8 +109,7 @@ export function readEntry(rel: string, text: string, heading: string): PromoteSo
   };
 }
 
-// No length cap, unlike slugify: a slug here is an anchor in promoted_from, and truncation
-// would let two long headings in one log collide.
+// No length cap, unlike slugify: a slug here is an anchor in promoted_from, and truncation would let two long headings in one log collide.
 export function entrySlug(heading: string): string {
   return heading
     .toLowerCase()
