@@ -22,6 +22,8 @@ export type ProposalInput = {
   related?: string[];
   supersedes?: string[];
   source_refs?: string[];
+  // `<org>/<repo>:<path>`, plus `#<entry-slug>` for a decision-log entry. Set by ltm promote (#14).
+  promoted_from?: string;
   // Written verbatim after the closing fence. Omitted means the type's template.
   body?: string;
 };
@@ -109,6 +111,7 @@ function buildRecord(input: ProposalInput, config: BankConfig, today: string): {
   const id = newId(takenIds(config));
   const data: Record<string, unknown> = { schema: 1, id, memory_type: input.type, title: input.title, status: "proposed", date: today };
   if (input.summary !== undefined) data.summary = input.summary;
+  if (input.promoted_from !== undefined) data.promoted_from = input.promoted_from;
   for (const key of LIST_FIELDS) {
     const v = input[key];
     if (v && v.length > 0) data[key] = v;

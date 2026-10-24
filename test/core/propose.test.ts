@@ -150,6 +150,15 @@ describe("proposeRecord", () => {
     });
   }, GIT_TEST_TIMEOUT);
 
+  test("promoted_from reaches the Proposal's frontmatter", async () => {
+    await withGitBank(async ({ clone }) => {
+      const from = "acme/order-service:_working-memory/decisionLog.md#cap-retries-at-three-per-request";
+      const r = await propose(clone, fakeAdapter(), { ...INPUT, promoted_from: from }, true);
+      if ("refusal" in r || !r.dryRun) throw new Error("expected a dry run");
+      expect(parse(splitFrontmatter(r.text)!.frontmatterLines.join("\n")).promoted_from).toBe(from);
+    });
+  }, GIT_TEST_TIMEOUT);
+
   test("a dry run returns a valid Record and touches no repo", async () => {
     await withGitBank(async ({ bare, clone }) => {
       const forge = fakeAdapter();
