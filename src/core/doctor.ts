@@ -107,7 +107,7 @@ function dateField(r: ParsedRecord, key: string): string | null {
 
 const absent = (v: unknown): boolean => v === undefined || v === null;
 
-// Missing and null read as []; anything but a string or a list of strings reads as null (malformed).
+// null marks a malformed field so callers skip the Record; validate reports the malformation.
 function stringListField(r: ParsedRecord, key: string): string[] | null {
   const v = r.frontmatter[key];
   if (absent(v)) return [];
@@ -188,7 +188,8 @@ function longChain(ctx: DoctorContext): DoctorFinding[] {
   }
   const out: DoctorFinding[] = [];
   for (const head of olderOf.keys()) {
-    // A cycle has no head, so it's never walked or reported; validate's Supersession checks own it.
+    // A closed cycle has no newest Record, so it's never walked or reported. `ltm supersede` refuses to
+    // create one, but nothing reports a hand-written one. A chain that runs into a cycle still has a head.
     if (isOld.has(head)) continue;
     const seen = new Set<ParsedRecord>([head]);
     const stack = [head];
@@ -199,7 +200,7 @@ function longChain(ctx: DoctorContext): DoctorFinding[] {
         stack.push(o);
       }
     }
-    // Counts Records, not links, per the issue: A -> B -> C is 3.
+    // Counts Records, not links (per docs/doctor.md): A -> B -> C is 3.
     if (seen.size <= t) continue;
     const rest = [...seen].filter((r) => r !== head).map((r) => r.path);
     out.push(finding(head.path, "long-chain", `Supersession chain holds ${seen.size} Records (threshold ${t})`, rest));
@@ -251,7 +252,6 @@ function brokenRelated(ctx: DoctorContext): DoctorFinding[] {
 function supersessionNoSharedFacet(ctx: DoctorContext): DoctorFinding[] {
   const out: DoctorFinding[] = [];
   for (const e of ctx.edges) {
-    // Missing, null, and [] all read as an empty list.
     const a = stringListField(e.old, "applies_to");
     const b = stringListField(e.new, "applies_to");
     if (a === null || b === null) continue;

@@ -1,8 +1,8 @@
 # ltm doctor
 
-`ltm doctor` reads every Record in a Bank and reports the ones that look stale, unlinked, or due for review. It only reports. It never edits a Record, and it exits `0` whenever the checks ran, findings or not. It exits `1` when you run it outside a Bank or when the `doctor` block in `memory-bank.yaml` is invalid.
+`ltm doctor` reads every Record in a Bank and reports the ones that look stale, unlinked, or due for review. It only reports. It never edits a Record, and it exits `0` whenever the checks ran, findings or not. It exits `1` when you run it outside a Bank, when the `doctor` block in `memory-bank.yaml` is invalid, or when `LTM_TODAY` isn't a valid date.
 
-Each finding prints as `<file>: <check>: <message>`, sorted by file and then by check. `ltm doctor --json` prints the same findings as an array of objects with the keys `file`, `check`, `message`, and `related_files`.
+Each finding prints as `<file>: <check>: <message>`, sorted by file and then by check, in the order the sections below appear. `ltm doctor --json` prints the same findings as an array of objects with the keys `file`, `check`, `message`, and `related_files`.
 
 Retired Records (`status` of `superseded`, `deprecated`, or `rejected`) are skipped by `stale-confirmed`, `review-due`, and `orphan`. A malformed field is `ltm validate`'s to report, so a check that needs it skips that Record without a finding.
 
@@ -50,7 +50,7 @@ Every report line below came from `ltm doctor` run with `LTM_TODAY=2026-10-09` o
 
 **Fields:** `supersedes` and `superseded_by`, read from every Record, including retired ones. Either side of a link counts.
 
-**Threshold:** `doctor.max_chain_length`, default 3. The count is Records, not links, so A superseded by B superseded by C is 3. The check fires when a chain holds more Records than the threshold, and it reports once, on the newest Record. A cycle has no newest Record and is never reported here.
+**Threshold:** `doctor.max_chain_length`, default 3. The count is Records, not links, so A superseded by B superseded by C is 3. The check fires when a chain holds more Records than the threshold, and it reports once, on the newest Record. A chain with no newest Record, which is a closed cycle, isn't reported here. A chain that runs into a cycle still is.
 
 **Report line:** `_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md: long-chain: Supersession chain holds 4 Records (threshold 3)` (scratch edit: two more retired Records added, each superseded by the one before it, behind `mysql-for-new-services-mB3tR9wZe1.md`). The finding's `related_files` lists the older Records.
 
@@ -72,7 +72,7 @@ Every report line below came from `ltm doctor` run with `LTM_TODAY=2026-10-09` o
 
 ## broken-related
 
-**Fields:** `related`, on every Record, retired ones included. An entry's id is the text after its last `::`, or the whole entry when it has no `::`. An id resolves only when exactly one Record holds it.
+**Fields:** `related`, on every Record, retired ones included. An entry's id is the text after its last `::`, or the whole entry when it has no `::`. An id resolves when at least one Record holds it, so a duplicated id doesn't fire.
 
 **Threshold:** None.
 
