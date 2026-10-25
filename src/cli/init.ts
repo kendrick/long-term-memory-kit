@@ -44,7 +44,7 @@ const OTHER_PRETTIER = [
 // Prettier reads these two before .prettierrc.json, but only when they carry a `prettier` key.
 const KEYED_PRETTIER = [
   { file: "package.json", parse: (t: string): unknown => JSON.parse(t) },
-  { file: "package.yaml", parse: (t: string): unknown => parseYaml(t) },
+  { file: "package.yaml", parse: (t: string): unknown => parseYaml(t, { logLevel: "error" }) },
 ];
 
 function hasPrettierKey(dir: string, file: string, parse: (t: string) => unknown): boolean {

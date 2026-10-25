@@ -118,7 +118,7 @@ function nonCanonicalNumber(doc: Document, yaml: string): Refusal | null {
 }
 
 function parseFrontmatter(yaml: string): { data: Record<string, unknown> } | Refusal {
-  const doc = parseDocument(yaml);
+  const doc = parseDocument(yaml, { logLevel: "error" });
   if (doc.errors.length > 0) {
     return { reason: `invalid YAML: ${firstLine(doc.errors[0]!.message)}` };
   }

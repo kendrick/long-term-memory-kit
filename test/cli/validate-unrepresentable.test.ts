@@ -22,3 +22,18 @@ test("an unsafe integer makes ltm validate exit 1 and name the path, line, schem
     expect(hit).toHaveLength(1);
   });
 });
+
+// #74: a map key past 2^53 gets rounded by JSON, so validate names it.
+test("an unsafe integer map key makes ltm validate exit 1 with one schema error naming it", async () => {
+  await withScratch(demo, async (dir) => {
+    const file = join(dir, PG);
+    const ls = readFileSync(file, "utf8").split("\n");
+    ls.splice(ls.indexOf("---", 1), 0, "9007199254740993: y");
+    writeFileSync(file, ls.join("\n"));
+
+    const r = await run({ argv: ["validate"], cwd: dir, env: {} });
+    expect(r.exitCode).toBe(1);
+    const hit = r.stdout.split("\n").filter((l) => l.includes("error schema") && l.includes("9007199254740993"));
+    expect(hit).toHaveLength(1);
+  });
+});

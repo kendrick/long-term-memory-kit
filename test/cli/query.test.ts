@@ -681,3 +681,44 @@ describe("ltm query from a symlinked _memory (#45)", () => {
     });
   });
 });
+
+// #74: the rule from #44 covers map keys too.
+describe("ltm query, frontmatter map keys JSON can't carry", () => {
+  const ADOPT = "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md";
+  const withLines = async (lines: string[], fn: (dir: string) => Promise<void>) =>
+    withScratch(demo, async (dir) => {
+      const file = join(dir, ADOPT);
+      const ls = readFileSync(file, "utf8").split("\n");
+      ls.splice(ls.indexOf("---", 1), 0, ...lines);
+      writeFileSync(file, ls.join("\n"));
+      await fn(dir);
+    });
+  const ids = (stdout: string) => (JSON.parse(stdout) as { id: string }[]).map((r) => r.id);
+
+  test("a colliding, rounded, and collection key skips the Record with a skipped line", async () => {
+    await withLines(["1: a", '"1": b', "9007199254740993: y", "? [a]", ": x"], async (dir) => {
+      const r = await ltm(dir, "query", "--json", "id=hT5cY8dUa6");
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toContain(`ltm query: skipped ${ADOPT}: frontmatter value`);
+      expect(r.stderr).not.toMatch(/^Warning:/m);
+      expect(ids(r.stdout)).not.toContain("hT5cY8dUa6");
+    });
+  });
+
+  test("1.0: x still prints, under the JSON name 1", async () => {
+    await withLines(["1.0: x"], async (dir) => {
+      const r = await ltm(dir, "query", "--json", "id=hT5cY8dUa6");
+      expect(r.exitCode).toBe(0);
+      const rec = (JSON.parse(r.stdout) as { id: string; frontmatter: Record<string, unknown> }[])[0]!;
+      expect(rec.frontmatter["1"]).toBe("x");
+    });
+  });
+
+  test("1: a alone still prints", async () => {
+    await withLines(["1: a"], async (dir) => {
+      const r = await ltm(dir, "query", "--json", "id=hT5cY8dUa6");
+      expect(r.exitCode).toBe(0);
+      expect(ids(r.stdout)).toContain("hT5cY8dUa6");
+    });
+  });
+});

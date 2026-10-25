@@ -143,7 +143,7 @@ type ParsedYaml = { data: unknown; doc: Document; lc: LineCounter };
 
 function parseYamlFile(path: string, text: string): ParsedYaml {
   const lc = new LineCounter();
-  const doc = parseDocument(text, { lineCounter: lc });
+  const doc = parseDocument(text, { lineCounter: lc, logLevel: "error" });
   const err = doc.errors[0];
   if (err) throw new ConfigError(path, err.linePos?.[0]?.line ?? null, firstLine(err.message));
   let data: unknown;

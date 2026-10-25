@@ -17,7 +17,7 @@ function existingId(text: string): string | null {
   const split = splitFrontmatter(text);
   if (!split) return null;
   try {
-    const data: unknown = parse(split.frontmatterLines.join("\n"));
+    const data: unknown = parse(split.frontmatterLines.join("\n"), { logLevel: "error" });
     return isMapping(data) && typeof data.id === "string" ? data.id : null;
   } catch {
     return null;

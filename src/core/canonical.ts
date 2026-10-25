@@ -17,7 +17,7 @@ export const SCHEMA_KEY_ORDER: readonly string[] = Object.freeze(
 function parsesBackAs(yaml: string, key: string, expected: (v: unknown) => boolean): boolean {
   let doc: unknown;
   try {
-    doc = parse(yaml);
+    doc = parse(yaml, { logLevel: "error" });
   } catch {
     return false;
   }

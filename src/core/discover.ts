@@ -108,7 +108,7 @@ export function titleOf(relPath: string, kind: Kind, text: string): string {
   const split = splitFrontmatter(text);
   if (split) {
     try {
-      const fm: unknown = parse(split.frontmatterLines.join("\n"));
+      const fm: unknown = parse(split.frontmatterLines.join("\n"), { logLevel: "error" });
       if (isMapping(fm) && typeof fm.title === "string") return fm.title;
     } catch {
       // Bad YAML in a source must not hide the file; the H1 or basename still names it.

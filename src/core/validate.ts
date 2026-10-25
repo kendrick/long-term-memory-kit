@@ -112,7 +112,7 @@ function checkFrontmatter(rel: string, text: string): { findings: Finding[]; fm:
   const split = splitFrontmatter(text);
   if (!split) return fail(1, "no frontmatter block (expected --- on line 1 and a closing ---)");
   const src = split.frontmatterLines.join("\n");
-  const doc = parseDocument(src);
+  const doc = parseDocument(src, { logLevel: "error" });
   const err = doc.errors[0];
   if (err) return fail(1 + (err.linePos?.[0]?.line ?? 0), firstLine(err.message));
   if (!isMap(doc.contents)) return fail(1, "frontmatter is not a YAML mapping");

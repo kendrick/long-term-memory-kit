@@ -98,7 +98,7 @@ export function loadConfig(root: string): BankConfig {
   }
   let raw: unknown;
   try {
-    raw = parse(text);
+    raw = parse(text, { logLevel: "error" });
   } catch (e) {
     if (e instanceof YAMLParseError) {
       throw new ConfigError(path, e.linePos?.[0]?.line ?? null, e.message);

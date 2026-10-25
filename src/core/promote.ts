@@ -67,7 +67,7 @@ export function readAdr(rel: string, text: string): PromoteSource | { refusal: s
   }
   let frontmatter: unknown;
   try {
-    frontmatter = parse(split.frontmatterLines.join("\n"));
+    frontmatter = parse(split.frontmatterLines.join("\n"), { logLevel: "error" });
   } catch (e) {
     return { refusal: `${rel}: frontmatter isn't valid YAML: ${firstLine((e as Error).message)}` };
   }
@@ -93,7 +93,7 @@ function stampsCleanly(original: Record<string, unknown>, frontmatterLines: stri
   const marker = "x:placeholder";
   let trial: unknown;
   try {
-    trial = parse([...frontmatterLines, `promoted_to: ${marker}`].join("\n"));
+    trial = parse([...frontmatterLines, `promoted_to: ${marker}`].join("\n"), { logLevel: "error" });
   } catch {
     return false;
   }
@@ -166,7 +166,7 @@ const consumersOf = (raw: Record<string, unknown>, repo: string): string[] | und
 // A name with ': ', ' #' or a leading indicator would corrupt the Consumer's frontmatter, and the stamp is written after the push.
 function stampsAsPlainScalar(bank: string): boolean {
   try {
-    const parsed: unknown = parse(`promoted_to: ${bank}:x`);
+    const parsed: unknown = parse(`promoted_to: ${bank}:x`, { logLevel: "error" });
     return isMapping(parsed) && Object.keys(parsed).length === 1 && parsed.promoted_to === `${bank}:x`;
   } catch {
     return false;
