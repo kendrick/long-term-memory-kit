@@ -1,0 +1,57 @@
+name: Propose a memory Record
+description: Propose a Decision, PolicyRule, Exception, or Context for the Bank.
+labels: [ltm-proposal]
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Memory type
+      options:
+        - Decision
+        - PolicyRule
+        - Exception
+        - Context
+    validations:
+      required: true
+  - type: input
+    id: title
+    attributes:
+      label: Title
+    validations:
+      required: true
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence.
+    validations:
+      required: true
+  - type: textarea
+    id: facets
+    attributes:
+      label: Facets
+      description: Where this applies, one per line.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+    validations:
+      required: true
+  - type: textarea
+    id: main
+    attributes:
+      label: Decision, rule, or exception
+      description: For a Context Record, this is appended under Context.
+    validations:
+      required: true
+  - type: textarea
+    id: consequences
+    attributes:
+      label: Consequences
+  - type: textarea
+    id: sources
+    attributes:
+      label: Source links
+      description: One per line.

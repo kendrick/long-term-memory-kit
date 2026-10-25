@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { MEMORY_TYPES, type MemoryType } from "../core/bank.ts";
 import { today } from "../core/clock.ts";
+import { parseIssueForm } from "../core/issue-form.ts";
 import { proposeRecord, redactRemote, type ListField, type ProposalInput } from "../core/propose.ts";
 import { firstLine } from "../core/text.ts";
 import { openBank } from "./bank.ts";
@@ -32,11 +33,18 @@ export const propose: Command = {
     "source-ref": { type: "string", multiple: true },
     "body-file": { type: "string" },
     "body-stdin": { type: "boolean" },
+    "from-issue-form": { type: "string" },
     "dry-run": { type: "boolean" },
     json: { type: "boolean" },
   },
   // Exit 2 has to come before run() so a bad flag never reads the Bank or touches git.
   checkArgs(_positionals, values) {
+    if (typeof values["from-issue-form"] === "string") {
+      const clash = ["type", "title", "summary", "applies-to", "body-file", "body-stdin"].find((f) => values[f] !== undefined);
+      if (clash) return `--from-issue-form and --${clash} can't be used together`;
+      if (values["dry-run"] === true && values.json === true) return "--dry-run and --json can't be used together";
+      return undefined;
+    }
     const type = values.type;
     if (typeof type !== "string") return "missing required option --type";
     if (typeof values.title !== "string") return "missing required option --title";
@@ -53,7 +61,24 @@ export const propose: Command = {
     const config = openBank(ctx, "propose");
     if (config === 1) return 1;
 
+    let input: ProposalInput;
     let body: string | undefined;
+    const formFile = ctx.values["from-issue-form"];
+    if (typeof formFile === "string") {
+      let parsed: ReturnType<typeof parseIssueForm>;
+      try {
+        parsed = parseIssueForm(readFileSync(formFile, "utf8"));
+      } catch (e) {
+        parsed = { error: `can't read the file: ${firstLine(e instanceof Error ? e.message : String(e))}` };
+      }
+      if ("error" in parsed) {
+        ctx.err(`ltm propose: ${formFile}: ${parsed.error}\n`);
+        return 1;
+      }
+      input = { ...parsed.input, source_refs: [...parsed.input.source_refs, ...many(ctx.values["source-ref"])] };
+    } else {
+      input = { type: ctx.values.type as MemoryType, title: ctx.values.title as string };
+    }
     try {
       const file = ctx.values["body-file"];
       if (typeof file === "string") body = readFileSync(file, "utf8");
@@ -64,9 +89,9 @@ export const propose: Command = {
       return 1;
     }
 
-    const input: ProposalInput = { type: ctx.values.type as MemoryType, title: ctx.values.title as string };
-    if (typeof ctx.values.summary === "string") input.summary = ctx.values.summary;
+    if (typeof formFile !== "string" && typeof ctx.values.summary === "string") input.summary = ctx.values.summary;
     for (const [flag, key] of Object.entries(LIST_FLAGS)) {
+      if (typeof formFile === "string" && (flag === "applies-to" || flag === "source-ref")) continue;
       const v = many(ctx.values[flag]);
       if (v.length > 0) input[key] = v;
     }
