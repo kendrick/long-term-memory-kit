@@ -2,7 +2,7 @@
 
 An agent that needs a Bank's Records should read as little as it can and still be right. The retrieval model is a four-stage funnel that narrows the Bank to the few files worth reading. Each stage costs more per file than the one before, so each one runs on fewer files.
 
-You can walk the funnel with plain shell tools. `ltm query` and the MCP `query` tool do stages 1 and 2 for you and give the same answer. Neither is required.
+You can walk the funnel with plain shell tools. `ltm query` and the MCP `query` tool both run `selectRecords` to do stages 1 and 2 for you. Neither is required.
 
 ## The Four Stages
 
@@ -59,17 +59,23 @@ The one-line `summary` of each Context Record, which is often enough to skip the
 grep -rh '^summary:' _memory/context
 ```
 
-A plain grep doesn't know that a retired Record is out of date, that a Proposal is only a suggestion, or which Facets your repo belongs to. Those rules live in `ltm query`.
+A plain grep doesn't know that a retired Record is out of date, that a Proposal is only a suggestion, or which Facets your repo belongs to. Those rules live in `selectRecords` and `ltm query`.
 
 ## What `ltm query` Adds
 
-`ltm query` and the MCP `query` tool both call `selectRecords` in `src/core/query.ts`, so the two can't drift apart. It applies these rules.
+That code sits in two layers.
 
-- Retired Records are left out. Name a retired status with `--status`, or pass `--all`, to see them. `--status accepted` never lets a retired Record through.
-- Proposals are labeled. The text output marks them `(proposal)`, and the JSON output sets `is_proposal`. A reader can show one as context without presenting it as a rule.
-- Facets filter by overlap. A Record matches `--facet service:order-service` when its `applies_to` holds that Facet. An org-wide Record matches every Facet, because it applies everywhere. A Record with no `applies_to` is org-wide.
-- Facets can come from the Bank. Outside a Bank, or with `--bank`, `ltm query` looks up the current repo's origin in the Bank's `consumers` map in `memory-bank.yaml` and uses the Facets listed there. A repo the map doesn't list sees org-wide Records only, and `ltm query` says so on stderr. An explicit `--facet` overrides the map.
-- `--text` ranks on the header. It searches `title` and `summary`, not the body. A passing mention in a body shouldn't outrank a Record about the topic.
+`selectRecords` in `src/core/query.ts` holds the selection rules. `ltm query` and the MCP `query` tool both run it, so the two can't drift apart. It does this:
+
+- It leaves retired Records out. Name a retired status with `--status`, or pass `--all`, to see them. `--status accepted` never lets a retired Record through.
+- It filters Facets by overlap. A Record matches `--facet service:order-service` when its `applies_to` holds that Facet. An org-wide Record matches every Facet, because it applies everywhere. A Record with no `applies_to` is org-wide.
+- It ranks `--text` on the header. It searches `title` and `summary`, not the body, so a passing mention in a body doesn't outrank a Record about the topic.
+
+`ltm query` adds three behaviors of its own around `selectRecords`.
+
+- It labels Proposals. The text output marks them `(proposal)`, and the JSON output sets `is_proposal`. A reader can show one as context without presenting it as a rule.
+- It reads Facets from the Bank. Outside a Bank, or with `--bank`, `ltm query` looks up the current repo's origin in the Bank's `consumers` map in `memory-bank.yaml` and uses the Facets listed there. An explicit `--facet` overrides the map.
+- It narrows an unmapped repo to org-wide Records. When the map doesn't list the repo, or the repo has no git origin, `ltm query` shows org-wide Records only and adds a note. The text output prints the note on stderr. Under `--json` the note goes into the `notes` array.
 
 ## More Than One Bank
 
@@ -77,7 +83,7 @@ A repo can read from several Banks. `ltm query` resolves them, queries each on i
 
 ## Stage 0 Is Reserved
 
-Semantic recall would run before stage 1, as a ranked search over meaning. It is reserved for v1.1. The seam is the `RecallBackend` interface in `src/core/recall.ts`, which a ranked backend can fill later. Today only a plain lexical match is wired in, and the `recall:` key in `memory-bank.yaml` changes nothing. Precise questions don't need it, because the funnel is exact when the headers are canonical.
+Semantic recall would run before stage 1, as a ranked search over meaning. It's planned for v1.1. A ranked backend can plug in through the `RecallBackend` interface in `src/core/recall.ts`. Today only a plain lexical match is wired in, and the `recall:` key in `memory-bank.yaml` changes nothing. Precise questions don't need it, because the funnel is exact when the headers are canonical.
 
 ## Related Pages
 

@@ -56,7 +56,8 @@ beforeAll(() => {
 });
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
-// A doc grep passes exactly when it matches something in the fixture.
+// Empty stdout fails even on exit 0: an example that prints nothing teaches nothing, and
+// usually means a fixture id or path went stale.
 function failure(g: Grep): string | null {
   const r = spawnSync("sh", ["-c", g.command], { cwd: scratch, encoding: "utf8" });
   if (r.status === 0 && r.stdout.trim() !== "") return null;

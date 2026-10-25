@@ -17,7 +17,7 @@ const pages = [...pagePaths("docs"), ...pagePaths("docs/types")];
 const typePages = pagePaths("docs/types");
 const rel = (p: string) => relative(repo, p);
 
-const NEW_PAGES = [
+const PAGES_WITH_LINK_RULES = [
   "docs/retrieval-model.md",
   "docs/design-forces.md",
   "docs/supersession.md",
@@ -26,10 +26,10 @@ const NEW_PAGES = [
   "docs/types/exception.md",
   "docs/types/context.md",
 ];
-const newPages = pages.filter((p) => NEW_PAGES.includes(rel(p)));
+const linkRulePages = pages.filter((p) => PAGES_WITH_LINK_RULES.includes(rel(p)));
 
-test("all seven new pages exist", () => {
-  for (const p of NEW_PAGES) expect(existsSync(join(repo, p)), `${p} is missing`).toBe(true);
+test("every page with link rules exists", () => {
+  for (const p of PAGES_WITH_LINK_RULES) expect(existsSync(join(repo, p)), `${p} is missing`).toBe(true);
 });
 
 const linkTargets = (text: string): string[] =>
@@ -38,7 +38,7 @@ const linkTargets = (text: string): string[] =>
     .filter((t) => t !== "" && !/^[a-z]+:/i.test(t));
 
 describe("links", () => {
-  for (const page of newPages) {
+  for (const page of linkRulePages) {
     test(`${rel(page)} links to a docs page and to a schema or ADR`, () => {
       const targets = linkTargets(readFileSync(page, "utf8")).map((t) => resolve(dirname(page), t));
       for (const t of targets) expect(existsSync(t), `${rel(page)} links to missing ${rel(t)}`).toBe(true);
@@ -121,8 +121,11 @@ describe("glossary avoid-terms", () => {
       .split("\n")
       .reduce<{ out: string[]; fenced: boolean }>(
         (acc, line) => {
-          if (line.startsWith("```")) acc.fenced = !acc.fenced;
-          else acc.out.push(acc.fenced ? "" : line);
+          // Delimiters keep a blank slot so a hit's index stays its real line number.
+          if (line.startsWith("```")) {
+            acc.fenced = !acc.fenced;
+            acc.out.push("");
+          } else acc.out.push(acc.fenced ? "" : line);
           return acc;
         },
         { out: [], fenced: false },
@@ -133,6 +136,11 @@ describe("glossary avoid-terms", () => {
           .replace(/\]\([^)]*\)/g, "]")
           .replace(/"[^"]*"|“[^”]*”/g, ""),
       );
+
+  test("prose keeps one slot per source line, fence delimiters included", () => {
+    const lines = prose("a\n```sh\ngrep x\n```\nlast");
+    expect(lines).toEqual(["a", "", "", "", "last"]);
+  });
 
   test("the glossary yields avoid-terms", () => {
     expect(terms.length).toBeGreaterThan(10);

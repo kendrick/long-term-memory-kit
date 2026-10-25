@@ -1,6 +1,6 @@
 # Decision
 
-A Decision records a choice and the reasoning behind it. It answers "why do we do it this way?" for the engineer who shows up after the people who chose have moved on. A Nygard-style ADR with frontmatter is already a Decision, and a MADR file works the same way.
+A Decision records a choice and the reasoning behind it. It answers "why do we do it this way?" for the engineer who shows up after the people who chose have moved on. A Nygard-style ADR with frontmatter is already a Decision, and so is a MADR file.
 
 ## When to Pick a Decision
 

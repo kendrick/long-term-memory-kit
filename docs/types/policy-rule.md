@@ -1,6 +1,6 @@
 # PolicyRule
 
-A PolicyRule states a standard that applies across its Facets. It tells an agent what to do or avoid, in a form short enough to read at the header stage of the [Retrieval Model](../retrieval-model.md). It carries the instruction, not the argument.
+A PolicyRule states a standard that applies across its Facets. It tells an agent what to do or avoid, in a form short enough to read at the header stage of the [Retrieval Model](../retrieval-model.md). It holds the instruction. The reasoning goes in a Decision.
 
 ## When to Pick a PolicyRule
 
@@ -26,6 +26,6 @@ grep -rl '^status: accepted$' _memory/policy-rules
 
 - Writing the rationale into the body. A long body pushes the instruction out of the first read. Put the reasoning in a Decision and link it with `related`.
 - Making the `applies_to` list wider than the standard. A PolicyRule about commerce services that lists no Facets reaches every repo in the org. Leave `applies_to` empty only when the standard really is org-wide.
-- Editing a PolicyRule to fit one team. A one-service departure is an Exception, which expires and shows up in `ltm doctor` when it lapses.
+- Editing a PolicyRule to fit one team. A one-service departure is an Exception, which names its own end date and review date.
 - Never confirming it. A PolicyRule nobody has reviewed for a year looks as current as one reviewed last week. Update `last_confirmed` when you check it.
 - Phrasing it as a preference. "Prefer Postgres" gives an agent nothing to check. State what to do and where it applies.

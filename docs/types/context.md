@@ -4,7 +4,7 @@ A Context records what an agent needs to know to reason correctly when nothing w
 
 ## When to Pick a Context
 
-Pick a Context for orientation: what a service owns, what a domain's terms mean, what the platform looks like. If a person chose between options, write a [Decision](decision.md). If the Record should tell an agent what to do, write a [PolicyRule](policy-rule.md). A Context has no instruction in it, so an agent can read one and still be unsure what to do. That is expected.
+Pick a Context for orientation: what a service owns, what a domain's terms mean, what the platform looks like. If a person chose between options, write a [Decision](decision.md). If the Record should tell an agent what to do, write a [PolicyRule](policy-rule.md). A Context has no instruction in it, so an agent that reads one still has to decide what to do.
 
 ## Worked Example
 

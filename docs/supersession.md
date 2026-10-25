@@ -48,7 +48,7 @@ Both checks only report. [ltm doctor](doctor.md) lists every check, with thresho
 
 ## The Reserved `subject` Key
 
-The schema accepts a `subject` field, and v1 ignores it. It is held back for a later option, where a Bank turns on an explicit subject slug so that Records about the same thing can be found without relying on a person's memory. Doctor's `supersession-no-shared-facet` findings are how that need would show up in real data. Until then, don't write a `subject` and don't expect it to do anything.
+The schema accepts a `subject` field, and v1 ignores it. A later option may let a Bank turn on an explicit subject slug so that Records about the same thing can be found without relying on a person's memory. Doctor's `supersession-no-shared-facet` findings are how that need would show up in real data. Until then, don't write a `subject` and don't expect it to do anything.
 
 ## Related Pages
 

@@ -6,7 +6,7 @@ Seven principles shaped the Long-Term Memory Kit. Each one ruled something out. 
 
 A Bank is plain markdown. An agent in any language, on any platform, can read it with the shell tools it already has. That forced canonical form: flat values, one-line lists, and a header that closes early, so plain grep stays accurate. A layout that needed a parser would have made the CLI mandatory. See [Retrieval Model](retrieval-model.md) for what grep can then do.
 
-## Tooling Accelerates and Is Never the Entry Fee
+## Tooling Speeds Things Up and Is Never Required
 
 Every rung above plain files is optional: JSON Schema, then the `ltm` CLI, then the MCP server, then the plugin. The decision it forced is that each `ltm` operation has a manual equivalent that a person can do with an editor. The same goes for [Supersession](supersession.md), which is two hand edits that `ltm supersede` makes safe.
 
@@ -24,7 +24,7 @@ Judgment comes from the agent that is already running, and `ltm` does every mech
 
 ## The Bright Line
 
-A Record belongs in a Bank when it applies to more than one repo, or when someone outside a repo's team governs it. An Exception to a Bank PolicyRule for one service qualifies, because the PolicyRule's owners grant it. Everything else is working memory and stays in its repo. Promotion is the bridge for a Decision that turns out to matter beyond its first repo. The line keeps a Bank small enough that its Records stay true.
+A Record belongs in a Bank when it applies to more than one repo, or when someone outside a repo's team governs it. An Exception to a Bank PolicyRule for one service qualifies, because the PolicyRule's owners grant it. Everything else is working memory and stays in its repo. `ltm promote` moves a Decision that turns out to matter beyond its first repo into a Bank as a Proposal. The line keeps a Bank small enough that its Records stay true.
 
 ## Lean Over Comprehensive
 

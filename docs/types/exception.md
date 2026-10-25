@@ -26,11 +26,11 @@ To see when each one ends:
 grep -rh '^effective_to:' _memory/exceptions
 ```
 
-[ltm doctor](../doctor.md) reports Exceptions that are past their dates.
+`effective_to` records the intended end for readers and agents, and nothing enforces it: no query drops an Exception after that date, and [ltm doctor](../doctor.md) never reads the field. The doctor's `review-due` check reads `review_by` on every live Record, Exceptions included, and reports each one whose date has passed.
 
 ## Common Mistakes
 
-- Leaving out `effective_to`. Without an end date the Exception never lapses, and nothing prompts anyone to check whether the departure is still needed.
+- Leaving out `effective_to` and `review_by`. Without an end date, readers and agents can't tell when the departure should stop. Without a review date, `ltm doctor` has nothing to report when someone should recheck it.
 - Leaving out the `related` link to its PolicyRule. The Exception then reads as a free-standing note. A query for the PolicyRule can't find it, and an agent could follow the PolicyRule and miss the pass.
 - Linking the wrong PolicyRule. Check that the id in `constrained_by::` is the PolicyRule the Exception departs from. A mistyped id passes a glance and fails a lookup.
 - Writing one Exception for several services. Each Exception applies to its own `applies_to` Facets, so give each service its own end date and review date.
