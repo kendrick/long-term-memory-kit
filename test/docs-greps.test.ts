@@ -44,7 +44,7 @@ function collect(path: string, text: string): Grep[] {
 }
 
 const collectAll = (): Grep[] =>
-  [...markdownUnder(join(repo, "docs")), ...markdownUnder(join(repo, "guide"))].flatMap((f) =>
+  ["docs", "guide", "skills"].flatMap((d) => markdownUnder(join(repo, d))).flatMap((f) =>
     collect(f, readFileSync(f, "utf8")),
   );
 
