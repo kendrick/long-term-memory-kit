@@ -311,3 +311,24 @@ describe("ltm mcp under LTM_BANK_URL", () => {
     MCP_TEST_TIMEOUT,
   );
 });
+
+describe("ltm mcp, an env-selected path that is not a Bank root", () => {
+  test(
+    "facets, validate and query refuse it instead of resolving the parent Bank, and the server keeps answering",
+    () =>
+      withDemoGitBank((bank) =>
+        withConsumerRepo((consumer) =>
+          withMcp({ ...process.env, LTM_BANK_PATH: join(bank, "_memory") }, consumer, async (client) => {
+            for (const name of ["facets", "validate", "query"]) {
+              const r = await client.callTool({ name, arguments: {} });
+              expect(r.isError).toBe(true);
+              expect(textOf(r)).toContain(`LTM_BANK_PATH '${join(bank, "_memory")}' has no memory-bank.yaml`);
+            }
+            const { tools } = await client.listTools();
+            expect(tools.map((t) => t.name)).toContain("query");
+          }),
+        ),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+});

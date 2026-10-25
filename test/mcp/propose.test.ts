@@ -132,4 +132,20 @@ describe("ltm mcp, propose", () => {
       ),
     MCP_TEST_TIMEOUT,
   );
+
+  test(
+    "LTM_BANK_PATH at a subdirectory of a Bank is an error and pushes nothing to the parent's origin",
+    () =>
+      withGitBank(({ bare, clone }) =>
+        withMcp({ ...process.env, ...BASE, LTM_BANK_PATH: join(clone, "_memory") }, tmpdir(), async (client) => {
+          const before = git(bare, "for-each-ref");
+          const r = await client.callTool({ name: "propose", arguments: { type: "Decision", title: TITLE } });
+          expect(r.isError).toBe(true);
+          expect(textOf(r)).toContain("has no memory-bank.yaml");
+          expect(git(bare, "for-each-ref")).toBe(before);
+          expect(git(clone, "status", "--porcelain")).toBe("");
+        }),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
 });

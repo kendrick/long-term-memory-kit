@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -55,11 +55,65 @@ function advance(bare: string): string {
 describe("pickBank", () => {
   test("LTM_BANK_PATH wins over LTM_BANK_URL and runs no git", async () => {
     await withRig({ LTM_BANK_PATH: "some/bank", LTM_BANK_URL: "/nonexistent/bank.git" }, async ({ env, gitCalls }) => {
-      const r = picked(await new BankLocator().pickBank({}, env, "/work"));
-      expect(r).toEqual({ root: resolve("/work", "some/bank"), notes: [] });
-      expect(gitCalls()).toBe(0);
+      const work = mkdtempSync(join(tmpdir(), "ltm-work-"));
+      try {
+        mkdirSync(join(work, "some/bank"), { recursive: true });
+        writeFileSync(join(work, "some/bank/memory-bank.yaml"), "name: x\n");
+        const r = picked(await new BankLocator().pickBank({}, env, work));
+        expect(r).toEqual({ root: resolve(work, "some/bank"), notes: [] });
+        expect(gitCalls()).toBe(0);
+      } finally {
+        rmSync(work, { recursive: true, force: true });
+      }
     });
   });
+
+  test("LTM_BANK_PATH at a directory with no memory-bank.yaml is an error naming the value as given", async () => {
+    const work = mkdtempSync(join(tmpdir(), "ltm-work-"));
+    try {
+      mkdirSync(join(work, "sub"));
+      expect(await new BankLocator().pickBank({}, { LTM_BANK_PATH: "sub" }, work)).toEqual({ error: "LTM_BANK_PATH 'sub' has no memory-bank.yaml" });
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  test("LTM_BANK_PATH at a directory holding a memory-bank.yaml directory is an error, not a walk up to a parent Bank", async () => {
+    const work = mkdtempSync(join(tmpdir(), "ltm-work-"));
+    try {
+      mkdirSync(join(work, "sub/memory-bank.yaml"), { recursive: true });
+      expect(await new BankLocator().pickBank({}, { LTM_BANK_PATH: "sub" }, work)).toEqual({ error: "LTM_BANK_PATH 'sub' has no memory-bank.yaml" });
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  test(
+    "an LTM_BANK_URL clone with no memory-bank.yaml at its root is an error naming the redacted remote",
+    async () => {
+      const seed = mkdtempSync(join(tmpdir(), "ltm-seed-"));
+      const bare = mkdtempSync(join(tmpdir(), "ltm-bare-"));
+      try {
+        mkdirSync(join(seed, "nested"));
+        writeFileSync(join(seed, "nested/memory-bank.yaml"), "name: x\n");
+        git(seed, "init", "--quiet", "--initial-branch=main");
+        git(seed, "add", "-A");
+        git(seed, ...IDENTITY, "commit", "--quiet", "-m", "seed");
+        git(bare, "init", "--quiet", "--bare", "--initial-branch=main");
+        git(seed, "push", "--quiet", bare, "main:refs/heads/main");
+        await withRig({ LTM_BANK_URL: bare }, async ({ env }) => {
+          const locator = new BankLocator();
+          const want = { error: `${bare} has no memory-bank.yaml at its root` };
+          expect(await locator.pickBank({}, env, "/work")).toEqual(want);
+          // Second call lands inside the TTL, where the clone already exists and no fetch runs.
+          expect(await locator.pickBank({}, env, "/work")).toEqual(want);
+        });
+      } finally {
+        for (const dir of [seed, bare]) rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    GIT_TEST_TIMEOUT,
+  );
 
   test("neither variable set leaves root null so the CLI resolves", async () => {
     expect(await new BankLocator().pickBank({ bank: "acme" }, {}, "/work")).toEqual({ root: null, notes: [] });

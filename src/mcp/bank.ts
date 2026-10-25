@@ -1,6 +1,6 @@
 import { execFile, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { loadConfig } from "../core/bank.ts";
@@ -12,6 +12,17 @@ export type Picked = { root: string | null; notes: string[] };
 
 const run = promisify(execFile);
 const DEFAULT_TTL = 300;
+const BANK_CONFIG = "memory-bank.yaml";
+
+// Mirrors findBank: a directory named memory-bank.yaml doesn't count, or locateBank() walks up to a parent Bank. A symlink does, so core refuses it with its own message.
+const hasBankConfig = (root: string): boolean => {
+  try {
+    const s = lstatSync(join(root, BANK_CONFIG));
+    return s.isFile() || s.isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
 
 export function parseTtl(v: string | undefined): number | { error: string } {
   if (v === undefined) return DEFAULT_TTL;
@@ -38,7 +49,12 @@ export class BankLocator {
     if (envPicks && input.bank !== undefined && input.bank !== "") {
       return { error: "bank can't be set while LTM_BANK_PATH or LTM_BANK_URL picks the Bank" };
     }
-    if (path !== undefined && path !== "") return { root: resolve(cwd, path), notes: [] };
+    if (path !== undefined && path !== "") {
+      const root = resolve(cwd, path);
+      // Without this, facets/validate/propose run the CLI with `root` as cwd and locateBank() walks up to a parent Bank.
+      if (!hasBankConfig(root)) return { error: `LTM_BANK_PATH '${path}' has no ${BANK_CONFIG}` };
+      return { root, notes: [] };
+    }
     if (url === undefined || url === "") return { root: null, notes: [] };
 
     const dataDir = env.LTM_DATA_DIR;
@@ -54,7 +70,7 @@ export class BankLocator {
       const last = this.lastFetch.get(url);
       // `>=` so TTL 0 refreshes even when two requests land in the same millisecond.
       const due = !existsSync(root) || last === undefined || Date.now() - last >= ttl * 1000;
-      if (!due) return { root, notes: this.notesFor(url) };
+      if (!due) return this.rooted(url, root);
       attempt = this.ensure(url, root, gitEnv).finally(() => this.inFlight.delete(url));
       this.inFlight.set(url, attempt);
     }
@@ -63,6 +79,11 @@ export class BankLocator {
     } catch (e) {
       return { error: (e as Error).message };
     }
+    return this.rooted(url, root);
+  }
+
+  private rooted(url: string, root: string): Picked | { error: string } {
+    if (!hasBankConfig(root)) return { error: `${redactRemote(url)} has no ${BANK_CONFIG} at its root` };
     return { root, notes: this.notesFor(url) };
   }
 
