@@ -3,12 +3,8 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Every publish step gates on `push`, so a dispatch is always a dry run.
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: Build and smoke everything, but publish nothing
-        type: boolean
-        default: true
   # workflow_dispatch only appears once this file is on the default branch, so PRs touching the release path get their dry run here. src/** is left out on purpose: five cross-builds per source PR cost more than they catch, and the tag run builds from source anyway.
   pull_request:
     paths:
@@ -66,10 +62,10 @@ jobs:
       - run: chmod +x dist/ltm-*
       - run: bash scripts/smoke-binary.sh dist/ltm-darwin-arm64
 
-  # Only tag pushes trigger `push`, so this gate means "real release". Gating on github.ref would let a dispatch run on a tag ref publish despite dry_run.
+  # Only tag pushes trigger `push`, so this gate means "real release". Gating on github.ref would let a dispatch run on a tag ref publish. `release` waits on `npm` so a failed publish can't leave a Release whose packages never reached the registry.
   release:
     if: github.event_name == 'push'
-    needs: [smoke-linux, smoke-macos]
+    needs: [smoke-linux, smoke-macos, npm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
