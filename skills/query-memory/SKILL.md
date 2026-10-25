@@ -32,7 +32,7 @@ cd <bank-root> && ltm head _memory/policy-rules/structured-json-logging-vD8mH3zQ
 
 To find the root, look up the Bank's name in the `banks` map of your `ltm` user config and take its `path`. The user config is the file `$LTM_CONFIG` names, or else `$XDG_CONFIG_HOME/ltm/config.yaml`, or else `~/.config/ltm/config.yaml`. On Windows it's `%APPDATA%\ltm\config.yaml`. If you gave `--bank` a directory, that directory is the root.
 
-The MCP `head` tool finds the Bank for you. Pass the Bank's name as `bank` and the path as `path`.
+The MCP `head` tool takes the path as `path`. When the plugin's `bank_path` or `bank_url` is set, the server already knows the Bank and refuses a `bank` argument, so leave `bank` out. Pass the Bank's name as `bank` only when neither setting is set and the server picks Banks through your `ltm` user config.
 
 When results come from more than one Bank, keep each path with its Bank's name and read its header from that Bank. Two Banks can hold Records at the same path.
 
