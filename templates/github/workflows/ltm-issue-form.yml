@@ -1,0 +1,65 @@
+name: ltm-issue-form
+env:
+  LTM_VERSION: "{{LTM_VERSION}}"
+
+on:
+  issues:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  propose:
+    if: contains(github.event.issue.labels.*.name, 'ltm-proposal')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    env:
+      # A PR opened with github.token starts no workflows, so without LTM_TOKEN the Proposal gets no ltm-validate run.
+      GH_TOKEN: ${{ secrets.LTM_TOKEN || github.token }}
+      HAS_LTM_TOKEN: ${{ secrets.LTM_TOKEN != '' }}
+      REPO: ${{ github.repository }}
+      ISSUE: ${{ github.event.issue.number }}
+      ISSUE_URL: ${{ github.event.issue.html_url }}
+      # Anyone can open an issue, so the body only ever reaches the shell as data.
+      ISSUE_BODY: ${{ github.event.issue.body }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.LTM_TOKEN || github.token }}
+
+      - name: Install ltm
+        run: |
+          base="https://github.com/kendrick/long-term-memory-kit/releases/download/v${LTM_VERSION}"
+          mkdir -p "$RUNNER_TEMP/ltm"
+          cd "$RUNNER_TEMP/ltm"
+          curl -fsSL --retry 3 -O "$base/ltm-linux-x64" -O "$base/SHA256SUMS"
+          sha256sum -c --ignore-missing SHA256SUMS
+          mv ltm-linux-x64 ltm
+          chmod +x ltm
+          echo "$RUNNER_TEMP/ltm" >> "$GITHUB_PATH"
+
+      - name: Propose and comment
+        run: |
+          printf '%s\n' "$ISSUE_BODY" > "$RUNNER_TEMP/issue-body.md"
+          # ltm propose commits the Record before pushing its branch.
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          out="$RUNNER_TEMP/propose.json"
+          err="$RUNNER_TEMP/propose.err"
+          if ! ltm propose --from-issue-form "$RUNNER_TEMP/issue-body.md" --source-ref "$ISSUE_URL" --json > "$out" 2> "$err"; then
+            cat "$err" >&2
+            { echo 'ltm propose failed, so no Proposal PR was opened:'; echo; echo '```'; cat "$err"; echo '```'; } > "$RUNNER_TEMP/comment.md"
+            gh issue comment "$ISSUE" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"
+            exit 1
+          fi
+          printf 'Opened %s as a Proposal.\n' "$(jq -r .url "$out")" > "$RUNNER_TEMP/comment.md"
+          if [ "$HAS_LTM_TOKEN" != true ]; then
+            {
+              echo
+              echo "This repo has no \`LTM_TOKEN\` secret, so the PR was opened with the workflow token and GitHub won't run ltm-validate on it. Push an empty commit to its branch to run validate, or add an \`LTM_TOKEN\` secret (a fine-grained PAT or App token with contents and pull-requests write) so later Proposals trigger it."
+            } >> "$RUNNER_TEMP/comment.md"
+          fi
+          gh issue comment "$ISSUE" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"

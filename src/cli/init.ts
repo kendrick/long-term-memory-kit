@@ -6,6 +6,10 @@ import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type:
 import recordSchemaJson from "../../schema/record.schema.json" with { type: "json" };
 import oxfmtrc from "../../templates/formatters/oxfmtrc.json" with { type: "json" };
 import prettierrc from "../../templates/formatters/prettierrc.json" with { type: "json" };
+import issueForm from "../../templates/github/ISSUE_TEMPLATE/ltm-proposal.yml" with { type: "text" };
+import acceptWorkflow from "../../templates/github/workflows/ltm-accept.yml" with { type: "text" };
+import issueFormWorkflow from "../../templates/github/workflows/ltm-issue-form.yml" with { type: "text" };
+import validateWorkflow from "../../templates/github/workflows/ltm-validate.yml" with { type: "text" };
 import { ConfigError, loadConfig, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
 import { canonicalScalar } from "../core/canonical.ts";
 import {
@@ -391,6 +395,19 @@ export const init: Command = {
       };
       const lines = MEMORY_TYPES.map((t) => `${pattern(t)} @your-org/memory-maintainers\n`);
       writeIfChanged(owners, [...new Set(lines)].join(""), null);
+    }
+
+    // Write-once, so a user's edits survive and a second init changes nothing; upgrading them is out of scope.
+    const githubFiles: { rel: string; text: string }[] = [
+      { rel: ".github/workflows/ltm-validate.yml", text: validateWorkflow },
+      { rel: ".github/workflows/ltm-accept.yml", text: acceptWorkflow },
+      { rel: ".github/workflows/ltm-issue-form.yml", text: issueFormWorkflow },
+      { rel: ".github/ISSUE_TEMPLATE/ltm-proposal.yml", text: issueForm },
+    ];
+    for (const { rel, text } of githubFiles) {
+      const abs = join(dir, rel);
+      if (existsSync(abs) || isLink(abs) || !inside(abs)) continue;
+      writeIfChanged(abs, text.replaceAll("{{LTM_VERSION}}", pkg.version), null);
     }
 
     return failed ? 1 : 0;

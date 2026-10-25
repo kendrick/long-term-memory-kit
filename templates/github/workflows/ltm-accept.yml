@@ -1,0 +1,104 @@
+name: ltm-accept
+env:
+  LTM_VERSION: "{{LTM_VERSION}}"
+
+# pull_request_target, because a fork PR's pull_request token is read-only and couldn't even comment.
+# That token can write here, so nothing from the PR branch is ever executed: only the downloaded ltm reads it.
+on:
+  pull_request_target:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  accept:
+    if: github.event.label.name == 'accept'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      # Pushes made with github.token start no workflows, so without LTM_TOKEN the Accept commit gets no ltm-validate run.
+      GH_TOKEN: ${{ secrets.LTM_TOKEN || github.token }}
+      HAS_LTM_TOKEN: ${{ secrets.LTM_TOKEN != '' }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      SENDER: ${{ github.event.sender.login }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - name: Check the labeler's permission
+        id: perm
+        run: |
+          # The legacy permission field reports maintain as write and triage as read.
+          perm=$(gh api "repos/$REPO/collaborators/$SENDER/permission" --jq .permission) || perm=none
+          if [ "$perm" = admin ] || [ "$perm" = write ]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "allowed=false" >> "$GITHUB_OUTPUT"
+          printf '@%s has %s access here; applying the accept label needs write or higher, so nothing was accepted.\n' "$SENDER" "$perm" > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"
+
+      - name: Comment the command for a fork PR
+        if: steps.perm.outputs.allowed == 'true' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          {
+            echo "This PR comes from a fork, which this workflow won't check out or push to. A maintainer can accept it locally on the PR branch:"
+            echo
+            echo '```sh'
+            printf 'ltm accept --changed-since origin/%s\n' "$BASE_REF"
+            echo '```'
+            echo
+            echo 'Then commit the result and push it to the PR branch.'
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"
+
+      - uses: actions/checkout@v4
+        if: steps.perm.outputs.allowed == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.LTM_TOKEN || github.token }}
+
+      - name: Install ltm
+        if: steps.perm.outputs.allowed == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          base="https://github.com/kendrick/long-term-memory-kit/releases/download/v${LTM_VERSION}"
+          mkdir -p "$RUNNER_TEMP/ltm"
+          cd "$RUNNER_TEMP/ltm"
+          curl -fsSL --retry 3 -O "$base/ltm-linux-x64" -O "$base/SHA256SUMS"
+          sha256sum -c --ignore-missing SHA256SUMS
+          mv ltm-linux-x64 ltm
+          chmod +x ltm
+          echo "$RUNNER_TEMP/ltm" >> "$GITHUB_PATH"
+
+      - name: Accept and commit
+        if: steps.perm.outputs.allowed == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          out="$RUNNER_TEMP/accept.out"
+          err="$RUNNER_TEMP/accept.err"
+          if ! ltm accept --changed-since "origin/$BASE_REF" > "$out" 2> "$err"; then
+            cat "$err" >&2
+            # Edits for ids before the refusal are on disk, but a partial Accept must not land, so nothing is committed.
+            { echo 'ltm accept failed, so nothing was committed:'; echo; echo '```'; cat "$err"; echo '```'; } > "$RUNNER_TEMP/comment.md"
+            gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"
+            exit 1
+          fi
+          ids=$(sed -n 's/^ltm accept: accepted //p' "$err" | paste -sd ' ' -)
+          if [ -z "$ids" ]; then
+            echo "No Proposal changed since origin/$BASE_REF, so there's nothing to accept." > "$RUNNER_TEMP/comment.md"
+            gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"
+            exit 0
+          fi
+          git add -A
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Accept $ids"
+          git push origin "HEAD:refs/heads/$HEAD_REF"
+          printf 'Accepted %s in %s.\n' "$ids" "$(git rev-parse --short HEAD)" > "$RUNNER_TEMP/comment.md"
+          if [ "$HAS_LTM_TOKEN" != true ]; then
+            {
+              echo
+              echo "This repo has no \`LTM_TOKEN\` secret, so the commit was pushed with the workflow token and GitHub won't run ltm-validate on it. Push an empty commit to re-run validate, or add an \`LTM_TOKEN\` secret (a fine-grained PAT or App token with contents and pull-requests write) so later runs trigger it."
+            } >> "$RUNNER_TEMP/comment.md"
+          fi
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"

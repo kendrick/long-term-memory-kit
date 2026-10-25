@@ -67,7 +67,11 @@ describe("ltm init", () => {
     expect(r.exitCode).toBe(0);
     expect(walk(dir)).toEqual(
       [
+        ".github/ISSUE_TEMPLATE/ltm-proposal.yml",
         ".github/copilot-instructions.md",
+        ".github/workflows/ltm-accept.yml",
+        ".github/workflows/ltm-issue-form.yml",
+        ".github/workflows/ltm-validate.yml",
         ".oxfmtrc.json",
         ".prettierrc.json",
         "AGENTS.md",
@@ -523,6 +527,12 @@ describe("ltm init edges", () => {
     expect(r.stderr.split("\n").filter(Boolean).sort()).toEqual(
       [
         `ltm init: .github/copilot-instructions.md: resolves outside ${dir}, not written`,
+        ...[
+          ".github/ISSUE_TEMPLATE/ltm-proposal.yml",
+          ".github/workflows/ltm-accept.yml",
+          ".github/workflows/ltm-issue-form.yml",
+          ".github/workflows/ltm-validate.yml",
+        ].map((f) => `ltm init: ${f}: resolves outside ${dir}, not written`),
         ...["context", "decisions", "exceptions", "policy-rules"].map(
           (f) => `ltm init: _memory/${f}: resolves outside ${dir}, not written`,
         ),

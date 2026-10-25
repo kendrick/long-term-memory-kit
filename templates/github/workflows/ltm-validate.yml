@@ -1,0 +1,29 @@
+name: ltm-validate
+env:
+  LTM_VERSION: "{{LTM_VERSION}}"
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ltm-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install ltm
+        run: |
+          base="https://github.com/kendrick/long-term-memory-kit/releases/download/v${LTM_VERSION}"
+          mkdir -p "$RUNNER_TEMP/ltm"
+          cd "$RUNNER_TEMP/ltm"
+          curl -fsSL --retry 3 -O "$base/ltm-linux-x64" -O "$base/SHA256SUMS"
+          sha256sum -c --ignore-missing SHA256SUMS
+          mv ltm-linux-x64 ltm
+          chmod +x ltm
+          echo "$RUNNER_TEMP/ltm" >> "$GITHUB_PATH"
+      - run: ltm validate --format github
+      - run: ltm init --check
