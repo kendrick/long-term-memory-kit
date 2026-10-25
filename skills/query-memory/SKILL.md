@@ -24,7 +24,19 @@ ltm query --type PolicyRule --text "logging"
 
 The MCP `query` tool takes the same filters. `ltm query` looks up this repo's Facets in the Bank, so leave out `--facet` unless you want other Facets. If the Bank doesn't list this repo, it returns Org-wide Records only and prints a note saying so. Pass `--facet service:order-service` to name the Facets yourself.
 
-Then read headers with `ltm head <path>`, or the MCP `head` tool. Read the whole file only for the Records that still look relevant.
+Then read the header of each match. In a Consumer repo, each result line starts with the name of the Bank it came from, as in `acme:_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md`. The path after the colon is relative to that Bank's root. `ltm head` reads paths from the current directory, so run it from the Bank's root:
+
+```text
+cd <bank-root> && ltm head _memory/policy-rules/structured-json-logging-vD8mH3zQb5.md
+```
+
+To find the root, look up the Bank's name in the `banks` map of your `ltm` user config and take its `path`. The user config is the file `$LTM_CONFIG` names, or else `$XDG_CONFIG_HOME/ltm/config.yaml`, or else `~/.config/ltm/config.yaml`. On Windows it's `%APPDATA%\ltm\config.yaml`. If you gave `--bank` a directory, that directory is the root.
+
+The MCP `head` tool finds the Bank for you. Pass the Bank's name as `bank` and the path as `path`.
+
+When results come from more than one Bank, keep each path with its Bank's name and read its header from that Bank. Two Banks can hold Records at the same path.
+
+Read the whole file only for the Records that still look relevant.
 
 ## By Hand
 

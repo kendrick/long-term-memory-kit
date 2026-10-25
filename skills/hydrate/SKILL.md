@@ -57,10 +57,10 @@ Keep each draft short enough for a reviewer to read in one sitting.
 Before you propose anything, look for Records that already cover the same ground. Search by the draft's words and its Facets:
 
 ```text
-ltm query --text "postgres" --facet domain:commerce --all
+ltm query --text "postgres" --facet domain:commerce --all --bank <bank>
 ```
 
-`--all` keeps Retired Records in the results, so an old choice you are about to repeat still shows up.
+Pass the same `--bank` you gave Discover. Without it, `ltm query` picks a Bank from the current directory or your user config, which may not be the Bank you are proposing to. `--all` keeps Retired Records in the results, so an old choice you are about to repeat still shows up.
 
 Without `ltm`, grep titles and summaries from the Bank root:
 
