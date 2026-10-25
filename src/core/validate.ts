@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join, posix, relative, resolve, sep } from "node:path";
 import Ajv2020Module, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import addFormatsModule from "ajv-formats";
-import { isMap, isScalar, isSeq, parseDocument, type Document, type Pair } from "yaml";
+import { isAlias, isMap, isScalar, isSeq, parseDocument, type Document, type Pair } from "yaml";
 import { ConfigError, isInside, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
 import { listRecordFiles } from "./query.ts";
 import { splitFrontmatter, unrepresentable, type Unrepresentable } from "./record.ts";
@@ -155,10 +155,22 @@ function checkUnrepresentable({ rel, src, lineOf }: Frontmatter, flagged: Readon
   }
   const out: Finding[] = [];
   const seen = new Set<string | null>();
+  // Key rows report a key by source spelling (`9007199254740993`, `"1"`), but `keys` is indexed by the parsed value (`9007199254740992`), so lineOf misses and lands on line 1. The `<<` row stays on line 1, which test/core/validate.test.ts pins.
+  const contents = parseDocument(src, { logLevel: "error" }).contents;
+  const rootPairs = isMap(contents) ? contents.items : [];
+  const spellingLine = (key: string | null): number => {
+    const pair = rootPairs.find((p) => {
+      const k: unknown = p.key;
+      return ((isScalar(k) || isAlias(k)) && k.range ? src.slice(k.range[0], k.range[1]) : String(k)).trim() === key;
+    });
+    const at = (pair?.key as { range?: [number, number, number] | null } | undefined)?.range?.[0];
+    return at === undefined ? 1 : 2 + (src.slice(0, at).match(/\n/g)?.length ?? 0);
+  };
   for (const { key, reason } of found) {
     if (flagged.has(key) || seen.has(key)) continue;
     seen.add(key);
-    out.push(finding(rel, lineOf(key), "schema", key, `${reason}; JSON can't carry it exactly`));
+    const line = lineOf(key) !== 1 || key === null || key === "<<" ? lineOf(key) : spellingLine(key);
+    out.push(finding(rel, line, "schema", key, `${reason}; JSON can't carry it exactly`));
   }
   return out;
 }

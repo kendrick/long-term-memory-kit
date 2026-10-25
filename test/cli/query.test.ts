@@ -700,8 +700,14 @@ describe("ltm query, frontmatter map keys JSON can't carry", () => {
       const r = await ltm(dir, "query", "--json", "id=hT5cY8dUa6");
       expect(r.exitCode).toBe(0);
       expect(r.stderr).toContain(`ltm query: skipped ${ADOPT}: frontmatter value`);
-      expect(r.stderr).not.toMatch(/^Warning:/m);
       expect(ids(r.stdout)).not.toContain("hT5cY8dUa6");
+      // yaml warns through process.emitWarning after parse returns, so run() can't see it; only a spawned process does.
+      const spawned = spawnSync(process.execPath, [fileURLToPath(new URL("../../src/cli/bin.ts", import.meta.url)), "query", "--json", "id=hT5cY8dUa6"], {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+      expect(spawned.stderr.split("\n").filter((l) => l.startsWith("Warning:"))).toEqual([]);
     });
   });
 

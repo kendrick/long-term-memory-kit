@@ -143,7 +143,7 @@ function hasRoundedScalar(node: unknown, doc: Document, visiting: Set<unknown> =
 
 // Every value reasonFor flags parses to a JS value that `JSON.stringify` rewrites without complaint (a rounded number, null, {}, an ISO string, 0 for -0.0), so `--json` would print something the Record doesn't say (#44). The value parse can't see a lost integer once it's a `number`, so this function parses again with `intAsBigInt`, apart from the parse every caller reads, where integers must stay `number`. The `intAsBigInt` parse reads an integer `-0` as `0n` and leaves it unflagged. YAML has no negative integer zero, so JSON's `0` is the same value. A float spelling (`9007199254740993.0`) is rounded before either parse returns, so the only trace is the scalar's source text, which the document walk compares digit for digit against the number JSON would print.
 export function unrepresentable(src: string): Unrepresentable[] {
-  // logLevel "error": a collection key makes yaml warn on stderr through process.emitWarning, where no caller can catch it; the key walk below reports it instead.
+  // logLevel "error": a collection key makes yaml warn on stderr through process.emitWarning, where no caller can catch it; `unrepresentableKeys` reports it instead.
   const root: unknown = parse(src, { intAsBigInt: true, logLevel: "error" });
   // isMapping accepts any non-array object, so a root !!set or !!timestamp would otherwise walk as an empty mapping and pass.
   const rootReason = reasonFor(root);
@@ -205,7 +205,7 @@ function sameValue(a: unknown, b: unknown): boolean {
   return Object.is(a, b);
 }
 
-// A JS object key is always a string, so a key survives into JSON only when that string reads back as the same YAML value and no sibling shares it (#74). Comparing source spellings instead would fail `1.0` and `0x10`, which carry fine; checking keys one at a time would pass `1` beside `"1"`. The plain doc gives the name; a second, `intAsBigInt` doc of the same source holds the key's exact value, and the two ASTs line up node for node.
+// A JS object key is always a string, so a key survives into JSON only when that string reads back as the same YAML value and no sibling shares it (#74). Comparing source spellings instead would fail `1.0` and `0x10`, which carry fine; checking keys one at a time would pass `1` beside `"1"`.
 function unrepresentableKeys(src: string, plain: Document): Unrepresentable[] {
   const big = parseDocument(src, { intAsBigInt: true, logLevel: "error" });
   const found: Unrepresentable[] = [];

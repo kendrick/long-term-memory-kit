@@ -30,10 +30,12 @@ test("an unsafe integer map key makes ltm validate exit 1 with one schema error 
     const ls = readFileSync(file, "utf8").split("\n");
     ls.splice(ls.indexOf("---", 1), 0, "9007199254740993: y");
     writeFileSync(file, ls.join("\n"));
+    const line = ls.findIndex((l) => l.startsWith("9007199254740993:")) + 1;
 
     const r = await run({ argv: ["validate"], cwd: dir, env: {} });
     expect(r.exitCode).toBe(1);
     const hit = r.stdout.split("\n").filter((l) => l.includes("error schema") && l.includes("9007199254740993"));
     expect(hit).toHaveLength(1);
+    expect(hit[0]).toStartWith(`${PG}:${line}: `);
   });
 });
