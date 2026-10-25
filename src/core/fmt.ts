@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import recordSchema from "../../schema/record.schema.json" with { type: "json" };
 import { type Document, isNode, isPair, isScalar, parseDocument, visit } from "yaml";
 import { isMapping, type MemoryType } from "./bank.ts";
 import { canonicalFrontmatter, canonicalScalar, SCHEMA_KEY_ORDER, type Refusal } from "./canonical.ts";
@@ -19,9 +19,7 @@ export type FmtContext = {
 // Read from the schema for the same reason canonical.ts reads key order from it: a new
 // status shouldn't need a second edit here.
 const STATUSES: ReadonlySet<string> = new Set(
-  (JSON.parse(readFileSync(new URL("../../schema/record.schema.json", import.meta.url), "utf8")) as {
-    properties: { status: { enum: string[] } };
-  }).properties.status.enum,
+  recordSchema.properties.status.enum,
 );
 const ID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
 

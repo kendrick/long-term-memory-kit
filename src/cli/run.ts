@@ -1,6 +1,7 @@
 import type { ParseArgsConfig } from "node:util";
 import { parseArgs } from "node:util";
 import pkg from "../../package.json" with { type: "json" };
+import { SCHEMA_VERSIONS, versionJson } from "../core/schema-versions.ts";
 import { defaultCommands } from "./commands.ts";
 
 export type RunInput = {
@@ -42,7 +43,13 @@ export async function run(
 ): Promise<RunResult> {
   const [head, ...rest] = input.argv;
 
-  if (head === "--version") return { exitCode: 0, stdout: `${pkg.version}\n`, stderr: "" };
+  if (head === "--version") {
+    if (rest.length === 0) return { exitCode: 0, stdout: `${pkg.version}\n`, stderr: "" };
+    if (rest.length === 1 && rest[0] === "--json") {
+      return { exitCode: 0, stdout: JSON.stringify(versionJson(SCHEMA_VERSIONS)) + "\n", stderr: "" };
+    }
+    return usageError(`ltm: unexpected argument '${rest[0] === "--json" ? rest[1] : rest[0]}'\n`);
+  }
   if (head === undefined || head === "--help") {
     return { exitCode: 0, stdout: helpText(commands), stderr: "" };
   }

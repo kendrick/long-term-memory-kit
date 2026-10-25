@@ -2,6 +2,10 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSy
 import { basename, dirname, isAbsolute, join, normalize, posix, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import pkg from "../../package.json" with { type: "json" };
+import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type: "json" };
+import recordSchemaJson from "../../schema/record.schema.json" with { type: "json" };
+import oxfmtrc from "../../templates/formatters/oxfmtrc.json" with { type: "json" };
+import prettierrc from "../../templates/formatters/prettierrc.json" with { type: "json" };
 import { ConfigError, loadConfig, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
 import { canonicalScalar } from "../core/canonical.ts";
 import {
@@ -102,14 +106,18 @@ function ancestorPrettierConfig(dir: string): string | null {
 
 type RecordSchema = { properties: Record<string, { description?: string }>; required: string[] };
 
-let recordSchema: RecordSchema | undefined;
-const loadRecordSchema = (): RecordSchema =>
-  (recordSchema ??= JSON.parse(
-    readFileSync(new URL("../../schema/record.schema.json", import.meta.url), "utf8"),
-  ) as RecordSchema);
+const loadRecordSchema = (): RecordSchema => recordSchemaJson;
 
-const loadTemplate = (name: string): { overrides: { files: unknown; options: unknown }[] } =>
-  JSON.parse(readFileSync(new URL(`../../templates/formatters/${name}`, import.meta.url), "utf8"));
+// A static map rather than a path built from `name`: `bun build --compile` embeds only files it can see imported.
+const FORMATTER_TEMPLATES: Record<string, { overrides: { files: unknown; options: unknown }[] }> = {
+  "oxfmtrc.json": oxfmtrc,
+  "prettierrc.json": prettierrc,
+};
+const loadTemplate = (name: string): { overrides: { files: unknown; options: unknown }[] } => {
+  const t = FORMATTER_TEMPLATES[name];
+  if (t === undefined) throw new Error(`no formatter template ${name}`);
+  return t;
+};
 
 // `init --check` compares disk against this, so both paths render each region the same way.
 export function renderRegions(config: BankConfig): { rel: string; region: string }[] {
@@ -142,13 +150,7 @@ function folderProblem(value: string): string | undefined {
 let prefixPattern: RegExp | undefined;
 // Read from the schema so this can't drift from what ltm validate enforces.
 const loadPrefixPattern = (): RegExp =>
-  (prefixPattern ??= new RegExp(
-    (
-      JSON.parse(readFileSync(new URL("../../schema/memory-bank.schema.json", import.meta.url), "utf8")) as {
-        properties: { facet_prefixes: { items: { pattern: string } } };
-      }
-    ).properties.facet_prefixes.items.pattern,
-  ));
+  (prefixPattern ??= new RegExp(memoryBankSchema.properties.facet_prefixes.items.pattern));
 
 function prefixProblem(values: string[]): string | undefined {
   const pattern = loadPrefixPattern();

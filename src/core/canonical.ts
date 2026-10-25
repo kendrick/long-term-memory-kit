@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
 import { parse } from "yaml";
+import recordSchema from "../../schema/record.schema.json" with { type: "json" };
 import { isMapping } from "./bank.ts";
 
 export type Refusal = { reason: string };
@@ -7,11 +7,7 @@ export type Refusal = { reason: string };
 // Read at runtime rather than copied in, so adding a property to the schema moves
 // it into canonical order without a second edit here.
 export const SCHEMA_KEY_ORDER: readonly string[] = Object.freeze(
-  Object.keys(
-    (JSON.parse(readFileSync(new URL("../../schema/record.schema.json", import.meta.url), "utf8")) as {
-      properties: Record<string, unknown>;
-    }).properties,
-  ),
+  Object.keys(recordSchema.properties),
 );
 
 function parsesBackAs(yaml: string, key: string, expected: (v: unknown) => boolean): boolean {

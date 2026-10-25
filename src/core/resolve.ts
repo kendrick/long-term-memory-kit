@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import Ajv2020Module, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
+import userConfigSchemaJson from "../../schema/user-config.schema.json" with { type: "json" };
 import { isMap, isScalar, isSeq, LineCounter, parseDocument, type Document } from "yaml";
 import { ConfigError, isMapping, loadConfig, type BankConfig } from "./bank.ts";
 import { firstLine } from "./text.ts";
@@ -104,8 +105,7 @@ let compiled: ValidateFunction | null = null;
 function userConfigSchema(): ValidateFunction {
   if (compiled) return compiled;
   const ajv = new Ajv2020({ allErrors: true });
-  const schema = JSON.parse(readFileSync(new URL("../../schema/user-config.schema.json", import.meta.url), "utf8"));
-  compiled = ajv.compile(schema);
+  compiled = ajv.compile(userConfigSchemaJson);
   return compiled;
 }
 

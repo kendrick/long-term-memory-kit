@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type: "json" };
 import { isMapping, type BankConfig } from "./bank.ts";
 import { isCalendarDate } from "./clock.ts";
 import { RETIRED_STATUSES } from "./query.ts";
@@ -34,11 +34,7 @@ const THRESHOLD_KEYS: readonly (keyof Thresholds)[] = [
 // Read from the config schema rather than copied in, so the defaults `ltm doctor` applies and the ones the
 // schema documents can't drift apart.
 const DEFAULT_THRESHOLDS: Readonly<Thresholds> = (() => {
-  const props = (
-    JSON.parse(readFileSync(new URL("../../schema/memory-bank.schema.json", import.meta.url), "utf8")) as {
-      properties: { doctor: { properties: Record<string, { default?: unknown }> } };
-    }
-  ).properties.doctor.properties;
+  const props: Record<string, { default?: unknown }> = memoryBankSchema.properties.doctor.properties;
   const out = {} as Thresholds;
   for (const key of THRESHOLD_KEYS) {
     const v = props[key]?.default;

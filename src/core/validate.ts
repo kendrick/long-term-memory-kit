@@ -1,4 +1,7 @@
 import { readFileSync } from "node:fs";
+import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type: "json" };
+import recordSchemaJson from "../../schema/record.schema.json" with { type: "json" };
+import { SCHEMA_VERSIONS } from "./schema-versions.ts";
 import { join, posix, relative, resolve, sep } from "node:path";
 import Ajv2020Module, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import addFormatsModule from "ajv-formats";
@@ -38,22 +41,25 @@ const KEYS_LTM_FMT_FILLS = new Set(["id", "memory_type", "schema"]);
 const Ajv2020 = Ajv2020Module.default;
 const addFormats = addFormatsModule.default;
 
-const compiled = new Map<string, ValidateFunction>();
-function compileSchema(file: string): ValidateFunction {
-  const hit = compiled.get(file);
-  if (hit) return hit;
+function compileSchema(schema: object): ValidateFunction {
   // Strict mode otherwise logs a warning to stderr on every run for $defs/scalar's
   // `type: [...]` union; the schema is out of scope to change, so allow just that.
   const ajv = new Ajv2020({ allErrors: true, allowUnionTypes: true });
   addFormats(ajv);
-  const schema = JSON.parse(readFileSync(new URL(`../../schema/${file}`, import.meta.url), "utf8"));
-  const validate = ajv.compile(schema);
-  compiled.set(file, validate);
-  return validate;
+  return ajv.compile(schema);
 }
 
-const recordSchema = (): ValidateFunction => compileSchema("record.schema.json");
-const configSchema = (): ValidateFunction => compileSchema("memory-bank.schema.json");
+// `versions` is a parameter so a test can widen what `schema:` accepts without editing the release's list.
+export function compileRecordSchema(versions: readonly number[] = SCHEMA_VERSIONS): ValidateFunction {
+  const schema = structuredClone(recordSchemaJson);
+  schema.properties.schema = { ...recordSchemaJson.properties.schema, enum: [...versions] };
+  return compileSchema(schema);
+}
+
+let recordCompiled: ValidateFunction | undefined;
+let configCompiled: ValidateFunction | undefined;
+const recordSchema = (): ValidateFunction => (recordCompiled ??= compileRecordSchema());
+const configSchema = (): ValidateFunction => (configCompiled ??= compileSchema(memoryBankSchema));
 
 const finding = (
   file: string,

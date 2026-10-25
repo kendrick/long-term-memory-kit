@@ -1,10 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import pkg from "../../package.json" with { type: "json" };
+import recordSchema from "../../schema/record.schema.json" with { type: "json" };
 import { ConfigError, findBank, isInside, loadConfig } from "../core/bank.ts";
 import { listRecords } from "../core/query.ts";
 import { resolveBankFlag, resolveBanks, type Env } from "../core/resolve.ts";
@@ -15,11 +16,7 @@ import { BankLocator, bankCommits, namedRoot } from "./bank.ts";
 type Named = { name: string; root: string };
 
 // Read at load, like canonical.ts, so an input named after a Record field describes itself the way the schema does.
-const SCHEMA_PROPS = (
-  JSON.parse(readFileSync(new URL("../../schema/record.schema.json", import.meta.url), "utf8")) as {
-    properties: Record<string, { description?: string }>;
-  }
-).properties;
+const SCHEMA_PROPS: Record<string, { description?: string }> = recordSchema.properties;
 const schemaDesc = (key: string): string => {
   const d = SCHEMA_PROPS[key]?.description;
   if (d === undefined) throw new Error(`record.schema.json has no description for ${key}`);

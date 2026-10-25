@@ -9,7 +9,7 @@
   "properties": {
     "schema": {
       "description": "Set to 1, the Record schema version.",
-      "const": 1
+      "enum": [1]
     },
     "id": {
       "description": "Give the Record a unique 10-character nanoid from [A-Za-z0-9_-] and never change it.",
