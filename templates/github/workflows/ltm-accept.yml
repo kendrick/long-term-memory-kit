@@ -3,7 +3,7 @@ env:
   LTM_VERSION: "{{LTM_VERSION}}"
 
 # pull_request_target, because a fork PR's pull_request token is read-only and couldn't even comment.
-# That token can write here, so nothing from the PR branch is ever executed: only the downloaded ltm reads it.
+# The pull_request_target token can write, so nothing from the PR branch is ever executed: only the downloaded ltm reads it.
 on:
   pull_request_target:
     types: [labeled]
