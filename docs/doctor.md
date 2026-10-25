@@ -90,6 +90,6 @@ Every report line below came from `ltm doctor` run with `LTM_TODAY=2026-10-09` o
 
 **Report line:** `_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md: supersession-no-shared-facet: supersedes _memory/decisions/mysql-for-new-services-mB3tR9wZe1.md, but the two share no applies_to Facet` (scratch edit: `applies_to` on the MySQL Record changed to `[]`). The finding is on the newer Record, and the older one is in `related_files`.
 
-**False positives:** A new Record that deliberately replaces an unscoped one, so the older Record has no Facets to share.
+**False positives:** A new Record that deliberately replaces an org-wide one, so the older Record has no Facets to share.
 
 **Dismissal:** Give both Records at least one common Facet in `applies_to`. If the link itself is wrong, fix the `supersedes` or `superseded_by` field.
