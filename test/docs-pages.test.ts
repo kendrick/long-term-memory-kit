@@ -28,6 +28,10 @@ const NEW_PAGES = [
 ];
 const newPages = pages.filter((p) => NEW_PAGES.includes(rel(p)));
 
+test("all seven new pages exist", () => {
+  for (const p of NEW_PAGES) expect(existsSync(join(repo, p)), `${p} is missing`).toBe(true);
+});
+
 const linkTargets = (text: string): string[] =>
   [...text.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)]
     .map((m) => m[1]!.split("#")[0]!)
