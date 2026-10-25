@@ -50,6 +50,7 @@ describe("ltm accept --changed-since", () => {
       expect(r2.exitCode).toBe(0);
       expect(r2.stdout).toBe(`${B}\n`);
       expect(r2.stderr).toBe("ltm accept: accepted bU2pR8aXf7\n");
+      expect(status(dir, A)).toBe("accepted");
       expect(status(dir, B)).toBe("accepted");
     });
   });

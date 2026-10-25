@@ -29,6 +29,7 @@ export const accept: Command = {
     const config = openBank(ctx, "accept");
     if (config === 1) return 1;
     const since = ctx.values["changed-since"];
+    // Fresh index per id: an earlier id's Supersession edits can change what a later one plans against.
     const acceptOne = (id: string): 0 | 1 => {
       const skips = skipTally(ctx, "accept");
       const index = readBankIndex(config, skips.onSkip);

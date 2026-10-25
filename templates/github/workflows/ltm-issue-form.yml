@@ -42,6 +42,7 @@ jobs:
           echo "$RUNNER_TEMP/ltm" >> "$GITHUB_PATH"
 
       - name: Propose and comment
+        id: propose
         run: |
           printf '%s\n' "$ISSUE_BODY" > "$RUNNER_TEMP/issue-body.md"
           # ltm propose commits the Record before pushing its branch.
@@ -53,6 +54,7 @@ jobs:
             cat "$err" >&2
             { echo 'ltm propose failed, so no Proposal PR was opened:'; echo; echo '```'; cat "$err"; echo '```'; } > "$RUNNER_TEMP/comment.md"
             gh issue comment "$ISSUE" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"
+            echo "commented=true" >> "$GITHUB_OUTPUT"
             exit 1
           fi
           printf 'Opened %s as a Proposal.\n' "$(jq -r .url "$out")" > "$RUNNER_TEMP/comment.md"
@@ -62,4 +64,12 @@ jobs:
               echo "This repo has no \`LTM_TOKEN\` secret, so the PR was opened with the workflow token and GitHub won't run ltm-validate on it. Push an empty commit to its branch to run validate, or add an \`LTM_TOKEN\` secret (a fine-grained PAT or App token with contents and pull-requests write) so later Proposals trigger it."
             } >> "$RUNNER_TEMP/comment.md"
           fi
+          gh issue comment "$ISSUE" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"
+
+      # A failed checkout or install would otherwise leave the submitter with no word at all.
+      - name: Comment any other failure
+        if: failure() && steps.propose.outputs.commented != 'true'
+        run: |
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          printf 'The ltm-issue-form workflow failed, so this issue may not have become a Proposal PR. See %s for the log.\n' "$run_url" > "$RUNNER_TEMP/comment.md"
           gh issue comment "$ISSUE" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"

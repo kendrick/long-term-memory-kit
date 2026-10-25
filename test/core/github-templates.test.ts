@@ -151,6 +151,29 @@ describe("GitHub workflow templates", () => {
     expect(propose?.run).toContain("--json");
   });
 
+  test("the Install ltm step is the same script in every workflow", () => {
+    // Templates can't share a step without a composite action, so this is what keeps the copies from drifting.
+    const scripts = NAMES.map((name) => steps(load(name)).filter((s) => s.name === "Install ltm").map((s) => s.run));
+    for (const list of scripts) expect(list.length).toBe(1);
+    expect(new Set(scripts.flat()).size).toBe(1);
+  });
+
+  test("ltm-issue-form comments on any failure, but only once", () => {
+    const all = steps(load("ltm-issue-form.yml"));
+    const propose = all.find((s) => s.run?.includes("ltm propose --from-issue-form"))!;
+    expect(propose.id).toBe("propose");
+    // The propose step posts its own error comment and flags it, so the catch-all stays quiet then.
+    const lines = propose.run!.split("\n").map((l) => l.trim());
+    const flag = lines.indexOf('echo "commented=true" >> "$GITHUB_OUTPUT"');
+    expect(flag).toBeGreaterThan(lines.findIndex((l) => l.startsWith("gh issue comment")));
+    expect(lines[flag + 1]).toBe("exit 1");
+    const last = all.at(-1)!;
+    expect(all.indexOf(last)).toBeGreaterThan(all.indexOf(propose));
+    expect(last.if).toBe("failure() && steps.propose.outputs.commented != 'true'");
+    expect(last.run).toContain('gh issue comment "$ISSUE"');
+    expect(last.run).toContain("$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID");
+  });
+
   test.each(["ltm-accept.yml", "ltm-issue-form.yml"])("%s names the LTM_TOKEN fix when the secret is unset", (name) => {
     const t = text(name);
     expect(t).toContain("LTM_TOKEN");
