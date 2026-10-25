@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type Document, isAlias, isMap, isScalar, isSeq, parse, parseDocument } from "yaml";
+import { type Document, isAlias, isMap, isScalar, isSeq, Pair, parse, parseDocument, YAMLMap } from "yaml";
 import { isMapping, type MemoryType } from "./bank.ts";
 import { firstLine } from "./text.ts";
 
@@ -61,7 +61,7 @@ export function parseRecordFile(absPath: string, relPath: string, memoryType: Me
   const source = split.frontmatterLines.join("\n");
   let frontmatter: unknown;
   try {
-    frontmatter = parse(source);
+    frontmatter = parse(source, { logLevel: "error" });
   } catch (e) {
     throw new RecordError(relPath, firstLine((e as Error).message));
   }
@@ -143,12 +143,13 @@ function hasRoundedScalar(node: unknown, doc: Document, visiting: Set<unknown> =
 
 // Every value reasonFor flags parses to a JS value that `JSON.stringify` rewrites without complaint (a rounded number, null, {}, an ISO string, 0 for -0.0), so `--json` would print something the Record doesn't say (#44). The value parse can't see a lost integer once it's a `number`, so this function parses again with `intAsBigInt`, apart from the parse every caller reads, where integers must stay `number`. The `intAsBigInt` parse reads an integer `-0` as `0n` and leaves it unflagged. YAML has no negative integer zero, so JSON's `0` is the same value. A float spelling (`9007199254740993.0`) is rounded before either parse returns, so the only trace is the scalar's source text, which the document walk compares digit for digit against the number JSON would print.
 export function unrepresentable(src: string): Unrepresentable[] {
-  const root: unknown = parse(src, { intAsBigInt: true });
+  // logLevel "error": a collection key makes yaml warn on stderr through process.emitWarning, where no caller can catch it; the key walk below reports it instead.
+  const root: unknown = parse(src, { intAsBigInt: true, logLevel: "error" });
   // isMapping accepts any non-array object, so a root !!set or !!timestamp would otherwise walk as an empty mapping and pass.
   const rootReason = reasonFor(root);
   if (rootReason) return [{ key: null, reason: rootReason }];
   if (!isMapping(root)) return [];
-  const doc = parseDocument(src);
+  const doc = parseDocument(src, { logLevel: "error" });
   const nodes = new Map<string, unknown>();
   if (isMap(doc.contents)) for (const pair of doc.contents.items) nodes.set(String(isScalar(pair.key) ? pair.key.value : pair.key), pair.value);
   const found: Unrepresentable[] = [];
@@ -186,5 +187,65 @@ export function unrepresentable(src: string): Unrepresentable[] {
     const merged = doc.contents.items.some((pair) => isScalar(pair.key) && pair.key.tag === MERGE_TAG && hasRoundedScalar(pair.value, doc));
     if (merged) found.push({ key: "<<", reason: "number rounded on parse" });
   }
+  found.push(...unrepresentableKeys(src, doc));
+  return found;
+}
+
+// yaml's own key conversion, so the name is exactly the property every reader of the plain parse sees.
+function jsName(key: unknown, doc: Document): string {
+  const one = new YAMLMap();
+  one.items.push(new Pair(key, null));
+  return Object.keys(one.toJS(doc) as object)[0] ?? "";
+}
+
+// Mathematical equality across bigint and number, with Object.is for zero so `-0.0` (which JSON prints as `0`) fails.
+function sameValue(a: unknown, b: unknown): boolean {
+  if (typeof a === "bigint" && typeof b === "number") return sameValue(b, a);
+  if (typeof a === "number" && typeof b === "bigint") return Number.isInteger(a) && !Object.is(a, -0) && BigInt(a) === b;
+  return Object.is(a, b);
+}
+
+// A JS object key is always a string, so a key survives into JSON only when that string reads back as the same YAML value and no sibling shares it (#74). Comparing source spellings instead would fail `1.0` and `0x10`, which carry fine; checking keys one at a time would pass `1` beside `"1"`. The plain doc gives the name; a second, `intAsBigInt` doc of the same source holds the key's exact value, and the two ASTs line up node for node.
+function unrepresentableKeys(src: string, plain: Document): Unrepresentable[] {
+  const big = parseDocument(src, { intAsBigInt: true, logLevel: "error" });
+  const found: Unrepresentable[] = [];
+  // Source text, not String(node): String() of `9007199254740993` already prints the rounded number.
+  const spelling = (k: unknown): string => ((isScalar(k) || isAlias(k)) && k.range ? src.slice(k.range[0], k.range[1]).trim() : String(k).trim());
+  const keyReason = (key: unknown, name: string, shown: string): string | null => {
+    const k = isAlias(key) ? key.resolve(big) : key;
+    if (isMap(k) || isSeq(k)) return `map key ${shown} is a collection`;
+    if (!isScalar(k)) return null;
+    const { value } = k;
+    const survives = reasonFor(value) === null && (typeof value === "string" ? value === name : sameValue(value, parse(name, { intAsBigInt: true, logLevel: "error" })));
+    return survives ? null : `map key ${shown} becomes "${name}" in JSON`;
+  };
+  // `owner` is the root key whose subtree holds the bad key, as walk attributes nested values; null means this is the root map. `visiting` is per root key so an aliased map reports under every root key that reaches it.
+  const visit = (p: unknown, b: unknown, owner: string | null, visiting: Set<unknown>): void => {
+    if (isAlias(p) && isAlias(b)) return visit(p.resolve(plain), b.resolve(big), owner, visiting);
+    if (visiting.has(p)) return;
+    if (isSeq(p) && isSeq(b)) {
+      visiting.add(p);
+      p.items.forEach((item, i) => visit(item, b.items[i], owner, visiting));
+      return;
+    }
+    if (!isMap(p) || !isMap(b)) return;
+    visiting.add(p);
+    const seenNames = new Map<string, string[]>();
+    p.items.forEach((pair, i) => {
+      const bPair = b.items[i];
+      const name = isScalar(pair.key) && pair.key.tag === MERGE_TAG ? null : jsName(pair.key, plain);
+      if (name !== null) {
+        const shown = spelling(pair.key);
+        const subject = owner ?? shown;
+        const reason = keyReason(bPair?.key, name, shown);
+        if (reason) found.push({ key: subject, reason });
+        const earlier = seenNames.get(name) ?? [];
+        for (const prior of earlier) found.push({ key: subject, reason: `map keys ${prior} and ${shown} share the JSON name "${name}"` });
+        seenNames.set(name, [...earlier, shown]);
+      }
+      visit(pair.value, bPair?.value, owner ?? name ?? "<<", owner === null ? new Set() : visiting);
+    });
+  };
+  visit(plain.contents, big.contents, null, new Set());
   return found;
 }

@@ -175,8 +175,30 @@ describe("unrepresentable", () => {
     ["k: &k foo\n*k : 9007199254740993.0", [{ key: "*k", reason: rounded }]],
     ["k: &k foo\n*k : [9007199254740993.0]", [{ key: "*k", reason: rounded }]],
     ["~: 9007199254740993.0", [{ key: "~", reason: rounded }]],
-    ["? [a]\n: 9007199254740993.0", [{ key: '["a"]', reason: rounded }]],
+    ["? [a]\n: 9007199254740993.0", [{ key: '["a"]', reason: rounded }, { key: '["a"]', reason: 'map key ["a"] is a collection' }]],
     ["k: &k foo\n*k : 1.5", []],
+    ["1: a", []],
+    ['"1": b', []],
+    ['1: a\n"1": b', [{ key: '"1"', reason: 'map keys 1 and "1" share the JSON name "1"' }]],
+    ["1.0: x", []],
+    ["0x10: x", []],
+    ["true: x", []],
+    ["~: x", []],
+    ["9007199254740993: y", [{ key: "9007199254740993", reason: 'map key 9007199254740993 becomes "9007199254740992" in JSON' }]],
+    ["-0.0: x", [{ key: "-0.0", reason: 'map key -0.0 becomes "0" in JSON' }]],
+    [".inf: x", [{ key: ".inf", reason: 'map key .inf becomes "Infinity" in JSON' }]],
+    ["? [a]\n: x", [{ key: '["a"]', reason: 'map key ["a"] is a collection' }]],
+    ["!!binary aGk=: x", [{ key: "aGk=", reason: 'map key aGk= becomes "hi" in JSON' }]],
+    ['outer: { 1: a, "1": b }', [{ key: "outer", reason: 'map keys 1 and "1" share the JSON name "1"' }]],
+    ["outer: [{ ? [a] : x }]", [{ key: "outer", reason: 'map key ["a"] is a collection' }]],
+    ["k: &k foo\n*k : 1", []],
+    [
+      'a: &m { 1: x, "1": y }\nb: *m',
+      [
+        { key: "a", reason: 'map keys 1 and "1" share the JSON name "1"' },
+        { key: "b", reason: 'map keys 1 and "1" share the JSON name "1"' },
+      ],
+    ],
   ] as const)("%p", (src, expected) => {
     expect(unrepresentable(src)).toEqual([...expected]);
   });
