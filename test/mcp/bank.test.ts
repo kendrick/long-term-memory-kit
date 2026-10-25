@@ -162,6 +162,35 @@ describe("pickBank", () => {
     },
     GIT_TEST_TIMEOUT,
   );
+
+  test(
+    "the staleness note stays on every answer inside the TTL after a failed refresh, and a good refresh clears it",
+    async () => {
+      await withGitBank(async ({ bare }) => {
+        await withRig({ LTM_BANK_URL: bare }, async ({ env, fetches }) => {
+          // TTL is read per call, so 0 forces the one refresh attempt and 3600 keeps the next call inside the TTL that attempt started.
+          const now = { ...env, LTM_BANK_TTL: "0" };
+          const hour = { ...env, LTM_BANK_TTL: "3600" };
+          const loc = new BankLocator();
+          const root = picked(await loc.pickBank({}, now, "/work")).root!;
+          git(root, "remote", "set-url", "origin", "/nonexistent");
+          const failed = picked(await loc.pickBank({}, now, "/work"));
+          expect(failed.notes).toEqual([expect.stringMatching(/^can't refresh Bank from /)]);
+          expect(fetches()).toBe(1);
+
+          const inside = picked(await loc.pickBank({}, hour, "/work"));
+          expect(fetches()).toBe(1);
+          expect(inside).toEqual({ root, notes: failed.notes });
+
+          git(root, "remote", "set-url", "origin", bare);
+          expect(picked(await loc.pickBank({}, now, "/work")).notes).toEqual([]);
+          expect(fetches()).toBe(2);
+          expect(picked(await loc.pickBank({}, hour, "/work")).notes).toEqual([]);
+        });
+      });
+    },
+    GIT_TEST_TIMEOUT,
+  );
 });
 
 describe("parseTtl", () => {

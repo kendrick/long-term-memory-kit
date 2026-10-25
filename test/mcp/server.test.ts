@@ -10,8 +10,8 @@ import { withConsumerRepo } from "../helpers/consumer-repo.ts";
 import { git, IDENTITY, withGitBank } from "../helpers/git-bank.ts";
 import { withDemoGitBank, withMcp } from "../helpers/mcp.ts";
 
-// Each test spawns a server plus many git processes; bun's 5s default flakes under load.
-const T = 60_000;
+// Twice the 30s git-test budget, because each test also boots a bun server over stdio and runs the CLI per call. bun's 5s default flakes under load.
+const MCP_TEST_TIMEOUT = 60_000;
 const bin = new URL("../../src/cli/bin.ts", import.meta.url).pathname;
 const POSTGRES = "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md";
 
@@ -66,7 +66,7 @@ describe("ltm mcp, read-only tools", () => {
           }
         }
       }),
-    T,
+    MCP_TEST_TIMEOUT,
   );
 
   test(
@@ -91,7 +91,7 @@ describe("ltm mcp, read-only tools", () => {
           expect(textOf(r)).toBe(await cli(["query", "--bank", bank, ...argv], consumer, env));
         }
       }),
-    T,
+    MCP_TEST_TIMEOUT,
   );
 
   test(
@@ -109,7 +109,7 @@ describe("ltm mcp, read-only tools", () => {
         expect(textOf(out)).toContain("outside the Bank");
         expect((await call(client, "head", { id: "kQ7vN2xLp4", path: POSTGRES })).isError).toBe(true);
       }),
-    T,
+    MCP_TEST_TIMEOUT,
   );
 
   test(
@@ -123,7 +123,7 @@ describe("ltm mcp, read-only tools", () => {
           expect(sc).toEqual({ results: expected, bank_commits: { acme: head(bank) } });
         }
       }),
-    T,
+    MCP_TEST_TIMEOUT,
   );
 
   test(
@@ -143,7 +143,7 @@ describe("ltm mcp, read-only tools", () => {
           writeFileSync(p, readFileSync(p, "utf8").replace("memory_type: Decision\n", "memory_type: Bogus\n"));
         },
       ),
-    T,
+    MCP_TEST_TIMEOUT,
   );
 
   test(
@@ -158,14 +158,28 @@ describe("ltm mcp, read-only tools", () => {
         expect((sc.results as unknown[]).length).toBeGreaterThan(0);
         expect(sc.bank_commits).toEqual({ acme: head(bank) });
       }),
-    T,
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "query with a bank no config names fails with the CLI's own error",
+    () =>
+      withConsumerRepo(async (consumer) => {
+        const env = { ...process.env, LTM_BANK_PATH: undefined, LTM_BANK_URL: undefined };
+        const r = await withMcp(env, consumer, (client) => call(client, "query", { bank: "no-such-bank" }));
+        expect(r.isError).toBe(true);
+        const expected = await run({ argv: ["query", "--json", "--bank=no-such-bank"], cwd: consumer, env });
+        expect(expected.exitCode).not.toBe(0);
+        expect(textOf(r)).toBe(expected.stderr.trimEnd());
+      }),
+    MCP_TEST_TIMEOUT,
   );
 
   test("a bad LTM_BANK_TTL exits 1 before serving", () => {
     const r = spawnSync(process.execPath, [bin, "mcp"], { env: { ...process.env, LTM_BANK_TTL: "abc" }, input: "", encoding: "utf8" });
     expect(r.status).toBe(1);
     expect(r.stderr).toBe("ltm mcp: LTM_BANK_TTL 'abc' is not a whole number of seconds\n");
-  }, T);
+  }, MCP_TEST_TIMEOUT);
 });
 
 const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
@@ -232,7 +246,7 @@ describe("ltm mcp under LTM_BANK_URL", () => {
           }
         }),
       ),
-    T,
+    MCP_TEST_TIMEOUT,
   );
 
   test(
@@ -265,6 +279,6 @@ describe("ltm mcp under LTM_BANK_URL", () => {
           }),
         ),
       ),
-    T,
+    MCP_TEST_TIMEOUT,
   );
 });

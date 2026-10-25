@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import pkg from "../../package.json" with { type: "json" };
@@ -9,7 +10,7 @@ import { listRecords } from "../core/query.ts";
 import { resolveBankFlag, resolveBanks, type Env } from "../core/resolve.ts";
 import { configErrorLine, noBankLine } from "../cli/bank.ts";
 import { run } from "../cli/run.ts";
-import { BankLocator, bankCommits, type Picked } from "./bank.ts";
+import { BankLocator, bankCommits } from "./bank.ts";
 
 // Read at load, like canonical.ts, so an input named after a Record field describes itself the way the schema does.
 const SCHEMA_PROPS = (
@@ -37,34 +38,50 @@ export function createServer(env: Env, cwd: string): McpServer {
   const pick = (bank: string | undefined) => locator.pickBank({ bank }, env, cwd);
 
   // Precedence is the env's pick, then `bank` read the way --bank reads it, then the Bank around the server's cwd.
-  const rootFor = (tool: string, picked: Picked, bank: string | undefined): string | CallToolResult => {
+  const pickRoot = async (tool: string, bank: string | undefined): Promise<{ root: string; notes: string[] } | CallToolResult> => {
+    const picked = await pick(bank);
+    if ("error" in picked) return fail(picked.error);
     try {
       const root = picked.root ?? (bank !== undefined && bank !== "" ? resolveBankFlag(bank, cwd, env).root : findBank(cwd));
-      return root ?? fail(noBankLine(tool, cwd).trimEnd());
+      return root === null ? fail(noBankLine(tool, cwd).trimEnd()) : { root, notes: picked.notes };
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       return fail(configErrorLine(tool, e).trimEnd());
     }
   };
 
-  // Handlers only map inputs to an argv; run() does the checks and shaping, so the MCP and CLI routes can't drift.
+  // Records are read only through run(), so the MCP and CLI routes can't drift. head's id lookup is the one exception, because `ltm head` takes only a path.
   const cli = (argv: string[], at: string) => run({ argv, cwd: at, env });
 
-  const withCommits = (body: object, roots: () => string[], notes: string[]): Record<string, unknown> => ({
+  // Another request's refresh can fast-forward the clone mid-read. A read counts only when HEAD held still across it, so bank_commits names the commit the data came from.
+  const pinned = async <R>(roots: () => string[], read: () => Promise<R>): Promise<{ out: R; commits: Record<string, string | null> } | CallToolResult> => {
+    for (let tries = 0; tries < 3; tries++) {
+      const before = bankCommits(roots());
+      const out = await read();
+      const commits = bankCommits(roots());
+      if (isDeepStrictEqual(before, commits)) return { out, commits };
+    }
+    return fail("the Bank moved during each of 3 reads; try again");
+  };
+
+  const withCommits = (body: object, commits: Record<string, string | null>, notes: string[]): Record<string, unknown> => ({
     ...body,
-    bank_commits: bankCommits(roots()),
+    bank_commits: commits,
     ...(notes.length > 0 ? { bank_notes: notes } : {}),
   });
 
   // A non-zero exit with empty stdout is a tool error. Anything else is data, including validate's exit 1 with findings on stdout.
   const jsonTool = async (argv: string[], at: string, roots: () => string[], notes: string[]): Promise<CallToolResult> => {
-    const r = await cli([argv[0] as string, "--json", ...argv.slice(1)], at);
+    const read = await pinned(roots, async () => ({
+      json: await cli([argv[0] as string, "--json", ...argv.slice(1)], at),
+      human: await cli(argv, at),
+    }));
+    if ("content" in read) return read;
+    const r = read.out.json;
     if (r.exitCode !== 0 && r.stdout === "") return fail(r.stderr.trimEnd());
     const parsed = JSON.parse(r.stdout) as unknown;
     const body = Array.isArray(parsed) ? { results: parsed } : (parsed as object);
-    const structuredContent = withCommits(body, roots, notes);
-    const text = (await cli(argv, at)).stdout;
-    return { structuredContent, content: [{ type: "text", text }] };
+    return { structuredContent: withCommits(body, read.commits, notes), content: [{ type: "text", text: read.out.human.stdout }] };
   };
 
   server.registerTool(
@@ -80,7 +97,7 @@ export function createServer(env: Env, cwd: string): McpServer {
         facets: z.array(z.string()).optional().describe(schemaDesc("applies_to")),
         status: z.array(z.string()).optional().describe(schemaDesc("status")),
         text: z.string().optional().describe("Free text to rank Records by."),
-        all: z.boolean().optional().describe("Include superseded, deprecated, and expired Records."),
+        all: z.boolean().optional().describe("Include Retired Records, whose status is superseded, deprecated, or rejected."),
         bank: bankInput,
       }),
     },
@@ -101,9 +118,15 @@ export function createServer(env: Env, cwd: string): McpServer {
         ...Object.entries(input.filters ?? {}).map(([k, v]) => `${k}=${v}`),
       ];
       const roots = (): string[] => {
-        if (bank !== undefined) return [picked.root ?? resolveBankFlag(bank, cwd, env).root];
-        const here = findBank(cwd);
-        return here !== null ? [here] : resolveBanks(cwd, env).banks.map((b) => b.root);
+        try {
+          if (bank !== undefined) return [picked.root ?? resolveBankFlag(bank, cwd, env).root];
+          const here = findBank(cwd);
+          return here !== null ? [here] : resolveBanks(cwd, env).banks.map((b) => b.root);
+        } catch (e) {
+          // pinned() reads the roots before the CLI runs, so a bad --bank has to fall through to run(), which owns that error message.
+          if (!(e instanceof ConfigError)) throw e;
+          return [];
+        }
       };
       return jsonTool(argv, cwd, roots, picked.notes);
     },
@@ -121,10 +144,9 @@ export function createServer(env: Env, cwd: string): McpServer {
     },
     async (input) => {
       if ((input.id === undefined) === (input.path === undefined)) return fail("give exactly one of id or path");
-      const picked = await pick(input.bank);
-      if ("error" in picked) return fail(picked.error);
-      const root = rootFor("head", picked, input.bank);
-      if (typeof root !== "string") return root;
+      const at = await pickRoot("head", input.bank);
+      if ("content" in at) return at;
+      const { root, notes } = at;
       const realRoot = realpathSync(root);
       let rel: string;
       if (input.id !== undefined) {
@@ -146,10 +168,11 @@ export function createServer(env: Env, cwd: string): McpServer {
         if (!isInside(realRoot, target)) return fail(`${input.path} is outside the Bank`);
         rel = relative(realRoot, target);
       }
-      const r = await cli(["head", "--", rel], realRoot);
+      const read = await pinned(() => [root], () => cli(["head", "--", rel], realRoot));
+      if ("content" in read) return read;
+      const r = read.out;
       if (r.exitCode !== 0 && r.stdout === "") return fail(r.stderr.trimEnd());
-      const structuredContent = withCommits({ path: rel, head: r.stdout }, () => [root], picked.notes);
-      return { structuredContent, content: [{ type: "text", text: r.stdout }] };
+      return { structuredContent: withCommits({ path: rel, head: r.stdout }, read.commits, notes), content: [{ type: "text", text: r.stdout }] };
     },
   );
 
@@ -158,16 +181,15 @@ export function createServer(env: Env, cwd: string): McpServer {
     {
       description: "List every Facet in applies_to with its Record count. Same rows as `ltm facets --json`.",
       inputSchema: z.object({
-        all: z.boolean().optional().describe("Count superseded, deprecated, and expired Records too."),
+        all: z.boolean().optional().describe("Count Retired Records too, whose status is superseded, deprecated, or rejected."),
         bank: bankInput,
       }),
     },
     async (input) => {
-      const picked = await pick(input.bank);
-      if ("error" in picked) return fail(picked.error);
-      const root = rootFor("facets", picked, input.bank);
-      if (typeof root !== "string") return root;
-      return jsonTool(["facets", ...(input.all === true ? ["--all"] : [])], root, () => [root], picked.notes);
+      const at = await pickRoot("facets", input.bank);
+      if ("content" in at) return at;
+      const { root, notes } = at;
+      return jsonTool(["facets", ...(input.all === true ? ["--all"] : [])], root, () => [root], notes);
     },
   );
 
@@ -184,11 +206,10 @@ export function createServer(env: Env, cwd: string): McpServer {
       }),
     },
     async (input) => {
-      const picked = await pick(input.bank);
-      if ("error" in picked) return fail(picked.error);
-      const root = rootFor("validate", picked, input.bank);
-      if (typeof root !== "string") return root;
-      return jsonTool(["validate", "--", ...(input.paths ?? [])], root, () => [root], picked.notes);
+      const at = await pickRoot("validate", input.bank);
+      if ("content" in at) return at;
+      const { root, notes } = at;
+      return jsonTool(["validate", "--", ...(input.paths ?? [])], root, () => [root], notes);
     },
   );
 
@@ -226,10 +247,9 @@ export function createServer(env: Env, cwd: string): McpServer {
       } else if (input.title === undefined) {
         return fail("title is required unless from is set");
       }
-      const picked = await pick(input.bank);
-      if ("error" in picked) return fail(picked.error);
-      const root = rootFor("propose", picked, input.bank);
-      if (typeof root !== "string") return root;
+      const at = await pickRoot("propose", input.bank);
+      if ("content" in at) return at;
+      const { root, notes } = at;
 
       const common = [
         `--type=${input.type}`,
@@ -257,7 +277,7 @@ export function createServer(env: Env, cwd: string): McpServer {
         }
         if (r.exitCode !== 0 && r.stdout === "") return fail(r.stderr.trimEnd());
         // Runs once: a second, human-output run would push a second branch.
-        const structuredContent = withCommits(JSON.parse(r.stdout) as object, () => [root], picked.notes);
+        const structuredContent = withCommits(JSON.parse(r.stdout) as object, bankCommits([root]), notes);
         return { structuredContent, content: [{ type: "text", text: JSON.stringify(structuredContent, null, 2) }] };
       } finally {
         if (dir !== undefined) rmSync(dir, { recursive: true, force: true });

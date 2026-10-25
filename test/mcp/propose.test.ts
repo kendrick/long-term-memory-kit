@@ -11,8 +11,8 @@ import { withConsumerRepo } from "../helpers/consumer-repo.ts";
 import { git, snapshot, withGitBank } from "../helpers/git-bank.ts";
 import { withMcp } from "../helpers/mcp.ts";
 
-// Each test spawns a server plus many git processes; bun's 5s default flakes under load.
-const T = 60_000;
+// Twice the 30s git-test budget, because each test also boots a bun server over stdio and runs the CLI per call. bun's 5s default flakes under load.
+const MCP_TEST_TIMEOUT = 60_000;
 const TITLE = "Use Postgres for new services";
 const ADR = "docs/adr/0003-use-ioredis.md";
 // The server's clone has no repo-level identity, so the Proposal commit takes it from here rather than the machine's config.
@@ -73,7 +73,7 @@ describe("ltm mcp, propose", () => {
           expect(Object.values(sc.bank_commits as object)).toEqual([before.head]);
         }),
       ),
-    T,
+    MCP_TEST_TIMEOUT,
   );
 
   test(
@@ -86,7 +86,7 @@ describe("ltm mcp, propose", () => {
           expect(pushedFile(bare, sc.branch as string, sc.path as string).body).toBe(body);
         }),
       ),
-    T,
+    MCP_TEST_TIMEOUT,
   );
 
   test(
@@ -116,7 +116,7 @@ describe("ltm mcp, propose", () => {
       expect(mcpRest).toEqual(cliRest);
       expect(mcpRest.promoted_from).toBe(`acme/order-service:${ADR}`);
     },
-    T * 2,
+    MCP_TEST_TIMEOUT * 2,
   );
 
   test(
@@ -130,6 +130,6 @@ describe("ltm mcp, propose", () => {
           expect(proposeRefs(bare)).toEqual([]);
         }),
       ),
-    T,
+    MCP_TEST_TIMEOUT,
   );
 });

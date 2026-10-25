@@ -21,7 +21,7 @@ export async function withMcp<T>(env: Record<string, string | undefined>, cwd: s
   }
 }
 
-// A scratch copy of the demo Bank committed to its own repo, so bank_commits has a HEAD to report. `edit` runs before the commit.
+// A scratch copy of the demo Bank committed to its own repo, so bank_commits has a HEAD to report. `edit` lands in the seed commit, so a test can serve a broken Bank from a clean tree.
 export async function withDemoGitBank<T>(fn: (root: string) => Promise<T>, edit?: (root: string) => void): Promise<T> {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "ltm-mcp-bank-")));
   try {

@@ -26,9 +26,9 @@ const stderrOf = (e: unknown): string => {
 
 // One locator per server: lastFetch and the in-flight map are what keep a remote to one fetch per TTL, so tests need fresh ones.
 export class BankLocator {
-  readonly lastFetch = new Map<string, number>();
-  readonly inFlight = new Map<string, Promise<void>>();
-  // Set by a failed refresh, read by every request that awaited that attempt.
+  private readonly lastFetch = new Map<string, number>();
+  private readonly inFlight = new Map<string, Promise<void>>();
+  // Kept until a refresh succeeds. A failed refresh holds off retries for the whole TTL, and every answer in that window is just as stale.
   private readonly staleNote = new Map<string, string>();
 
   async pickBank(input: { bank?: string }, env: Env, cwd: string): Promise<Picked | { error: string }> {
@@ -54,7 +54,7 @@ export class BankLocator {
       const last = this.lastFetch.get(url);
       // `>=` so TTL 0 refreshes even when two requests land in the same millisecond.
       const due = !existsSync(root) || last === undefined || Date.now() - last >= ttl * 1000;
-      if (!due) return { root, notes: [] };
+      if (!due) return { root, notes: this.notesFor(url) };
       attempt = this.ensure(url, root, gitEnv).finally(() => this.inFlight.delete(url));
       this.inFlight.set(url, attempt);
     }
@@ -63,8 +63,12 @@ export class BankLocator {
     } catch (e) {
       return { error: (e as Error).message };
     }
+    return { root, notes: this.notesFor(url) };
+  }
+
+  private notesFor(url: string): string[] {
     const note = this.staleNote.get(url);
-    return { root, notes: note === undefined ? [] : [note] };
+    return note === undefined ? [] : [note];
   }
 
   private async ensure(url: string, root: string, env: NodeJS.ProcessEnv): Promise<void> {
