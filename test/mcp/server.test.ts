@@ -53,11 +53,11 @@ async function withServer<T>(fn: (s: { client: Client; bank: string; consumer: s
 
 describe("ltm mcp, read-only tools", () => {
   test(
-    "lists the four tools, every input described",
+    "lists the five tools, every input described",
     () =>
       withServer(async ({ client }) => {
         const { tools } = await client.listTools();
-        expect(tools.map((t) => t.name).sort()).toEqual(["facets", "head", "query", "validate"]);
+        expect(tools.map((t) => t.name).sort()).toEqual(["facets", "head", "propose", "query", "validate"]);
         for (const t of tools) {
           const props = (t.inputSchema.properties ?? {}) as Record<string, { description?: string }>;
           expect(Object.keys(props).length).toBeGreaterThan(0);

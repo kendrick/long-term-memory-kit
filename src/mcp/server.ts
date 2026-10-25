@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative, resolve } from "node:path";
 import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import pkg from "../../package.json" with { type: "json" };
@@ -188,6 +189,79 @@ export function createServer(env: Env, cwd: string): McpServer {
       const root = rootFor("validate", picked, input.bank);
       if (typeof root !== "string") return root;
       return jsonTool(["validate", "--", ...(input.paths ?? [])], root, () => [root], picked.notes);
+    },
+  );
+
+  server.registerTool(
+    "propose",
+    {
+      description:
+        "Open a Proposal on a new ltm/propose branch of the Bank's origin, or promote a repo ADR or decision-log entry with `from`. Same result as `ltm propose --json` or `ltm promote --json`.",
+      inputSchema: z.object({
+        type: z.string().describe(schemaDesc("memory_type")),
+        title: z.string().optional().describe(`${schemaDesc("title")} Required unless from is set, which takes the source's heading.`),
+        summary: z.string().optional().describe(schemaDesc("summary")),
+        body: z.string().optional().describe("Markdown body under the frontmatter; the memory type's template when left out."),
+        applies_to: z.array(z.string()).optional().describe(schemaDesc("applies_to")),
+        owners: z.array(z.string()).optional().describe(schemaDesc("owners")),
+        tags: z.array(z.string()).optional().describe(schemaDesc("tags")),
+        related: z.array(z.string()).optional().describe(schemaDesc("related")),
+        supersedes: z.array(z.string()).optional().describe(schemaDesc("supersedes")),
+        source_refs: z.array(z.string()).optional().describe(schemaDesc("source_refs")),
+        from: z
+          .string()
+          .optional()
+          .describe("Repo path of an ADR or decision log to promote, relative to the server's cwd. Allows only type, title, summary, applies_to, and entry."),
+        entry: z.string().optional().describe("Heading of the decision-log entry to promote; needs from."),
+        bank: bankInput,
+      }),
+    },
+    async (input) => {
+      // Checked before pick, so a refused combination never clones, fetches, or pushes.
+      if (input.from !== undefined) {
+        const extra = (["body", "owners", "tags", "related", "supersedes", "source_refs"] as const).filter((k) => input[k] !== undefined);
+        if (extra.length > 0) return fail(`from can't be combined with ${extra.join(", ")}`);
+      } else if (input.entry !== undefined) {
+        return fail("entry needs from");
+      } else if (input.title === undefined) {
+        return fail("title is required unless from is set");
+      }
+      const picked = await pick(input.bank);
+      if ("error" in picked) return fail(picked.error);
+      const root = rootFor("propose", picked, input.bank);
+      if (typeof root !== "string") return root;
+
+      const common = [
+        `--type=${input.type}`,
+        ...(input.title === undefined ? [] : [`--title=${input.title}`]),
+        ...(input.summary === undefined ? [] : [`--summary=${input.summary}`]),
+        ...(input.applies_to ?? []).map((f) => `--applies-to=${f}`),
+      ];
+      let dir: string | undefined;
+      try {
+        let r;
+        if (input.from !== undefined) {
+          // promote reads the repo identity from its cwd, so it runs in the caller's repo, not the Bank.
+          const entry = input.entry === undefined ? [] : [`--entry=${input.entry}`];
+          r = await cli(["promote", "--json", `--bank=${root}`, ...common, ...entry, "--", input.from], cwd);
+        } else {
+          const lists = (["owners", "tags", "related", "supersedes"] as const).flatMap((k) => (input[k] ?? []).map((v) => `--${k}=${v}`));
+          const refs = (input.source_refs ?? []).map((v) => `--source-ref=${v}`);
+          let bodyFile: string[] = [];
+          if (input.body !== undefined) {
+            dir = mkdtempSync(join(tmpdir(), "ltm-mcp-body-"));
+            writeFileSync(join(dir, "body.md"), input.body);
+            bodyFile = [`--body-file=${join(dir, "body.md")}`];
+          }
+          r = await cli(["propose", "--json", ...common, ...lists, ...refs, ...bodyFile], root);
+        }
+        if (r.exitCode !== 0 && r.stdout === "") return fail(r.stderr.trimEnd());
+        // Runs once: a second, human-output run would push a second branch.
+        const structuredContent = withCommits(JSON.parse(r.stdout) as object, () => [root], picked.notes);
+        return { structuredContent, content: [{ type: "text", text: JSON.stringify(structuredContent, null, 2) }] };
+      } finally {
+        if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+      }
     },
   );
 
