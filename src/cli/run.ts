@@ -37,6 +37,26 @@ function helpText(commands: Command[]): string {
   return ["Usage: ltm <command> [options]", ...lines].join("\n") + "\n";
 }
 
+function commandHelp(cmd: Command): string {
+  const positionals = (cmd.positionals ?? []).map((p, i, all) => {
+    const dots = p.variadic && i === all.length - 1 ? "..." : "";
+    return p.required ? `<${p.name}${dots}>` : `[${p.name}${dots}]`;
+  });
+  const options = Object.entries(cmd.options ?? {});
+  const usage = ["Usage: ltm", cmd.name, ...positionals, ...(options.length ? ["[options]"] : [])];
+  const lines = [usage.join(" "), cmd.summary];
+  if (options.length) {
+    const flags = options.map(([key, o]) => `--${key}${o.type === "string" ? " <value>" : ""}`);
+    const width = Math.max(...flags.map((f) => f.length)) + 2;
+    lines.push("", "Options:");
+    options.forEach(([, o], i) => {
+      const flag = flags[i] as string;
+      lines.push(`  ${o.multiple ? flag.padEnd(width) + "(repeatable)" : flag}`);
+    });
+  }
+  return lines.join("\n") + "\n";
+}
+
 export async function run(
   input: RunInput,
   commands: Command[] = defaultCommands,
@@ -58,6 +78,12 @@ export async function run(
   if (!cmd) {
     const kind = head.startsWith("-") ? "option" : "command";
     return usageError(`ltm: unknown ${kind} '${head}'\nRun 'ltm --help' for usage.\n`);
+  }
+
+  // Scan stops at `--` so `ltm query -- --help` stays a positional filter.
+  const sep = rest.indexOf("--");
+  if ((sep === -1 ? rest : rest.slice(0, sep)).some((a) => a === "--help" || a === "-h")) {
+    return { exitCode: 0, stdout: commandHelp(cmd), stderr: "" };
   }
 
   // Exit 2 is decided here, before the command runs (parseArgs, the positional

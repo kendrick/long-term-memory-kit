@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { run } from "../../src/cli/run.ts";
 import type { Command } from "../../src/cli/run.ts";
+import { defaultCommands } from "../../src/cli/commands.ts";
 
 // Read independently of run's own import so the test can't agree with itself.
 const { version } = JSON.parse(
@@ -177,5 +178,102 @@ describe("run", () => {
       const ok = await run({ ...base, argv: ["stub", "--type", "Decision"] }, [cmd]);
       expect(ok.exitCode).toBe(0);
     });
+  });
+});
+
+describe("run <command> --help", () => {
+  const throwing: Command = {
+    name: "boom",
+    summary: "throws everywhere",
+    positionals: [{ name: "x", required: true }],
+    checkArgs() {
+      throw new Error("checkArgs ran");
+    },
+    async run() {
+      throw new Error("run ran");
+    },
+  };
+  const alpha = (options: Command["options"]): Command => ({
+    ...stub("alpha"),
+    positionals: [
+      { name: "id", required: true },
+      { name: "rest", required: false, variadic: true },
+    ],
+    options,
+  });
+  const full = { json: { type: "boolean" }, tag: { type: "string", multiple: true } } as const;
+
+  test("every default command prints every declared option and exits 0", async () => {
+    for (const cmd of defaultCommands) {
+      const r = await run({ ...base, argv: [cmd.name, "--help"] });
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe("");
+      for (const key of Object.keys(cmd.options ?? {})) expect(r.stdout).toContain(`--${key}`);
+    }
+  });
+
+  test("-h prints the same as --help", async () => {
+    const a = await run({ ...base, argv: ["query", "--help"] });
+    const b = await run({ ...base, argv: ["query", "-h"] });
+    expect(b).toEqual(a);
+  });
+
+  test("formats usage, summary, and padded options from the declaration", async () => {
+    const r = await run({ ...base, argv: ["alpha", "--help"] }, [alpha(full)]);
+    expect(r).toEqual({
+      exitCode: 0,
+      stderr: "",
+      stdout: [
+        "Usage: ltm alpha <id> [rest...] [options]",
+        "alpha summary",
+        "",
+        "Options:",
+        "  --json",
+        "  --tag <value>  (repeatable)",
+        "",
+      ].join("\n"),
+    });
+  });
+
+  test("removing an option removes its line", async () => {
+    const r = await run({ ...base, argv: ["alpha", "--help"] }, [alpha({ json: full.json })]);
+    expect(r.stdout).not.toContain("--tag");
+    expect(r.stdout).toContain("  --json");
+  });
+
+  test("adding an option adds its line", async () => {
+    const r = await run({ ...base, argv: ["alpha", "--help"] }, [
+      alpha({ ...full, extra: { type: "boolean" } }),
+    ]);
+    expect(r.stdout).toContain("  --extra\n");
+  });
+
+  test("a command with no options omits [options] and the Options block", async () => {
+    const r = await run({ ...base, argv: ["alpha", "--help"] }, [stub("alpha")]);
+    expect(r.stdout).toBe("Usage: ltm alpha\nalpha summary\n");
+  });
+
+  test("help runs before checkArgs and run", async () => {
+    const r = await run({ ...base, argv: ["boom", "--help"] }, [throwing]);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("Usage: ltm boom <x>");
+  });
+
+  test("propose --help exits 0 without --type and --title", async () => {
+    const r = await run({ ...base, argv: ["propose", "--help"] });
+    expect(r.exitCode).toBe(0);
+  });
+
+  test("query -- --help stays a positional and is rejected", async () => {
+    const r = await run({ ...base, argv: ["query", "--", "--help"] });
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain("invalid filter '--help'");
+  });
+
+  test("a hidden command answers --help", async () => {
+    const hidden: Command = { ...stub("ghost"), hidden: true };
+    const r = await run({ ...base, argv: ["ghost", "--help"] }, [hidden]);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("Usage: ltm ghost");
   });
 });
