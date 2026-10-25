@@ -104,16 +104,14 @@ function ancestorPrettierConfig(dir: string): string | null {
   return null;
 }
 
-type RecordSchema = { properties: Record<string, { description?: string }>; required: string[] };
-
-const loadRecordSchema = (): RecordSchema => recordSchemaJson;
+type FormatterTemplate = { overrides: { files: unknown; options: unknown }[] };
 
 // A static map rather than a path built from `name`: `bun build --compile` embeds only files it can see imported.
-const FORMATTER_TEMPLATES: Record<string, { overrides: { files: unknown; options: unknown }[] }> = {
+const FORMATTER_TEMPLATES: Record<string, FormatterTemplate> = {
   "oxfmtrc.json": oxfmtrc,
   "prettierrc.json": prettierrc,
 };
-const loadTemplate = (name: string): { overrides: { files: unknown; options: unknown }[] } => {
+const loadTemplate = (name: string): FormatterTemplate => {
   const t = FORMATTER_TEMPLATES[name];
   if (t === undefined) throw new Error(`no formatter template ${name}`);
   return t;
@@ -122,7 +120,7 @@ const loadTemplate = (name: string): { overrides: { files: unknown; options: unk
 // `init --check` compares disk against this, so both paths render each region the same way.
 export function renderRegions(config: BankConfig): { rel: string; region: string }[] {
   return [
-    { rel: "AGENTS.md", region: renderAgentsRegion(config, loadRecordSchema()) },
+    { rel: "AGENTS.md", region: renderAgentsRegion(config, recordSchemaJson) },
     { rel: "CLAUDE.md", region: CLAUDE_REGION },
     { rel: ".github/copilot-instructions.md", region: COPILOT_REGION },
   ];

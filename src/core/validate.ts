@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
-import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type: "json" };
-import recordSchemaJson from "../../schema/record.schema.json" with { type: "json" };
-import { SCHEMA_VERSIONS } from "./schema-versions.ts";
 import { join, posix, relative, resolve, sep } from "node:path";
 import Ajv2020Module, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import addFormatsModule from "ajv-formats";
 import { isAlias, isMap, isScalar, isSeq, parseDocument, type Document, type Pair } from "yaml";
+import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type: "json" };
+import recordSchemaJson from "../../schema/record.schema.json" with { type: "json" };
 import { ConfigError, isInside, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
 import { listRecordFiles } from "./query.ts";
 import { splitFrontmatter, unrepresentable, type Unrepresentable } from "./record.ts";
+import { SCHEMA_VERSIONS } from "./schema-versions.ts";
 import { byCodeUnit as cmp, firstLine } from "./text.ts";
 
 export type Rule =

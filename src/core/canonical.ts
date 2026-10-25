@@ -4,8 +4,7 @@ import { isMapping } from "./bank.ts";
 
 export type Refusal = { reason: string };
 
-// Read at runtime rather than copied in, so adding a property to the schema moves
-// it into canonical order without a second edit here.
+// Taken from the schema file rather than copied in, so adding a property there moves it into canonical order without a second edit here; the bundler embeds the file.
 export const SCHEMA_KEY_ORDER: readonly string[] = Object.freeze(
   Object.keys(recordSchema.properties),
 );

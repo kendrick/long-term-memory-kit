@@ -15,8 +15,6 @@ export const COPILOT_REGION = "Follow AGENTS.md at the repo root to read and pro
 const BEGIN_LINE = /^<!-- ltm:generated:begin v\S+ -->\r?$/;
 const END_LINE = /^<!-- ltm:generated:end -->\r?$/;
 
-const loadAgentsTemplate = (): string => agentsTemplate;
-
 // Bare when every char is shell-inert, so the common `_memory/...` paths read cleanly.
 function shq(s: string): string {
   return /^[A-Za-z0-9_/.,:@%+=-]+$/.test(s) ? s : `'${s.replaceAll("'", `'\\''`)}'`;
@@ -91,7 +89,7 @@ export function renderAgentsRegion(
     prefixes: prefixes.length ? prefixes.map((p) => `\`${p}\``).join(", ") : "none yet",
     fields,
   };
-  return loadAgentsTemplate().replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
+  return agentsTemplate.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
     const value = values[key];
     if (value === undefined) throw new Error(`agents-region.md: unknown placeholder {{${key}}}`);
     return value;

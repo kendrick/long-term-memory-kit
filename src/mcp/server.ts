@@ -15,7 +15,7 @@ import { BankLocator, bankCommits, namedRoot } from "./bank.ts";
 
 type Named = { name: string; root: string };
 
-// Read at load, like canonical.ts, so an input named after a Record field describes itself the way the schema does.
+// Taken from the schema file, like canonical.ts, so an input named after a Record field describes itself the way the schema does; the bundler embeds the file.
 const SCHEMA_PROPS: Record<string, { description?: string }> = recordSchema.properties;
 const schemaDesc = (key: string): string => {
   const d = SCHEMA_PROPS[key]?.description;
