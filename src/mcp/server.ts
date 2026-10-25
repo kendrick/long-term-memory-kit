@@ -1,0 +1,195 @@
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { relative, resolve } from "node:path";
+import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
+import { z } from "zod";
+import pkg from "../../package.json" with { type: "json" };
+import { ConfigError, findBank, isInside, loadConfig } from "../core/bank.ts";
+import { listRecords } from "../core/query.ts";
+import { resolveBankFlag, resolveBanks, type Env } from "../core/resolve.ts";
+import { configErrorLine, noBankLine } from "../cli/bank.ts";
+import { run } from "../cli/run.ts";
+import { BankLocator, bankCommits, type Picked } from "./bank.ts";
+
+// Read at load, like canonical.ts, so an input named after a Record field describes itself the way the schema does.
+const SCHEMA_PROPS = (
+  JSON.parse(readFileSync(new URL("../../schema/record.schema.json", import.meta.url), "utf8")) as {
+    properties: Record<string, { description?: string }>;
+  }
+).properties;
+const schemaDesc = (key: string): string => {
+  const d = SCHEMA_PROPS[key]?.description;
+  if (d === undefined) throw new Error(`record.schema.json has no description for ${key}`);
+  return d;
+};
+
+const fail = (text: string): CallToolResult => ({ isError: true, content: [{ type: "text", text }] });
+
+const bankInput = z
+  .string()
+  .optional()
+  .describe("Name or path of the Bank to read. Refused while LTM_BANK_PATH or LTM_BANK_URL picks the Bank.");
+
+export function createServer(env: Env, cwd: string): McpServer {
+  const server = new McpServer({ name: "ltm", version: pkg.version });
+  const locator = new BankLocator();
+
+  const pick = (bank: string | undefined) => locator.pickBank({ bank }, env, cwd);
+
+  // Precedence is the env's pick, then `bank` read the way --bank reads it, then the Bank around the server's cwd.
+  const rootFor = (tool: string, picked: Picked, bank: string | undefined): string | CallToolResult => {
+    try {
+      const root = picked.root ?? (bank !== undefined && bank !== "" ? resolveBankFlag(bank, cwd, env).root : findBank(cwd));
+      return root ?? fail(noBankLine(tool, cwd).trimEnd());
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      return fail(configErrorLine(tool, e).trimEnd());
+    }
+  };
+
+  // Handlers only map inputs to an argv; run() does the checks and shaping, so the MCP and CLI routes can't drift.
+  const cli = (argv: string[], at: string) => run({ argv, cwd: at, env });
+
+  const withCommits = (body: object, roots: () => string[], notes: string[]): Record<string, unknown> => ({
+    ...body,
+    bank_commits: bankCommits(roots()),
+    ...(notes.length > 0 ? { bank_notes: notes } : {}),
+  });
+
+  // A non-zero exit with empty stdout is a tool error. Anything else is data, including validate's exit 1 with findings on stdout.
+  const jsonTool = async (argv: string[], at: string, roots: () => string[], notes: string[]): Promise<CallToolResult> => {
+    const r = await cli([argv[0] as string, "--json", ...argv.slice(1)], at);
+    if (r.exitCode !== 0 && r.stdout === "") return fail(r.stderr.trimEnd());
+    const parsed = JSON.parse(r.stdout) as unknown;
+    const body = Array.isArray(parsed) ? { results: parsed } : (parsed as object);
+    const structuredContent = withCommits(body, roots, notes);
+    const text = (await cli(argv, at)).stdout;
+    return { structuredContent, content: [{ type: "text", text }] };
+  };
+
+  server.registerTool(
+    "query",
+    {
+      description: "List Records by key=value filters, type, Facet, status, or text. Same rows as `ltm query --json`.",
+      inputSchema: z.object({
+        filters: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Frontmatter key=value filters; every pair must match."),
+        type: z.string().optional().describe(schemaDesc("memory_type")),
+        facets: z.array(z.string()).optional().describe(schemaDesc("applies_to")),
+        status: z.array(z.string()).optional().describe(schemaDesc("status")),
+        text: z.string().optional().describe("Free text to rank Records by."),
+        all: z.boolean().optional().describe("Include superseded, deprecated, and expired Records."),
+        bank: bankInput,
+      }),
+    },
+    async (input) => {
+      const picked = await pick(input.bank);
+      if ("error" in picked) return fail(picked.error);
+      const bank = picked.root ?? (input.bank !== undefined && input.bank !== "" ? input.bank : undefined);
+      // `=`-joined options and `--` before the filters, so an input starting with `-` can't be read as another flag (say, a second --bank).
+      const argv = [
+        "query",
+        ...(bank === undefined ? [] : [`--bank=${bank}`]),
+        ...(input.type === undefined ? [] : [`--type=${input.type}`]),
+        ...(input.facets ?? []).map((f) => `--facet=${f}`),
+        ...(input.status ?? []).map((s) => `--status=${s}`),
+        ...(input.text === undefined ? [] : [`--text=${input.text}`]),
+        ...(input.all === true ? ["--all"] : []),
+        "--",
+        ...Object.entries(input.filters ?? {}).map(([k, v]) => `${k}=${v}`),
+      ];
+      const roots = (): string[] => {
+        if (bank !== undefined) return [picked.root ?? resolveBankFlag(bank, cwd, env).root];
+        const here = findBank(cwd);
+        return here !== null ? [here] : resolveBanks(cwd, env).banks.map((b) => b.root);
+      };
+      return jsonTool(argv, cwd, roots, picked.notes);
+    },
+  );
+
+  server.registerTool(
+    "head",
+    {
+      description: "Print one Record's frontmatter block, fences included, found by id or by Bank-relative path.",
+      inputSchema: z.object({
+        id: z.string().optional().describe(schemaDesc("id")),
+        path: z.string().optional().describe("Bank-relative path of the Record file."),
+        bank: bankInput,
+      }),
+    },
+    async (input) => {
+      if ((input.id === undefined) === (input.path === undefined)) return fail("give exactly one of id or path");
+      const picked = await pick(input.bank);
+      if ("error" in picked) return fail(picked.error);
+      const root = rootFor("head", picked, input.bank);
+      if (typeof root !== "string") return root;
+      const realRoot = realpathSync(root);
+      let rel: string;
+      if (input.id !== undefined) {
+        const id = input.id;
+        let held: string[];
+        try {
+          held = listRecords(loadConfig(root), () => {}).filter((r) => r.frontmatter.id === id).map((r) => r.path);
+        } catch (e) {
+          if (!(e instanceof ConfigError)) throw e;
+          return fail(configErrorLine("head", e).trimEnd());
+        }
+        if (held.length === 0) return fail(`'${id}' matches no Record`);
+        if (held.length > 1) return fail(`'${id}' is held by ${held.length} Records`);
+        rel = held[0] as string;
+      } else {
+        // Realpath before the check, so neither `..` nor a symlink lets an agent read a file outside the Bank.
+        const abs = resolve(realRoot, input.path as string);
+        const target = existsSync(abs) ? realpathSync(abs) : abs;
+        if (!isInside(realRoot, target)) return fail(`${input.path} is outside the Bank`);
+        rel = relative(realRoot, target);
+      }
+      const r = await cli(["head", "--", rel], realRoot);
+      if (r.exitCode !== 0 && r.stdout === "") return fail(r.stderr.trimEnd());
+      const structuredContent = withCommits({ path: rel, head: r.stdout }, () => [root], picked.notes);
+      return { structuredContent, content: [{ type: "text", text: r.stdout }] };
+    },
+  );
+
+  server.registerTool(
+    "facets",
+    {
+      description: "List every Facet in applies_to with its Record count. Same rows as `ltm facets --json`.",
+      inputSchema: z.object({
+        all: z.boolean().optional().describe("Count superseded, deprecated, and expired Records too."),
+        bank: bankInput,
+      }),
+    },
+    async (input) => {
+      const picked = await pick(input.bank);
+      if ("error" in picked) return fail(picked.error);
+      const root = rootFor("facets", picked, input.bank);
+      if (typeof root !== "string") return root;
+      return jsonTool(["facets", ...(input.all === true ? ["--all"] : [])], root, () => [root], picked.notes);
+    },
+  );
+
+  server.registerTool(
+    "validate",
+    {
+      description: "Check memory-bank.yaml and each Record against the schemas and Bank rules. Same findings as `ltm validate --json`.",
+      inputSchema: z.object({
+        paths: z
+          .array(z.string())
+          .optional()
+          .describe("Bank-relative Record paths to check; every Record when left out."),
+        bank: bankInput,
+      }),
+    },
+    async (input) => {
+      const picked = await pick(input.bank);
+      if ("error" in picked) return fail(picked.error);
+      const root = rootFor("validate", picked, input.bank);
+      if (typeof root !== "string") return root;
+      return jsonTool(["validate", "--", ...(input.paths ?? [])], root, () => [root], picked.notes);
+    },
+  );
+
+  return server;
+}

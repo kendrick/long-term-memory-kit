@@ -6,6 +6,7 @@ import { facets } from "./facets.ts";
 import { fmt } from "./fmt.ts";
 import { head } from "./head.ts";
 import { init } from "./init.ts";
+import { mcp } from "./mcp.ts";
 import { promote } from "./promote.ts";
 import { propose } from "./propose.ts";
 import { query } from "./query.ts";
@@ -15,4 +16,4 @@ import { validate } from "./validate.ts";
 
 // Add new commands to this array; the dispatcher in run.ts needs no edit. Each planned
 // command already has a slot, so the issue that builds one edits only its own file.
-export const defaultCommands: Command[] = [head, query, facets, validate, fmt, discover, connect, init, supersede, accept, propose, promote, doctor];
+export const defaultCommands: Command[] = [head, query, facets, validate, fmt, discover, connect, init, supersede, accept, propose, promote, doctor, mcp];
