@@ -201,7 +201,7 @@ describe("run <command> --help", () => {
     ],
     options,
   });
-  const full = { json: { type: "boolean" }, tag: { type: "string", multiple: true } } as const;
+  const jsonAndTag = { json: { type: "boolean" }, tag: { type: "string", multiple: true } } as const;
 
   test("every default command prints every declared option and exits 0", async () => {
     for (const cmd of defaultCommands) {
@@ -219,7 +219,7 @@ describe("run <command> --help", () => {
   });
 
   test("formats usage, summary, and padded options from the declaration", async () => {
-    const r = await run({ ...base, argv: ["alpha", "--help"] }, [alpha(full)]);
+    const r = await run({ ...base, argv: ["alpha", "--help"] }, [alpha(jsonAndTag)]);
     expect(r).toEqual({
       exitCode: 0,
       stderr: "",
@@ -236,14 +236,14 @@ describe("run <command> --help", () => {
   });
 
   test("removing an option removes its line", async () => {
-    const r = await run({ ...base, argv: ["alpha", "--help"] }, [alpha({ json: full.json })]);
+    const r = await run({ ...base, argv: ["alpha", "--help"] }, [alpha({ json: jsonAndTag.json })]);
     expect(r.stdout).not.toContain("--tag");
     expect(r.stdout).toContain("  --json");
   });
 
   test("adding an option adds its line", async () => {
     const r = await run({ ...base, argv: ["alpha", "--help"] }, [
-      alpha({ ...full, extra: { type: "boolean" } }),
+      alpha({ ...jsonAndTag, extra: { type: "boolean" } }),
     ]);
     expect(r.stdout).toContain("  --extra\n");
   });

@@ -25,7 +25,7 @@ export type Command = {
   // `variadic` is honored only on the last entry; earlier entries are ignored for it.
   positionals?: { name: string; required: boolean; variadic?: true }[];
   checkArgs?(positionals: string[], values: CommandContext["values"]): string | undefined;
-  // A planned command holds its slot in commands.ts before it works; --help leaves it out.
+  // A planned command holds its slot in commands.ts before it works; top-level --help leaves it out.
   hidden?: true;
   run(ctx: CommandContext): Promise<0 | 1>;
 };
@@ -46,13 +46,10 @@ function commandHelp(cmd: Command): string {
   const usage = ["Usage: ltm", cmd.name, ...positionals, ...(options.length ? ["[options]"] : [])];
   const lines = [usage.join(" "), cmd.summary];
   if (options.length) {
-    const flags = options.map(([key, o]) => `--${key}${o.type === "string" ? " <value>" : ""}`);
-    const width = Math.max(...flags.map((f) => f.length)) + 2;
+    const flags = options.map(([key, o]) => [`--${key}${o.type === "string" ? " <value>" : ""}`, o] as const);
+    const width = Math.max(...flags.map(([f]) => f.length)) + 2;
     lines.push("", "Options:");
-    options.forEach(([, o], i) => {
-      const flag = flags[i] as string;
-      lines.push(`  ${o.multiple ? flag.padEnd(width) + "(repeatable)" : flag}`);
-    });
+    for (const [flag, o] of flags) lines.push(`  ${o.multiple ? flag.padEnd(width) + "(repeatable)" : flag}`);
   }
   return lines.join("\n") + "\n";
 }
