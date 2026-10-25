@@ -40,7 +40,7 @@ A match means a Record cites that source, so skip it.
 
 ## Extract
 
-Read each remaining source in full. Pull out the claims that might belong in the Bank: choices and their reasons, standards, departures from a standard, and background that agents need.
+Read each remaining source in full. Pull out the claims that might belong in the Bank: the choice and reasons behind a Decision, the PolicyRules a team follows, the Exceptions to them, and the Context agents need to reason correctly.
 
 Test each claim against the bright line. A claim belongs in a Bank when it applies to more than one repo, or when someone outside one repo's team governs it. Leave anything else in the repo's Working memory.
 
@@ -71,7 +71,7 @@ grep -rliE '^(title|summary): .*postgres' _memory
 Decide what each match means for the draft:
 
 - The same claim already exists. Drop the draft.
-- The draft replaces an older Record. Mark the draft as a Supersession of it with `--supersedes <id>`.
+- The draft supersedes an older Record. Mark the Supersession with `--supersedes <id>`.
 - The draft narrows or depends on another Record. Link the two through `related`.
 
 ## Validate

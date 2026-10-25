@@ -1,13 +1,13 @@
 ---
 name: query-memory
-description: Use before making or reviewing a choice that an org-level standard might govern, such as a datastore, a logging format, a deployment practice, or a service boundary, or when someone asks what the Bank says about a topic. Finds the Records that apply to this repo and cites them.
+description: Use before making or reviewing a choice that a PolicyRule or Decision in the Bank might govern, such as a datastore, a logging format, a deployment practice, or a service boundary, or when someone asks what the Bank says about a topic. Finds the Records that apply to this repo and cites them.
 ---
 <!-- VENDORED-FROM: kendrick/long-term-memory-kit skills/query-memory -->
 <!-- VERSION: 0.0.0 -->
 
 # Query Memory
 
-A Bank holds the decisions, standards, and exceptions that apply beyond one repo. Read as little of it as you can and still get the answer right. Use a four-stage funnel, where each stage reads fewer files than the one before:
+A Bank holds the Decisions, PolicyRules, Exceptions, and Context that apply beyond one repo. Read as little of it as you can and still get the answer right. Use a four-stage funnel, where each stage reads fewer files than the one before:
 
 1. Glob. Pick the folder for the memory type you need.
 2. Grep the frontmatter of the files in that folder.
@@ -22,7 +22,7 @@ If `ltm` is on your `PATH`, or the `ltm` MCP server is connected, let it run sta
 ltm query --type PolicyRule --text "logging"
 ```
 
-The MCP `query` tool takes the same filters. `ltm query` looks up this repo's Facets in the Bank, so leave out `--facet` unless you want a different scope. If the Bank doesn't list this repo, it returns Org-wide Records only and prints a note saying so. Pass `--facet service:order-service` to name the scope yourself.
+The MCP `query` tool takes the same filters. `ltm query` looks up this repo's Facets in the Bank, so leave out `--facet` unless you want other Facets. If the Bank doesn't list this repo, it returns Org-wide Records only and prints a note saying so. Pass `--facet service:order-service` to name the Facets yourself.
 
 Then read headers with `ltm head <path>`, or the MCP `head` tool. Read the whole file only for the Records that still look relevant.
 
@@ -38,7 +38,7 @@ Grep the frontmatter. Records for one Facet:
 grep -rlE '^applies_to: .*service:order-service' _memory
 ```
 
-Accepted PolicyRules, which are the standards to follow:
+Accepted PolicyRules, which agents have to follow:
 
 ```sh
 grep -rl '^status: accepted$' _memory/policy-rules
@@ -46,7 +46,7 @@ grep -rl '^status: accepted$' _memory/policy-rules
 
 A Record with no `applies_to` line, or with `applies_to: []`, is Org-wide. It applies to this repo too, even though a Facet grep never lists it.
 
-Proposals, which you can mention but never follow as rules:
+Proposals, which you can mention but never treat as constraints:
 
 ```sh
 grep -rl '^status: proposed$' _memory
@@ -66,9 +66,9 @@ grep -rlE '^status: (superseded|deprecated|rejected)$' _memory
 
 Read the header of each match. The frontmatter ends within the first 20 lines, so `head -n 20 <path>` is enough. Read the whole file only for the Records that still look relevant.
 
-## Rules for the Answer
+## Writing the Answer
 
 - Skip Retired Records, meaning those with a `status` of `superseded`, `deprecated`, or `rejected`. Look at one only when the question is about history.
 - A Proposal has `status: proposed`. Mention it as context, but never treat it as a constraint.
-- An Exception can override a PolicyRule for its own Facets. Check for one before you tell someone that a rule applies to them.
+- An Exception grants a bounded departure from a PolicyRule within its own Facets. Check for one before you tell someone that a PolicyRule applies to them.
 - Cite the id of every Record your answer relies on, such as `nR5hB2yTq8`.

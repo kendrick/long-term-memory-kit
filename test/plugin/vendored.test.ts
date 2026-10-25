@@ -5,7 +5,7 @@ import { join } from "node:path";
 const repo = new URL("../..", import.meta.url).pathname;
 const skills = readdirSync(join(repo, "skills")).sort();
 
-// The first two lines after the frontmatter, where a repo that vendors the skill looks for its origin.
+// A repo that vendors a skill looks right under the frontmatter for where it came from.
 function headerLines(text: string): string[] {
   const lines = text.split("\n");
   const close = lines.indexOf("---", 1);
