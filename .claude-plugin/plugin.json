@@ -1,0 +1,39 @@
+{
+  "name": "ltm",
+  "version": "0.0.0",
+  "description": "Org-level memory for coding agents: query a Bank, hydrate Proposals, and promote decisions.",
+  "author": { "name": "Kendrick Arnett" },
+  "userConfig": {
+    "bank_url": {
+      "type": "string",
+      "title": "Bank git URL",
+      "description": "Git URL of the Bank to clone read-only and refresh on a TTL. Leave empty to resolve the Bank from this repo's .ltm.yaml or your user config.",
+      "default": ""
+    },
+    "bank_path": {
+      "type": "string",
+      "title": "Local Bank checkout",
+      "description": "Path to a local Bank checkout, used as is with no clone or fetch. Overrides bank_url. For Bank authors testing unmerged Records.",
+      "default": ""
+    },
+    "bank_ttl": {
+      "type": "number",
+      "title": "Refresh interval (seconds)",
+      "description": "How long a cloned Bank is served before the next git fetch.",
+      "default": 300,
+      "min": 0
+    }
+  },
+  "mcpServers": {
+    "ltm": {
+      "command": "ltm",
+      "args": ["mcp"],
+      "env": {
+        "LTM_BANK_URL": "${user_config.bank_url}",
+        "LTM_BANK_PATH": "${user_config.bank_path}",
+        "LTM_BANK_TTL": "${user_config.bank_ttl}",
+        "LTM_DATA_DIR": "${CLAUDE_PLUGIN_DATA}"
+      }
+    }
+  }
+}

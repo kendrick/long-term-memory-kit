@@ -19,6 +19,18 @@ jobs:
       # The committed generated files are what an agent in the demo Bank reads; fail when the renderer drifts from them.
       - run: bun src/cli/bin.ts init --check fixtures/demo-bank
 
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i -g @anthropic-ai/claude-code@2.1.294
+      # With marketplace.json present, `validate .` checks only the marketplace, so plugin.json needs its own run. No --strict: the root CLAUDE.md always draws a warning.
+      - run: claude plugin validate .
+      - run: claude plugin validate .claude-plugin/plugin.json
+
   schema:
     runs-on: ubuntu-latest
     steps:

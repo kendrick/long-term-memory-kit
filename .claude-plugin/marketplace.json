@@ -1,0 +1,12 @@
+{
+  "name": "ltm-marketplace",
+  "owner": { "name": "Kendrick Arnett" },
+  "description": "The ltm plugin: org-level memory for coding agents.",
+  "plugins": [
+    {
+      "name": "ltm",
+      "source": ".",
+      "description": "Query a Bank, hydrate Proposals, and promote decisions."
+    }
+  ]
+}
