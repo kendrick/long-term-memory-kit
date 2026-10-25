@@ -175,6 +175,35 @@ describe("ltm mcp, read-only tools", () => {
     MCP_TEST_TIMEOUT,
   );
 
+  test(
+    "bank_commits is keyed by the aliases query rows carry, even when two Banks share a name",
+    () =>
+      withDemoGitBank((one) =>
+        withDemoGitBank((two) =>
+          withConsumerRepo(async (consumer) => {
+            // Same memory-bank.yaml name in both; only the user-config aliases tell them apart. The second HEAD differs so a collapsed map can't pass by luck.
+            git(two, ...IDENTITY, "commit", "--quiet", "--allow-empty", "-m", "second");
+            const cfgDir = mkdtempSync(join(tmpdir(), "ltm-cfg-"));
+            try {
+              writeFileSync(join(cfgDir, "config.yaml"), `banks:\n  alpha: { path: ${one} }\n  beta: { path: ${two} }\n`);
+              writeFileSync(join(consumer, ".ltm.yaml"), "banks: [alpha, beta]\n");
+              const env = { ...process.env, LTM_BANK_PATH: undefined, LTM_BANK_URL: undefined, LTM_CONFIG: join(cfgDir, "config.yaml") };
+              const sc = ok(await withMcp(env, consumer, (client) => call(client, "query", {})));
+              const commits = sc.bank_commits as Record<string, string>;
+              expect(commits).toEqual({ alpha: head(one), beta: head(two) });
+              expect(head(one)).not.toBe(head(two));
+              const rows = sc.results as { bank: string }[];
+              expect(new Set(rows.map((r) => r.bank))).toEqual(new Set(["alpha", "beta"]));
+              for (const r of rows) expect(Object.keys(commits)).toContain(r.bank);
+            } finally {
+              rmSync(cfgDir, { recursive: true, force: true });
+            }
+          }),
+        ),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
   test("a bad LTM_BANK_TTL exits 1 before serving", () => {
     const r = spawnSync(process.execPath, [bin, "mcp"], { env: { ...process.env, LTM_BANK_TTL: "abc" }, input: "", encoding: "utf8" });
     expect(r.status).toBe(1);

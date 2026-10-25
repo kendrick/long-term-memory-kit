@@ -10,7 +10,9 @@ import { listRecords } from "../core/query.ts";
 import { resolveBankFlag, resolveBanks, type Env } from "../core/resolve.ts";
 import { configErrorLine, noBankLine } from "../cli/bank.ts";
 import { run } from "../cli/run.ts";
-import { BankLocator, bankCommits } from "./bank.ts";
+import { BankLocator, bankCommits, namedRoot } from "./bank.ts";
+
+type Named = { name: string; root: string };
 
 // Read at load, like canonical.ts, so an input named after a Record field describes itself the way the schema does.
 const SCHEMA_PROPS = (
@@ -54,7 +56,7 @@ export function createServer(env: Env, cwd: string): McpServer {
   const cli = (argv: string[], at: string) => run({ argv, cwd: at, env });
 
   // Another request's refresh can fast-forward the clone mid-read. A read counts only when HEAD held still across it, so bank_commits names the commit the data came from.
-  const pinned = async <R>(roots: () => string[], read: () => Promise<R>): Promise<{ out: R; commits: Record<string, string | null> } | CallToolResult> => {
+  const pinned = async <R>(roots: () => Named[], read: () => Promise<R>): Promise<{ out: R; commits: Record<string, string | null> } | CallToolResult> => {
     for (let tries = 0; tries < 3; tries++) {
       const before = bankCommits(roots());
       const out = await read();
@@ -71,7 +73,7 @@ export function createServer(env: Env, cwd: string): McpServer {
   });
 
   // A non-zero exit with empty stdout is a tool error. Anything else is data, including validate's exit 1 with findings on stdout.
-  const jsonTool = async (argv: string[], at: string, roots: () => string[], notes: string[]): Promise<CallToolResult> => {
+  const jsonTool = async (argv: string[], at: string, roots: () => Named[], notes: string[]): Promise<CallToolResult> => {
     const read = await pinned(roots, async () => ({
       json: await cli([argv[0] as string, "--json", ...argv.slice(1)], at),
       human: await cli(argv, at),
@@ -117,11 +119,15 @@ export function createServer(env: Env, cwd: string): McpServer {
         "--",
         ...Object.entries(input.filters ?? {}).map(([k, v]) => `${k}=${v}`),
       ];
-      const roots = (): string[] => {
+      const roots = (): Named[] => {
         try {
-          if (bank !== undefined) return [picked.root ?? resolveBankFlag(bank, cwd, env).root];
+          if (picked.root !== null) return [namedRoot(picked.root)];
+          if (bank !== undefined) {
+            const { name, root } = resolveBankFlag(bank, cwd, env);
+            return [{ name, root }];
+          }
           const here = findBank(cwd);
-          return here !== null ? [here] : resolveBanks(cwd, env).banks.map((b) => b.root);
+          return here !== null ? [namedRoot(here)] : resolveBanks(cwd, env).banks.map(({ name, root }) => ({ name, root }));
         } catch (e) {
           // pinned() reads the roots before the CLI runs, so a bad --bank has to fall through to run(), which owns that error message.
           if (!(e instanceof ConfigError)) throw e;
@@ -168,7 +174,7 @@ export function createServer(env: Env, cwd: string): McpServer {
         if (!isInside(realRoot, target)) return fail(`${input.path} is outside the Bank`);
         rel = relative(realRoot, target);
       }
-      const read = await pinned(() => [root], () => cli(["head", "--", rel], realRoot));
+      const read = await pinned(() => [namedRoot(root)], () => cli(["head", "--", rel], realRoot));
       if ("content" in read) return read;
       const r = read.out;
       if (r.exitCode !== 0 && r.stdout === "") return fail(r.stderr.trimEnd());
@@ -189,7 +195,7 @@ export function createServer(env: Env, cwd: string): McpServer {
       const at = await pickRoot("facets", input.bank);
       if ("content" in at) return at;
       const { root, notes } = at;
-      return jsonTool(["facets", ...(input.all === true ? ["--all"] : [])], root, () => [root], notes);
+      return jsonTool(["facets", ...(input.all === true ? ["--all"] : [])], root, () => [namedRoot(root)], notes);
     },
   );
 
@@ -209,7 +215,7 @@ export function createServer(env: Env, cwd: string): McpServer {
       const at = await pickRoot("validate", input.bank);
       if ("content" in at) return at;
       const { root, notes } = at;
-      return jsonTool(["validate", "--", ...(input.paths ?? [])], root, () => [root], notes);
+      return jsonTool(["validate", "--", ...(input.paths ?? [])], root, () => [namedRoot(root)], notes);
     },
   );
 
@@ -277,7 +283,7 @@ export function createServer(env: Env, cwd: string): McpServer {
         }
         if (r.exitCode !== 0 && r.stdout === "") return fail(r.stderr.trimEnd());
         // Runs once: a second, human-output run would push a second branch.
-        const structuredContent = withCommits(JSON.parse(r.stdout) as object, bankCommits([root]), notes);
+        const structuredContent = withCommits(JSON.parse(r.stdout) as object, bankCommits([namedRoot(root)]), notes);
         return { structuredContent, content: [{ type: "text", text: JSON.stringify(structuredContent, null, 2) }] };
       } finally {
         if (dir !== undefined) rmSync(dir, { recursive: true, force: true });

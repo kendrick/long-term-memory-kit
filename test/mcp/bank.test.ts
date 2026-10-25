@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { BankLocator, bankCommits, parseTtl, type Picked } from "../../src/mcp/bank.ts";
+import { BankLocator, bankCommits, namedRoot, parseTtl, type Picked } from "../../src/mcp/bank.ts";
 import { git, IDENTITY, withGitBank } from "../helpers/git-bank.ts";
 
 // Each test spawns many git processes; bun's 5s default flakes under load.
@@ -205,13 +205,29 @@ describe("parseTtl", () => {
 
 describe("bankCommits", () => {
   test(
-    "maps each root's Bank name to its HEAD, and a non-git dir to null",
+    "maps each given name to its root's HEAD, and a non-git dir to null",
     async () => {
       await withGitBank(async ({ clone }) => {
         const plain = mkdtempSync(join(tmpdir(), "ltm-plain-"));
         try {
-          const out = bankCommits([clone, plain]);
-          expect(out).toEqual({ acme: git(clone, "rev-parse", "HEAD").trim(), [plain.split("/").pop()!]: null });
+          const out = bankCommits([{ name: "one", root: clone }, { name: "two", root: plain }]);
+          expect(out).toEqual({ one: git(clone, "rev-parse", "HEAD").trim(), two: null });
+        } finally {
+          rmSync(plain, { recursive: true, force: true });
+        }
+      });
+    },
+    GIT_TEST_TIMEOUT,
+  );
+
+  test(
+    "namedRoot takes memory-bank.yaml's name, else the basename",
+    async () => {
+      await withGitBank(async ({ clone }) => {
+        expect(namedRoot(clone)).toEqual({ name: "acme", root: clone });
+        const plain = mkdtempSync(join(tmpdir(), "ltm-plain-"));
+        try {
+          expect(namedRoot(plain)).toEqual({ name: plain.split("/").pop()!, root: plain });
         } finally {
           rmSync(plain, { recursive: true, force: true });
         }

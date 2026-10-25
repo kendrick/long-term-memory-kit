@@ -96,21 +96,20 @@ export class BankLocator {
   }
 }
 
-export function bankCommits(roots: string[]): Record<string, string | null> {
+// Keyed by the caller's names, which must be the ones `ltm query` puts in each row's `bank`. Two Banks can share a memory-bank.yaml `name`, so deriving it here would let one overwrite the other.
+export function bankCommits(banks: { name: string; root: string }[]): Record<string, string | null> {
   const out: Record<string, string | null> = {};
-  for (const root of roots) {
-    out[bankName(root)] = headOf(root);
-  }
+  for (const { name, root } of banks) out[name] = headOf(root);
   return out;
 }
 
-// Same naming rule as resolveBankFlag, but a root without a readable memory-bank.yaml falls back to its basename instead of throwing.
-function bankName(root: string): string {
+// Naming for roots no resolver named (env picks, the clone, a Bank found from cwd). Same rule as resolveBankFlag, but a root without a readable memory-bank.yaml falls back to its basename instead of throwing.
+export function namedRoot(root: string): { name: string; root: string } {
   try {
     const name = loadConfig(root).raw.name;
-    if (typeof name === "string" && name !== "") return name;
+    if (typeof name === "string" && name !== "") return { name, root };
   } catch {}
-  return basename(root);
+  return { name: basename(root), root };
 }
 
 function headOf(root: string): string | null {
