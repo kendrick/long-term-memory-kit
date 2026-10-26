@@ -57,7 +57,12 @@ jobs:
             echo "commented=true" >> "$GITHUB_OUTPUT"
             exit 1
           fi
-          printf 'Opened %s as a Proposal.\n' "$(jq -r .url "$out")" > "$RUNNER_TEMP/comment.md"
+          url="$(jq -r '.url // empty' "$out")"
+          if [ -n "$url" ]; then
+            printf 'Opened %s as a Proposal.\n' "$url" > "$RUNNER_TEMP/comment.md"
+          else
+            printf "Pushed branch %s as a Proposal, but couldn't open a pull request on this host. Open one for that branch by hand.\n" "$(jq -r .branch "$out")" > "$RUNNER_TEMP/comment.md"
+          fi
           if [ "$HAS_LTM_TOKEN" != true ]; then
             {
               echo

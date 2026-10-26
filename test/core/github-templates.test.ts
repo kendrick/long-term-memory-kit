@@ -151,6 +151,13 @@ describe("GitHub workflow templates", () => {
     expect(propose?.run).toContain("--json");
   });
 
+  test("ltm-issue-form handles a null PR url from a host without PRs", () => {
+    const run = steps(load("ltm-issue-form.yml")).find((s) => s.id === "propose")!.run!;
+    expect(run).toContain("jq -r '.url // empty'");
+    expect(run).toContain("Pushed branch");
+    expect(run).toContain("couldn't open a pull request on this host");
+  });
+
   test("the Install ltm step is the same script in every workflow", () => {
     // Templates can't share a step without a composite action, so this is what keeps the copies from drifting.
     const scripts = NAMES.map((name) => steps(load(name)).filter((s) => s.name === "Install ltm").map((s) => s.run));

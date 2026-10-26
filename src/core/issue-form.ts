@@ -28,29 +28,29 @@ const headings = (type: MemoryType): string[] =>
 export type IssueFormResult = { input: Omit<ProposalInput, "source_refs"> & { source_refs: string[] } } | { error: string };
 
 export function parseIssueForm(text: string): IssueFormResult {
-  const byLabel = new Map<string, FieldId>(ISSUE_FORM_FIELDS.map((f) => [f.label, f.id]));
   const values = new Map<FieldId, string>();
   let current: FieldId | undefined;
   let buf: string[] = [];
+  let next = 0;
   const flush = () => {
     if (current === undefined) return;
     const v = buf.join("\n").trim();
     if (v !== "" && v !== NO_RESPONSE) values.set(current, v);
   };
+  // Only the next field's heading opens a field; any other `### ` line is the submitter's own text inside a value.
   for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
-    const h = /^### (.+)$/.exec(line);
-    if (!h) {
-      buf.push(line);
-      continue;
-    }
-    flush();
-    const id = byLabel.get(h[1]!.trim());
-    if (id === undefined) return { error: `unknown heading '${h[1]!.trim()}'` };
-    current = id;
-    buf = [];
+    const field = ISSUE_FORM_FIELDS[next];
+    if (field !== undefined && line.trim() === `### ${field.label}`) {
+      flush();
+      current = field.id;
+      buf = [];
+      next++;
+    } else buf.push(line);
   }
   flush();
 
+  // GitHub renders every field, blank optional ones as _No response_, so a missing heading means a hand-edited body.
+  if (next < ISSUE_FORM_FIELDS.length) return { error: `missing field heading '${ISSUE_FORM_FIELDS[next]!.label}'` };
   for (const f of ISSUE_FORM_FIELDS) {
     if (f.required && !values.has(f.id)) return { error: `missing required field '${f.label}'` };
   }

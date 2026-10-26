@@ -68,6 +68,19 @@ describe("ltm accept --changed-since", () => {
     });
   });
 
+  test("a non-ASCII path that git would C-quote is still matched", async () => {
+    await withRepo(async (dir) => {
+      const moved = A.replace("opentelemetry-tracing", "café-tracing");
+      git(dir, "mv", A, moved);
+      commit(dir, "rename A to non-ASCII");
+      const r = await accept(dir, "--changed-since", "base");
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe("ltm accept: accepted pL2sG4nVq0\n");
+      expect(status(dir, moved)).toBe("accepted");
+      expect(status(dir, B)).toBe("proposed");
+    });
+  });
+
   test("an already-accepted Record changed in the diff is skipped", async () => {
     await withRepo(async (dir) => {
       const accepted = "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md";

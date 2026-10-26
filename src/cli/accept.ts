@@ -45,8 +45,8 @@ export const accept: Command = {
     };
     if (typeof since !== "string") return acceptOne(ctx.positionals[0]!);
 
-    // --relative makes the paths Bank-root-relative even when the Bank sits in a subdirectory of the repo.
-    const diff = spawnSync("git", ["diff", "--name-only", "--relative", "-M", "--diff-filter=AMR", `${since}...HEAD`], {
+    // -z keeps git from C-quoting non-ASCII paths, which would never match a Record rel. --relative makes the paths Bank-root-relative even when the Bank sits in a subdirectory of the repo.
+    const diff = spawnSync("git", ["diff", "--name-only", "-z", "--relative", "-M", "--diff-filter=AMR", `${since}...HEAD`], {
       cwd: config.root,
       encoding: "utf8",
     });
@@ -54,7 +54,7 @@ export const accept: Command = {
       ctx.err(`ltm accept: ${firstLine(diff.stderr || String(diff.error))}\n`);
       return 1;
     }
-    const changed = new Set(diff.stdout.split("\n").filter(Boolean));
+    const changed = new Set(diff.stdout.split("\0").filter(Boolean));
     const skips = skipTally(ctx, "accept");
     const ids = readBankIndex(config, skips.onSkip)
       .records.filter((r) => changed.has(r.rel) && r.data.status === "proposed")
