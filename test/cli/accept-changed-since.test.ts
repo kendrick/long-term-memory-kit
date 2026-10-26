@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { splitFrontmatter } from "../../src/core/record.ts";
@@ -52,6 +52,27 @@ describe("ltm accept --changed-since", () => {
       expect(r2.stderr).toBe("ltm accept: accepted bU2pR8aXf7\n");
       expect(status(dir, A)).toBe("accepted");
       expect(status(dir, B)).toBe("accepted");
+    });
+  });
+
+  test("a Proposal that sorts first but supersedes a later one is accepted after it", async () => {
+    await withRepo(async (dir) => {
+      // A sorts before B by path; making A the successor is what path order alone gets wrong.
+      const abs = join(dir, A);
+      writeFileSync(
+        abs,
+        readFileSync(abs, "utf8")
+          .replace("applies_to: [platform:kubernetes, system:observability]", "applies_to: [platform:kubernetes, service:search-service]\nsupersedes: [bU2pR8aXf7]")
+          + "\nA new line.\n",
+      );
+      touch(dir, B);
+      commit(dir, "A supersedes B");
+      const r = await accept(dir, "--changed-since", "base");
+      expect(r.stderr).toBe("ltm accept: accepted bU2pR8aXf7\nltm accept: accepted pL2sG4nVq0\n");
+      expect(r.exitCode).toBe(0);
+      expect(status(dir, A)).toBe("accepted");
+      expect(status(dir, B)).toBe("superseded");
+      expect(readFileSync(join(dir, B), "utf8")).toContain("superseded_by: pL2sG4nVq0");
     });
   });
 

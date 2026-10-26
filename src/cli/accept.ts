@@ -56,10 +56,25 @@ export const accept: Command = {
     }
     const changed = new Set(diff.stdout.split("\0").filter(Boolean));
     const skips = skipTally(ctx, "accept");
-    const ids = readBankIndex(config, skips.onSkip)
+    const selected = readBankIndex(config, skips.onSkip)
       .records.filter((r) => changed.has(r.rel) && r.data.status === "proposed")
-      .sort((a, b) => (a.rel < b.rel ? -1 : 1))
-      .map((r) => String(r.data.id));
+      .sort((a, b) => (a.rel < b.rel ? -1 : 1));
+    // Accepting a successor flips its predecessor to `superseded`, and planAccept then refuses that id. So each Proposal follows every selected Proposal it supersedes; a cycle's back-edge is dropped and planAccept refuses the cycle itself.
+    const byId = new Map(selected.map((r) => [String(r.data.id), r]));
+    const seen = new Set<string>();
+    const ids: string[] = [];
+    const visit = (r: (typeof selected)[number]) => {
+      const id = String(r.data.id);
+      if (seen.has(id)) return;
+      seen.add(id);
+      const old = Array.isArray(r.data.supersedes) ? r.data.supersedes : [];
+      for (const o of old) {
+        const dep = byId.get(String(o));
+        if (dep) visit(dep);
+      }
+      ids.push(id);
+    };
+    selected.forEach(visit);
     if (skips.refuse()) return 1;
     for (const id of ids) if (acceptOne(id) === 1) return 1;
     return 0;
