@@ -12,7 +12,17 @@ if (positionals.length !== 1) {
 }
 
 const resultsDir = resolve(values.results ?? join(root, "evals/results"));
-const input = JSON.parse(readFileSync(positionals[0], "utf8")) as { version: string; hit_rate: number };
+// A gate that can't read its input must fail, not pass on `undefined < n` being false.
+const readResult = (file: string) => {
+  const r = JSON.parse(readFileSync(file, "utf8")) as { version?: unknown; hit_rate?: unknown };
+  const validVersion = typeof r.version === "string" && /^\d+\.\d+\.\d+/.test(r.version);
+  if (!validVersion || typeof r.hit_rate !== "number" || !Number.isFinite(r.hit_rate)) {
+    console.error(`eval-gate: ${file} needs a semver "version" and a finite numeric "hit_rate"`);
+    process.exit(1);
+  }
+  return r as { version: string; hit_rate: number };
+};
+const input = readResult(positionals[0]);
 
 // `<=` so a dry run at the committed version is held to its own result; a tag push's directory isn't committed yet.
 const baseline = (existsSync(resultsDir) ? readdirSync(resultsDir) : [])
@@ -25,7 +35,7 @@ if (baseline === undefined) {
   process.exit(0);
 }
 
-const base = JSON.parse(readFileSync(join(resultsDir, baseline, "bench.json"), "utf8")) as { hit_rate: number };
+const base = readResult(join(resultsDir, baseline, "bench.json"));
 console.log(`${input.version} hit_rate ${input.hit_rate} vs ${baseline} hit_rate ${base.hit_rate}`);
 if (input.hit_rate < base.hit_rate) {
   console.error(`eval-gate: hit_rate fell below ${baseline}`);

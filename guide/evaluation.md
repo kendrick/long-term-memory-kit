@@ -10,7 +10,7 @@ The bench lives in [`evals/bench/demo-bank.bench.json`](../evals/bench/demo-bank
 
 A query hits when every path in its `expected_files` is among the first `expected_in_top_k` results and no path in its `ltm_forbidden_files` is. A query with an empty `expected_files` hits only when ltm returns zero results, so a query with no answer can't pass by default. Paths are compared as exact strings.
 
-The `superseded-mysql-hidden` query is the one that tests the retired-status filter. It searches for `Postgres` and forbids `_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md`, the MySQL Decision that the Postgres Decision superseded. Its `expected_in_top_k` is 3, because `--all` puts the MySQL Decision third. Run the bench with `--all` and that query misses, which drops the hit rate from 1 to 9/11. A change that stopped ltm hiding retired Records would cost the bench the same query.
+The `superseded-mysql-hidden` query is the one that tests the retired-status filter. It searches for `Postgres` and forbids `_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md`, the MySQL Decision that the Postgres Decision superseded. Its `expected_in_top_k` is 3, because `--all` puts the MySQL Decision third. Run the bench with `--all` and two queries miss. `superseded-mysql-hidden` misses because the forbidden MySQL Decision shows up in the top 3. `alias-mysql-finds-postgres` has an `expected_in_top_k` of 1 and misses because MySQL ranks first. The hit rate drops from 1 to 9/11. A change that stopped ltm hiding retired Records would cost the bench the same two queries.
 
 The runner writes `evals/results/<version>/bench.json`:
 
@@ -119,7 +119,7 @@ The shim solves both by setting `LTM_CONFIG` to a temp config whose `default:` n
 
 ### Cost and the Baseline
 
-The 0.0.0 baseline ran 14 agent runs, seven cases with and without the plugin, on CLI 2.1.311. It took 241 seconds and cost $1.47 at list price (`costUsd` 1.4677672 in [`evals/results/0.0.0/plugin-eval.json`](../evals/results/0.0.0/plugin-eval.json)). Six of seven cases passed. `promote-triggers` failed in both arms, because the `promote` skill didn't fire on its prompt. Expect a similar cost per full run while cases keep `runs: 1`. Every `llm` grader adds three judge calls per run, and the current cases have none.
+The 0.0.0 baseline ran 14 agent runs, seven cases with and without the plugin, on CLI 2.1.311. It took 241 seconds and cost $1.47 at list price (`costUsd` 1.4677672 in [`evals/results/0.0.0/plugin-eval.json`](../evals/results/0.0.0/plugin-eval.json)). Six of seven cases passed. `promote-triggers` failed in both arms, because the case's working directory holds no decision. The trace shows the agent replying "I'm not sure which decision you mean" and asking, so `promote` never fired. A fix would give the case a decision to promote, for example through a scaffold, and then re-run the eval. Expect a similar cost per full run while cases keep `runs: 1`. Every `llm` grader adds three judge calls per run, and the current cases have none.
 
 ### In the Release Workflow
 

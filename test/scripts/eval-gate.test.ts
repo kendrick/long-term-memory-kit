@@ -73,4 +73,18 @@ describe("eval-gate", () => {
     expect(gate("0.1.0", 0.7).code).toBe(1);
     expect(gate("0.1.0", 0.8).code).toBe(0);
   });
+
+  test("an input or baseline without a valid version and finite hit_rate fails", () => {
+    const run = (body: unknown) => {
+      const input = join(dir, "bad.json");
+      writeFileSync(input, JSON.stringify(body));
+      return spawnSync("bun", [SCRIPT, input, "--results", join(dir, "results")], { encoding: "utf8" });
+    };
+    expect(run({ version: "0.1.0" }).status).toBe(1);
+    expect(run({ version: "nope", hit_rate: 1 }).status).toBe(1);
+    expect(run({ version: "0.1.0", hit_rate: null }).status).toBe(1);
+    mkdirSync(join(dir, "results", "0.0.0"), { recursive: true });
+    writeFileSync(join(dir, "results", "0.0.0", "bench.json"), JSON.stringify({ version: "0.0.0" }));
+    expect(gate("0.1.0", 1).code).toBe(1);
+  });
 });
