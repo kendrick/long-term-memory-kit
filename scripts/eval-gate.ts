@@ -1,4 +1,4 @@
-// Release gate: fails when the bench hit rate drops below the newest earlier committed result.
+// Release gate: fails when the bench hit rate drops below the newest committed result at or below the input's version.
 // Usage: bun scripts/eval-gate.ts <bench.json> [--results <dir>]. Only bench.json counts; plugin-eval.json reports and never gates.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -14,13 +14,14 @@ if (positionals.length !== 1) {
 const resultsDir = resolve(values.results ?? join(root, "evals/results"));
 const input = JSON.parse(readFileSync(positionals[0], "utf8")) as { version: string; hit_rate: number };
 
+// `<=` so a dry run at the committed version is held to its own result; a tag push's directory isn't committed yet.
 const baseline = (existsSync(resultsDir) ? readdirSync(resultsDir) : [])
-  .filter((v) => Bun.semver.order(v, input.version) < 0 && existsSync(join(resultsDir, v, "bench.json")))
+  .filter((v) => Bun.semver.order(v, input.version) <= 0 && existsSync(join(resultsDir, v, "bench.json")))
   .sort(Bun.semver.order)
   .at(-1);
 
 if (baseline === undefined) {
-  console.log(`no baseline found below ${input.version}; hit_rate ${input.hit_rate}`);
+  console.log(`no baseline found at or below ${input.version}; hit_rate ${input.hit_rate}`);
   process.exit(0);
 }
 

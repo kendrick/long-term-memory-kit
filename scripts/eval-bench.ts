@@ -33,14 +33,14 @@ try {
     const args = [...ltm, "query", "--bank", bank, "--text", q.query, "--json", ...(values.all ? ["--all"] : [])];
     const p = Bun.spawnSync(args, { cwd: consumer, stderr: "pipe" });
     if (p.exitCode !== 0) throw new Error(`ltm failed on "${q.query}": ${p.stderr.toString()}`);
-    const top: string[] = JSON.parse(p.stdout.toString()).results.map((r: { path: string }) => r.path);
-    const head = top.slice(0, q.expected_in_top_k);
+    const ranked: string[] = JSON.parse(p.stdout.toString()).results.map((r: { path: string }) => r.path);
+    const head = ranked.slice(0, q.expected_in_top_k);
     const forbidden: string[] = q.ltm_forbidden_files ?? [];
     // An empty expected_files list hits only on zero results; otherwise every no-answer query would pass vacuously.
     const hit =
-      (q.expected_files.length === 0 ? top.length === 0 : q.expected_files.every((f: string) => head.includes(f))) &&
+      (q.expected_files.length === 0 ? ranked.length === 0 : q.expected_files.every((f: string) => head.includes(f))) &&
       !forbidden.some((f) => head.includes(f));
-    return { id: q.id, hit, top };
+    return { id: q.id, hit, top: ranked };
   });
 
   const hits = queries.filter((q: { hit: boolean }) => q.hit).length;

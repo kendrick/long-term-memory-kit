@@ -1,5 +1,5 @@
 {
-  "description": "Retrieval bench for fixtures/demo-bank, run as the order-service Consumer with ltm query --text.",
+  "description": "Retrieval bench for fixtures/demo-bank, run as the order-service Consumer repo with ltm query --text.",
   "version": 1,
   "collection": "demo-bank",
   "queries": [

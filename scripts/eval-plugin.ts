@@ -21,7 +21,6 @@ cpSync(join(root, "fixtures/demo-bank"), bank, { recursive: true });
 const config = join(tmp, "ltm-config.yaml");
 writeFileSync(config, `banks:\n  acme: { path: ${JSON.stringify(bank)} }\ndefault: acme\n`);
 
-// CI puts the release binary on PATH; locally fall back to the source tree.
 const onPath = Bun.which("ltm");
 const exec = onPath ? `'${onPath}'` : `'${process.execPath}' '${join(root, "src/cli/bin.ts")}'`;
 const bin = join(tmp, "bin");

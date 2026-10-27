@@ -60,6 +60,12 @@ describe("eval-gate", () => {
     expect(gate("0.1.0", 0.1)).toMatchObject({ code: 0 });
   });
 
+  test("an input at the committed version is held to that committed result", () => {
+    writeResult("0.0.0", 0.8);
+    expect(gate("0.0.0", 0.7).code).toBe(1);
+    expect(gate("0.0.0", 0.8).code).toBe(0);
+  });
+
   test("plugin-eval.json never moves the gate", () => {
     writeResult("0.0.0", 0.8);
     writeResult("0.0.0", 0.1, "plugin-eval.json");
