@@ -1,0 +1,85 @@
+{
+  "version": "0.0.0",
+  "hit_rate": 1,
+  "hits": 11,
+  "total": 11,
+  "queries": [
+    {
+      "id": "exact-title-trunk",
+      "hit": true,
+      "top": [
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md"
+      ]
+    },
+    {
+      "id": "exact-title-json-logging",
+      "hit": true,
+      "top": [
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "summary-paraphrase-flags",
+      "hit": true,
+      "top": [
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md"
+      ]
+    },
+    {
+      "id": "summary-paraphrase-events",
+      "hit": true,
+      "top": [
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"
+      ]
+    },
+    {
+      "id": "answer-is-exception-redis",
+      "hit": true,
+      "top": [
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "answer-is-exception-stock",
+      "hit": true,
+      "top": [
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "superseded-mysql-hidden",
+      "hit": true,
+      "top": [
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md"
+      ]
+    },
+    {
+      "id": "alias-mysql-finds-postgres",
+      "hit": true,
+      "top": [
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md"
+      ]
+    },
+    {
+      "id": "multi-word-postgres-store",
+      "hit": true,
+      "top": [
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md"
+      ]
+    },
+    {
+      "id": "multi-word-cross-service",
+      "hit": true,
+      "top": [
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+      ]
+    },
+    {
+      "id": "no-answer-blockchain",
+      "hit": true,
+      "top": []
+    }
+  ]
+}
