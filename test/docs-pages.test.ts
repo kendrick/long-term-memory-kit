@@ -4,16 +4,21 @@ import { dirname, join, relative, resolve } from "node:path";
 
 const repo = new URL("..", import.meta.url).pathname;
 const FALSIFIER_PREFIX = "_grep-falsifier-";
+const COMMAND_FALSIFIER_PREFIX = "_command-falsifier-";
 
 // Reader docs only. docs/plans, docs/adr, and docs/agents predate the glossary rules.
 function pagePaths(dir: string): string[] {
   const d = join(repo, dir);
   if (!existsSync(d)) return [];
   return readdirSync(d)
-    .filter((n) => n.endsWith(".md") && !n.startsWith(FALSIFIER_PREFIX))
+    .filter(
+      (n) => n.endsWith(".md") && !n.startsWith(FALSIFIER_PREFIX) && !n.startsWith(COMMAND_FALSIFIER_PREFIX),
+    )
     .map((n) => join(d, n));
 }
 const pages = [...pagePaths("docs"), ...pagePaths("docs/types")];
+// guide/ is read, not listed, so a page added later is covered without an edit here.
+const avoidTermPages = [...pages, ...pagePaths("guide"), join(repo, "README.md")];
 const typePages = pagePaths("docs/types");
 const rel = (p: string) => relative(repo, p);
 
@@ -146,7 +151,7 @@ describe("glossary avoid-terms", () => {
     expect(terms.length).toBeGreaterThan(10);
   });
 
-  for (const page of pages) {
+  for (const page of avoidTermPages) {
     test(rel(page), () => {
       const hits: string[] = [];
       prose(readFileSync(page, "utf8")).forEach((line, i) => {
