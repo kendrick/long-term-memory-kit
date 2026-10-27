@@ -5,7 +5,7 @@ import type { Command } from "./run.ts";
 
 export const head: Command = {
   name: "head",
-  summary: "Print each file's frontmatter block, fences included",
+  summary: "Print each file's frontmatter block, fences included, every line ending in a newline",
   positionals: [{ name: "path", required: true, variadic: true }],
   async run(ctx) {
     const many = ctx.positionals.length > 1;

@@ -37,4 +37,17 @@ describe("ltm head", () => {
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toBe(`==> ${GOOD} <==\n${first27}\n==> ${GOOD} <==\n${first27}`);
   });
+
+  test("a closing fence with no newline after it still prints one", async () => {
+    const r = await ltm("head", "test/fixtures/head-no-newline.md");
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe("---\nk: v\n---\n");
+    expect(r.stderr).toBe("");
+  });
+
+  test("--help states the newline rule", async () => {
+    const r = await ltm("head", "--help");
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("every line ending in a newline");
+  });
 });
