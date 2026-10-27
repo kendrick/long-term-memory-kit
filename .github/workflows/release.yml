@@ -62,6 +62,71 @@ jobs:
       - run: chmod +x dist/ltm-*
       - run: bash scripts/smoke-binary.sh dist/ltm-darwin-arm64
 
+  # No `if:` on purpose: the dispatch dry run has to exercise the gate against the committed baseline too.
+  bench-gate:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - run: chmod +x dist/ltm-*
+      # A tag names the version being released; PR and dispatch runs have no tag, so they bench as package.json's version.
+      - run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then v="${GITHUB_REF_NAME#v}"; else v="$(bun -p 'require("./package.json").version')"; fi
+          bun scripts/eval-bench.ts --ltm dist/ltm-linux-x64 --version "$v" --out "$RUNNER_TEMP/bench.json"
+      - run: bun scripts/eval-gate.ts "$RUNNER_TEMP/bench.json"
+
+  # Reports, never gates (#25), so nothing needs it. Push-only so model spend lands on tags, not on every PR or dispatch.
+  plugin-eval:
+    needs: build
+    if: github.event_name == 'push'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      # `if:` can't read secrets, so check through env; a fork or rotated key then skips instead of failing.
+      - id: key
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::notice::ANTHROPIC_API_KEY is empty; skipping the plugin eval."
+            exit 0
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - if: steps.key.outputs.present == 'true'
+        uses: actions/checkout@v4
+      - if: steps.key.outputs.present == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - if: steps.key.outputs.present == 'true'
+        run: bun install --frozen-lockfile
+      # Pinned to the CLI whose `plugin eval` flags eval-plugin.ts was written against.
+      - if: steps.key.outputs.present == 'true'
+        run: npm install -g @anthropic-ai/claude-code@2.1.311
+      - if: steps.key.outputs.present == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      # The plugin shells out to a bare `ltm`, so the binary has to be on PATH under that name.
+      - if: steps.key.outputs.present == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          install -m 755 dist/ltm-linux-x64 "$RUNNER_TEMP/bin/ltm"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - if: steps.key.outputs.present == 'true'
+        run: bun scripts/eval-plugin.ts --version "${GITHUB_REF_NAME#v}"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
   # Only tag pushes trigger `push`, so this gate means "real release". Gating on github.ref would let a dispatch run on a tag ref publish. `release` waits on `npm` so a failed publish can't leave a Release whose packages never reached the registry.
   release:
     if: github.event_name == 'push'
@@ -80,8 +145,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   npm:
-    # Nothing ships unsmoked, so npm waits on both smoke jobs just like release does.
-    needs: [smoke-linux, smoke-macos]
+    # Nothing ships unsmoked or below the committed bench hit rate; release inherits both via npm.
+    needs: [smoke-linux, smoke-macos, bench-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

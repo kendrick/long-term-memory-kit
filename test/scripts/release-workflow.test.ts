@@ -24,4 +24,17 @@ describe("release.yml", () => {
     const publish = wf.jobs.npm.steps.find((s: { name?: string }) => s.name === "Publish");
     expect(publish.if).toBe("github.event_name == 'push'");
   });
+
+  test("bench-gate always runs and blocks npm, so nothing publishes below the committed hit rate", () => {
+    expect(wf.jobs).toHaveProperty("bench-gate");
+    expect(wf.jobs["bench-gate"]).not.toHaveProperty("if");
+    expect(wf.jobs.npm.needs).toContain("bench-gate");
+  });
+
+  test("plugin-eval runs on tag pushes only and gates nothing", () => {
+    expect(wf.jobs["plugin-eval"].if).toBe("github.event_name == 'push'");
+    for (const job of Object.values(wf.jobs) as { needs?: string | string[] }[]) {
+      expect([job.needs ?? []].flat()).not.toContain("plugin-eval");
+    }
+  });
 });

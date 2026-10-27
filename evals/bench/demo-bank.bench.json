@@ -1,0 +1,99 @@
+{
+  "description": "Retrieval bench for fixtures/demo-bank, run as the order-service Consumer with ltm query --text.",
+  "version": 1,
+  "collection": "demo-bank",
+  "queries": [
+    {
+      "id": "exact-title-trunk",
+      "query": "Trunk-based deployment",
+      "type": "exact",
+      "description": "Exact Record title",
+      "expected_files": ["_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md"],
+      "expected_in_top_k": 1
+    },
+    {
+      "id": "exact-title-json-logging",
+      "query": "Structured JSON logging",
+      "type": "exact",
+      "description": "Exact PolicyRule title",
+      "expected_files": ["_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"],
+      "expected_in_top_k": 1
+    },
+    {
+      "id": "summary-paraphrase-flags",
+      "query": "feature flags release branches",
+      "type": "semantic",
+      "description": "Words from the summary, not the title",
+      "expected_files": ["_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md"],
+      "expected_in_top_k": 1
+    },
+    {
+      "id": "summary-paraphrase-events",
+      "query": "message queue order events",
+      "type": "semantic",
+      "description": "Words from the summary",
+      "expected_files": ["_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"],
+      "expected_in_top_k": 1
+    },
+    {
+      "id": "answer-is-exception-redis",
+      "query": "Redis until 2027",
+      "type": "topical",
+      "description": "The answer is an Exception",
+      "expected_files": ["_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"],
+      "expected_in_top_k": 1
+    },
+    {
+      "id": "answer-is-exception-stock",
+      "query": "stock levels",
+      "type": "cross-domain",
+      "description": "Exception found by a word only its summary uses",
+      "expected_files": ["_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"],
+      "expected_in_top_k": 1
+    },
+    {
+      "id": "superseded-mysql-hidden",
+      "query": "Postgres",
+      "type": "topical",
+      "description": "The Postgres Decision must show and the MySQL Decision it superseded must not",
+      "expected_files": ["_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md"],
+      "expected_in_top_k": 3,
+      "ltm_forbidden_files": ["_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md"]
+    },
+    {
+      "id": "alias-mysql-finds-postgres",
+      "query": "mysql",
+      "type": "alias",
+      "description": "Asking for the retired engine lands on its replacement",
+      "expected_files": ["_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md"],
+      "expected_in_top_k": 1
+    },
+    {
+      "id": "multi-word-postgres-store",
+      "query": "PostgreSQL relational store",
+      "type": "topical",
+      "description": "Multi-word query matching two Records",
+      "expected_files": [
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md"
+      ],
+      "expected_in_top_k": 2
+    },
+    {
+      "id": "multi-word-cross-service",
+      "query": "cross-service database reads",
+      "type": "semantic",
+      "description": "Multi-word query for a PolicyRule",
+      "expected_files": ["_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"],
+      "expected_in_top_k": 1
+    },
+    {
+      "id": "no-answer-blockchain",
+      "query": "quantum blockchain",
+      "type": "topical",
+      "description": "Nothing in the Bank covers it, so ltm must return nothing",
+      "expected_files": [],
+      "expected_in_top_k": 1
+    }
+  ]
+}
