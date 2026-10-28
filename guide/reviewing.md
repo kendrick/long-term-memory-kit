@@ -62,7 +62,7 @@ git fetch origin
 ltm accept --changed-since origin/main
 ```
 
-Either way, `ltm accept` sets `status: accepted`, sets `date` and `last_confirmed` to today, and makes every Supersession the Proposal lists in `supersedes`. It writes all of those edits or none of them. Commit the changed files and push them to the PR branch.
+Either way, `ltm accept` sets `status: accepted`, sets `date` and `last_confirmed` to today, and makes every Supersession the Proposal lists in `supersedes`. `ltm accept` plans each Proposal's edits first and refuses before writing anything if one can't be made, so a refused Proposal changes nothing. With `--changed-since`, that holds per Proposal, not for the batch. A refusal stops the run, and Proposals accepted before it stay written. After a failed batch, check `git status` and `git diff` before you commit. Commit the changed files and push them to the PR branch.
 
 ### A Hand Edit
 

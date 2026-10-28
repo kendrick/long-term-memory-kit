@@ -58,7 +58,7 @@ An agent calls the `query` tool with the same filters as JSON. It returns the sa
 { "type": "PolicyRule", "text": "logging" }
 ```
 
-The tool takes `type`, `facets` and `status` as lists, `text`, `all`, and `filters` for `key=value` pairs. To read a header, the agent calls the `head` tool with a Record's `id` or its Bank-relative `path`. When the plugin's `bank_url` or `bank_path` is set, the server already knows the Bank, so leave out the `bank` argument.
+The tool takes `type` as one string, `facets` and `status` as lists, `text`, `all`, and `filters` for `key=value` pairs. To read a header, the agent calls the `head` tool with a Record's `id` or its Bank-relative `path`. When the plugin's `bank_url` or `bank_path` is set, the server already knows the Bank, so leave out the `bank` argument.
 
 ### What Each One Knows
 
