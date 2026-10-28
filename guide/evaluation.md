@@ -98,7 +98,7 @@ You need the Claude Code CLI, 2.1.311 in the baseline run, logged in with the cr
 bun scripts/eval-plugin.ts
 ```
 
-[`scripts/eval-plugin.ts`](../scripts/eval-plugin.ts) copies the demo Bank to a temp directory and puts an `ltm` shim first on `PATH`. The shim points ltm at that copy, and it wraps the `ltm` already on your `PATH`, or `bun src/cli/bin.ts` when there isn't one. The script then runs `claude plugin eval` on the repo root with `--trust-plugin`, `--no-publish`, `--allow-real-servers`, `--max-cost-usd 15`, and grants for `Bash(ltm *)` and the plugin's MCP tools. It writes the result to `evals/results/<version>/plugin-eval.json` and keeps claude's own results directory in the temp directory.
+[`scripts/eval-plugin.ts`](../scripts/eval-plugin.ts) copies the demo Bank to a temp directory and puts an `ltm` shim first on `PATH`. The shim points ltm at that copy, and it wraps the `ltm` already on your `PATH`, or `bun src/cli/bin.ts` when there isn't one. The script then runs `claude plugin eval` on the repo root with `--trust-plugin`, `--no-publish`, `--allow-real-servers`, `--max-cost-usd 15`, and grants for `Bash(ltm *)` and the plugin's MCP tools. It writes the result to `evals/results/<version>/plugin-eval.json` and keeps claude's own results directory in the temp directory. Before saving, the script rewrites local paths in the result to `.` for the repo and its worktrees, `<tmp>` for temp directories, and `~` for your home directory, so committed results carry no machine paths.
 
 `--version <v>` sets the version directory. The script passes every other argument through to `claude plugin eval`, so you can run a single case:
 

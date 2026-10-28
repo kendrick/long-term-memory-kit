@@ -6,7 +6,7 @@
   "costUsd": 1.4677672,
   "partial": false,
   "suite": {
-    "root": "/Users/k.arnett/repos/personal/long-term-memory-kit-issue-25",
+    "root": ".",
     "ablation": "with-without",
     "threshold": 1,
     "concurrency": 1,
@@ -14,7 +14,7 @@
       {
         "name": "ltm",
         "version": "0.0.0",
-        "path": "/Users/k.arnett/repos/personal/long-term-memory-kit-issue-25"
+        "path": "."
       }
     ]
   },
@@ -52,7 +52,7 @@
             "durationSeconds": 13,
             "startedAt": "2026-10-27T20:13:21.479Z",
             "error": null,
-            "tracePath": "/private/tmp/e-mSRnRd/out/trace.jsonl",
+            "tracePath": "<tmp>/e-mSRnRd/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -76,7 +76,7 @@
             "durationSeconds": 7,
             "startedAt": "2026-10-27T20:13:34.610Z",
             "error": null,
-            "tracePath": "/private/tmp/e-m9YvV3/out/trace.jsonl",
+            "tracePath": "<tmp>/e-m9YvV3/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -129,7 +129,7 @@
             "durationSeconds": 20,
             "startedAt": "2026-10-27T20:13:41.518Z",
             "error": null,
-            "tracePath": "/private/tmp/e-9Ea678/out/trace.jsonl",
+            "tracePath": "<tmp>/e-9Ea678/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -153,7 +153,7 @@
             "durationSeconds": 21,
             "startedAt": "2026-10-27T20:14:01.254Z",
             "error": null,
-            "tracePath": "/private/tmp/e-Cvw2gd/out/trace.jsonl",
+            "tracePath": "<tmp>/e-Cvw2gd/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -209,7 +209,7 @@
             "durationSeconds": 12,
             "startedAt": "2026-10-27T20:14:22.225Z",
             "error": null,
-            "tracePath": "/private/tmp/e-zorAaH/out/trace.jsonl",
+            "tracePath": "<tmp>/e-zorAaH/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -233,7 +233,7 @@
             "durationSeconds": 8,
             "startedAt": "2026-10-27T20:14:34.356Z",
             "error": null,
-            "tracePath": "/private/tmp/e-gmDUbR/out/trace.jsonl",
+            "tracePath": "<tmp>/e-gmDUbR/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -286,7 +286,7 @@
             "durationSeconds": 24,
             "startedAt": "2026-10-27T20:14:42.441Z",
             "error": null,
-            "tracePath": "/private/tmp/e-AZ3SN5/out/trace.jsonl",
+            "tracePath": "<tmp>/e-AZ3SN5/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -310,7 +310,7 @@
             "durationSeconds": 13,
             "startedAt": "2026-10-27T20:15:05.945Z",
             "error": null,
-            "tracePath": "/private/tmp/e-KBMHxl/out/trace.jsonl",
+            "tracePath": "<tmp>/e-KBMHxl/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -366,7 +366,7 @@
             "durationSeconds": 6,
             "startedAt": "2026-10-27T20:15:18.745Z",
             "error": null,
-            "tracePath": "/private/tmp/e-VwrqPk/out/trace.jsonl",
+            "tracePath": "<tmp>/e-VwrqPk/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -390,7 +390,7 @@
             "durationSeconds": 6,
             "startedAt": "2026-10-27T20:15:24.327Z",
             "error": null,
-            "tracePath": "/private/tmp/e-KGQgJY/out/trace.jsonl",
+            "tracePath": "<tmp>/e-KGQgJY/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -443,7 +443,7 @@
             "durationSeconds": 48,
             "startedAt": "2026-10-27T20:15:30.159Z",
             "error": null,
-            "tracePath": "/private/tmp/e-NXSZTI/out/trace.jsonl",
+            "tracePath": "<tmp>/e-NXSZTI/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -467,7 +467,7 @@
             "durationSeconds": 18,
             "startedAt": "2026-10-27T20:16:18.305Z",
             "error": null,
-            "tracePath": "/private/tmp/e-6pqZ8j/out/trace.jsonl",
+            "tracePath": "<tmp>/e-6pqZ8j/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -534,7 +534,7 @@
             "durationSeconds": 24,
             "startedAt": "2026-10-27T20:16:36.547Z",
             "error": null,
-            "tracePath": "/private/tmp/e-vXqxmZ/out/trace.jsonl",
+            "tracePath": "<tmp>/e-vXqxmZ/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
@@ -566,7 +566,7 @@
             "durationSeconds": 21,
             "startedAt": "2026-10-27T20:17:00.097Z",
             "error": null,
-            "tracePath": "/private/tmp/e-2pCqFz/out/trace.jsonl",
+            "tracePath": "<tmp>/e-2pCqFz/out/trace.jsonl",
             "skippedPaidGraders": false,
             "graders": [
               {
