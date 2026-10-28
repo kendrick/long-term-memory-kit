@@ -35,6 +35,14 @@ describe("scrubPaths", () => {
     const same = ["hello world", "/tmpfoo/bar", "a/tmp/b", "/opt/ltm-other/x", "/Users/meow/x", "", "ratio 1/tmp"];
     expect(scrubPaths(same, map)).toEqual(same);
   });
+
+  test("scrubs a prefix after // or before a sentence-ending dot, but not before .name", () => {
+    expect(scrubPaths(["file:///Users/me/x", "see /tmp.", "in /Users/me. Done", `at ${ROOT}.`, "//tmp/x"], map)).toEqual([
+      "file://~/x", "see <tmp>.", "in ~. Done", "at ..", "/<tmp>/x",
+    ]);
+    const same = ["/Users/me.config", "/tmp.d/x", "/Users/me-other", "-I/Users/me/inc"];
+    expect(scrubPaths(same, map)).toEqual(same);
+  });
 });
 
 describe("committed result", () => {

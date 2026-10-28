@@ -10,10 +10,10 @@ const root = resolve(import.meta.dir, "..");
 
 const esc = (p: string) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// Committed results must not carry machine paths. One pass, longest prefix first so `/private/tmp` beats `/tmp`; the lookarounds leave `/tmpfoo` and `a/tmp/b` alone.
+// Committed results must not carry machine paths. One pass, longest prefix first so `/private/tmp` beats `/tmp`; the lookarounds leave `/tmpfoo`, `a/tmp/b`, and `/Users/me.config` alone but still match `file:///Users/me` and a path ending a sentence (`/tmp.`). `-I/Users/me` stays unscrubbed: telling it from `/opt/Users/me` needs the char before the prefix, and no rule on that is safe.
 export function scrubPaths<T>(value: T, replacements: [string, string][]): T {
   const by = new Map(replacements.map(([from, to]) => [from.replace(/\/+$/, ""), to]));
-  const re = new RegExp(`(?<![\\w.\\-/])(?:${[...by.keys()].sort((a, b) => b.length - a.length).map(esc).join("|")})(?![\\w.\\-])`, "g");
+  const re = new RegExp(`(?<![\\w.\\-])(?<![\\w.\\-]/)(?:${[...by.keys()].sort((a, b) => b.length - a.length).map(esc).join("|")})(?![\\w\\-])(?!\\.\\w)`, "g");
   const walk = (v: unknown): unknown =>
     typeof v === "string" ? v.replace(re, (m) => by.get(m)!)
     : Array.isArray(v) ? v.map(walk)
