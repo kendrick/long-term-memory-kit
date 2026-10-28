@@ -15,8 +15,8 @@ describe("ltm facets", () => {
       const r = await ltm(dir, "facets");
       expect(r.exitCode).toBe(0);
       const out = lines(r.stdout);
-      expect(out).toContain("service:order-service  3");
-      expect(out).toContain("domain:commerce  8");
+      expect(out).toContain("service:order-service  5");
+      expect(out).toContain("domain:commerce  10");
       const names = out.map((l) => l.split("  ")[0]!);
       expect(names).toEqual([...names].sort());
     });
@@ -27,8 +27,8 @@ describe("ltm facets", () => {
       const r = await ltm(dir, "facets", "--all");
       expect(r.exitCode).toBe(0);
       const out = lines(r.stdout);
-      expect(out).toContain("service:order-service  3");
-      expect(out).toContain("domain:commerce  10");
+      expect(out).toContain("service:order-service  7");
+      expect(out).toContain("domain:commerce  14");
     });
   });
 
@@ -39,7 +39,7 @@ describe("ltm facets", () => {
       const rows = JSON.parse(r.stdout) as Record<string, unknown>[];
       expect(Array.isArray(rows)).toBe(true);
       for (const row of rows) expect(Object.keys(row).sort()).toEqual(["count", "facet"]);
-      expect(rows).toContainEqual({ facet: "domain:commerce", count: 8 });
+      expect(rows).toContainEqual({ facet: "domain:commerce", count: 10 });
       expect(r.stdout.endsWith("}\n]\n")).toBe(true);
     });
   });

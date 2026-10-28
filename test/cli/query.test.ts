@@ -40,7 +40,7 @@ describe("ltm query", () => {
       expect(g.status).toBe(0);
       expect(r.exitCode).toBe(0);
       expect(paths(r.stdout).sort()).toEqual(paths(g.stdout).sort());
-      expect(paths(r.stdout)).toHaveLength(5);
+      expect(paths(r.stdout)).toHaveLength(9);
     });
   });
 
@@ -113,8 +113,10 @@ describe("ltm query", () => {
       expect(r.exitCode).toBe(0);
       expect(paths(r.stdout)).toEqual([
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
         "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
         "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
       ]);
       expect(r.stdout.split("\n")[0]).toBe(
         `${MQ}  Decision  accepted  Adopt a message queue for order events`,
@@ -160,7 +162,7 @@ describe("ltm query", () => {
       const fromSub = await ltm(join(dir, "_memory/decisions"), "query", "--all", "memory_type=Decision");
       expect(fromSub.exitCode).toBe(0);
       expect(paths(fromSub.stdout)).toEqual(paths(fromRoot.stdout));
-      expect(paths(fromSub.stdout)).toHaveLength(5);
+      expect(paths(fromSub.stdout)).toHaveLength(9);
     });
     const outside = mkdtempSync(join(tmpdir(), "ltm-nobank-"));
     try {
@@ -181,7 +183,7 @@ describe("ltm query", () => {
       expect(r.stderr).toBe(
         "ltm query: skipped _memory/decisions/broken-aaaaaaaaaa.md: no frontmatter\n",
       );
-      expect(paths(r.stdout)).toHaveLength(5);
+      expect(paths(r.stdout)).toHaveLength(9);
     });
   });
 
@@ -435,7 +437,11 @@ describe("ltm query options", () => {
       const all = await ltm(dir, "query", "--type", "Decision", "--all");
       const acc = await ltm(dir, "query", "--type", "Decision", "--status", "accepted");
       expect(paths(dflt.stdout)).not.toContain(MYSQL);
-      expect(paths(sup.stdout)).toEqual([MYSQL]);
+      expect(paths(sup.stdout)).toEqual([
+        MYSQL,
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+      ]);
       expect(paths(all.stdout)).toContain(MYSQL);
       expect(paths(acc.stdout)).not.toContain(MYSQL);
     });
@@ -549,12 +555,12 @@ describe("ltm query options", () => {
       const pg = join(dir, PG);
       writeFileSync(pg, readFileSync(pg, "utf8").replace(/\n---\n/, "\na: &y 1\nb: *y\n---\n"));
       expect(readFileSync(pg, "utf8")).toContain("b: *y");
-      // --all: 16 Records minus the skipped one, with the two retired ones counted.
+      // --all: 20 Records minus the skipped one, with the four retired ones counted.
       const r = await ltm(dir, "query", "--json", "--all");
       expect(r.exitCode).toBe(0);
       expect(r.stderr).toContain(`ltm query: skipped ${MQ}:`);
       const rows = JSON.parse(r.stdout) as { path: string }[];
-      expect(rows).toHaveLength(15);
+      expect(rows).toHaveLength(19);
       expect(rows.map((x) => x.path)).toContain(PG);
     });
   });
@@ -619,7 +625,7 @@ describe("ltm query options", () => {
 
         const r = await ltm(dir, "query", "--json", "--all");
         expect(r.exitCode).toBe(0);
-        expect(JSON.parse(r.stdout)).toHaveLength(16);
+        expect(JSON.parse(r.stdout)).toHaveLength(20);
       });
     });
   });

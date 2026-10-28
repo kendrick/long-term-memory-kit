@@ -104,7 +104,7 @@ describe("matches", () => {
 });
 
 describe("listRecordFiles", () => {
-  test("lists the same 16 paths as listRecords, typed by folder, without parsing", async () => {
+  test("lists the same 20 paths as listRecords, typed by folder, without parsing", async () => {
     await withScratch(demoBank, async (dir) => {
       const config: BankConfig = { root: dir, folders: defaultFolders, raw: {} };
       // A file whose frontmatter won't parse is still a Record file; only parsing skips it.
@@ -112,7 +112,7 @@ describe("listRecordFiles", () => {
       const skipped: string[] = [];
       const files = listRecordFiles(config, (p) => skipped.push(p));
       expect(skipped).toEqual([]);
-      expect(files).toHaveLength(17);
+      expect(files).toHaveLength(21);
       expect(files[3]).toEqual({
         abs: join(dir, "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"),
         rel: "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
@@ -124,7 +124,7 @@ describe("listRecordFiles", () => {
 });
 
 describe("listRecords", () => {
-  test("demo bank: 16 Records sorted by path, typed by folder", async () => {
+  test("demo bank: 20 Records sorted by path, typed by folder", async () => {
     await withScratch(demoBank, async (dir) => {
       const config: BankConfig = { root: dir, folders: defaultFolders, raw: {} };
       const skipped: string[] = [];
@@ -137,9 +137,13 @@ describe("listRecords", () => {
         ["_memory/context/order-service-overview-gN5yD9sMe2.md", "Context"],
         ["_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md", "Decision"],
         ["_memory/decisions/adopt-opentelemetry-tracing-pL2sG4nVq0.md", "Decision"],
+        ["_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md", "Decision"],
         ["_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md", "Decision"],
+        ["_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md", "Decision"],
         ["_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md", "Decision"],
+        ["_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md", "Decision"],
         ["_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md", "Decision"],
+        ["_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md", "Decision"],
         ["_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md", "Exception"],
         ["_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md", "Exception"],
         ["_memory/exceptions/search-service-plaintext-logs-bU2pR8aXf7.md", "Exception"],
@@ -169,7 +173,7 @@ describe("listRecords", () => {
       const records = listRecords(config, () => {});
       const nested = records.filter((r) => r.path === "_memory/decisions/ctx/nested-zZ0fF0lD02.md");
       expect(nested.map((r) => r.memoryType)).toEqual(["Context"]);
-      expect(records.length).toBe(14);
+      expect(records.length).toBe(18);
     });
   });
 
@@ -182,7 +186,7 @@ describe("listRecords", () => {
         (p, reason) => skipped.push([p, reason]),
       );
       expect(skipped).toEqual([["_memory/decisions/broken.md", "no frontmatter"]]);
-      expect(records.length).toBe(16);
+      expect(records.length).toBe(20);
     });
   });
 });
@@ -238,7 +242,7 @@ describe("listRecords folder safety", () => {
         skipped.push([p, r]),
       );
       expect(skipped).toEqual([["_memory/decisions/a\\b.md", "name contains a backslash"]]);
-      expect(records.length).toBe(16);
+      expect(records.length).toBe(20);
     });
   });
 
@@ -272,6 +276,8 @@ const opts = (o: Partial<QueryOptions>): QueryOptions => ({
 });
 
 const MYSQL = "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md";
+const OFFSET = "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md";
+const SEQUENTIAL = "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md";
 
 describe("RETIRED_STATUSES", () => {
   test("superseded, deprecated, rejected", () => {
@@ -309,20 +315,22 @@ describe("selectRecords on the demo bank", () => {
       const records = load(dir);
       const paths = (o: Partial<QueryOptions>) => selectRecords(records, opts(o)).map((r) => r.path);
       expect(paths({ type: "Decision" })).not.toContain(MYSQL);
-      expect(paths({ type: "Decision", statuses: ["superseded"] })).toEqual([MYSQL]);
+      expect(paths({ type: "Decision", statuses: ["superseded"] })).toEqual([MYSQL, OFFSET, SEQUENTIAL]);
       expect(paths({ type: "Decision", all: true })).toContain(MYSQL);
       expect(paths({ type: "Decision", statuses: ["accepted"] })).not.toContain(MYSQL);
-      expect(paths({ type: "Decision", filters: [{ key: "status", value: "superseded" }] })).toEqual([MYSQL]);
+      expect(paths({ type: "Decision", filters: [{ key: "status", value: "superseded" }] })).toEqual([MYSQL, OFFSET, SEQUENTIAL]);
     });
   });
 
-  test("--type alone gives the four non-retired Decisions, in path order", async () => {
+  test("--type alone gives the six non-retired Decisions, in path order", async () => {
     await withScratch(demoBank, async (dir) => {
       expect(selectRecords(load(dir), opts({ type: "Decision" })).map((r) => r.path)).toEqual([
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
         "_memory/decisions/adopt-opentelemetry-tracing-pL2sG4nVq0.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
         "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
         "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
       ]);
     });
   });
@@ -407,11 +415,11 @@ describe("countFacets", () => {
     await withScratch(demoBank, async (dir) => {
       const records = listRecords({ root: dir, folders: defaultFolders, raw: {} }, () => {});
       const live = new Map(countFacets(records, false).map((f) => [f.facet, f.count]));
-      expect(live.get("service:order-service")).toBe(3);
-      expect(live.get("domain:commerce")).toBe(8);
+      expect(live.get("service:order-service")).toBe(5);
+      expect(live.get("domain:commerce")).toBe(10);
       const all = new Map(countFacets(records, true).map((f) => [f.facet, f.count]));
-      expect(all.get("service:order-service")).toBe(3);
-      expect(all.get("domain:commerce")).toBe(10);
+      expect(all.get("service:order-service")).toBe(7);
+      expect(all.get("domain:commerce")).toBe(14);
     });
   });
 

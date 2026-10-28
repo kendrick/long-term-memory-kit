@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","cwd":"/tmp/ltm-eval-work","session_id":"31eb49b6-bdb5-4cea-a321-5ce696e0eeec","tools":["Bash","Read","Grep"],"model":"claude-opus-5-5"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"No Record covers this."}]},"session_id":"31eb49b6-bdb5-4cea-a321-5ce696e0eeec"}
+{"type":"result","subtype":"success","is_error":false,"num_turns":2,"result":"No Record covers this.\nCITED: NONE","stop_reason":"end_turn","session_id":"31eb49b6-bdb5-4cea-a321-5ce696e0eeec","total_cost_usd":0.1944172}
