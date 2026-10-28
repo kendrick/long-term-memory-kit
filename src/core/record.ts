@@ -89,17 +89,40 @@ const MERGE_TAG = "tag:yaml.org,2002:merge";
 
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 
-function reasonFor(value: unknown): string | null {
-  if (typeof value === "bigint") return value > MAX_SAFE || value < -MAX_SAFE ? "integer outside the safe range" : null;
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return "not a finite number";
-    return Object.is(value, -0) ? "negative zero" : null;
+const bigintToNumber = (_key: string, v: unknown): unknown => (typeof v === "bigint" ? Number(v) : v);
+
+// Plain containers never reach this: `walk` recurses into them, so only a primitive or a non-plain object is compared, and an object can't equal what JSON.parse hands back.
+function roundTrips(value: unknown): boolean {
+  if (typeof value === "object" && value !== null) return false;
+  let back: unknown;
+  try {
+    back = JSON.parse(JSON.stringify(value, bigintToNumber));
+  } catch {
+    return false; // undefined, symbol and function stringify to nothing JSON.parse can read
   }
+  // Object.is separates -0 from 0 and NaN from null; a bigint compares by numeric value, as `sameValue` does.
+  return typeof value === "bigint" ? typeof back === "number" && BigInt(back) === value : Object.is(value, back);
+}
+
+// The round trip decides; this only names the reason. Anything it doesn't recognize falls back to "changes in JSON".
+function describe(value: unknown): string | null {
+  if (typeof value === "number") return !Number.isFinite(value) ? "not a finite number" : Object.is(value, -0) ? "negative zero" : null;
   if (value instanceof Date) return "timestamp";
   if (value instanceof Uint8Array) return "binary value";
   if (value instanceof Set) return "set";
   if (value instanceof Map) return "ordered map";
   return null;
+}
+
+// Exported so the test can hand it a class instance, which no YAML input produces.
+export function reasonFor(value: unknown): string | null {
+  if (Array.isArray(value)) return null;
+  if (typeof value === "object" && value !== null) {
+    const proto = Object.getPrototypeOf(value);
+    if (proto === Object.prototype || proto === null) return null;
+  }
+  if (typeof value === "bigint" && (value > MAX_SAFE || value < -MAX_SAFE)) return "integer outside the safe range";
+  return roundTrips(value) ? null : (describe(value) ?? "changes in JSON");
 }
 
 const CORE_DECIMAL = /^([-+]?)(\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE]([-+]?[0-9]+))?$/;

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseRecordFile, RecordError, splitFrontmatter, unrepresentable } from "../../src/core/record.ts";
+import { parseRecordFile, RecordError, reasonFor, splitFrontmatter, unrepresentable } from "../../src/core/record.ts";
 
 describe("splitFrontmatter", () => {
   test("canonical input", () => {
@@ -205,6 +205,23 @@ describe("unrepresentable", () => {
 
   test("a recursive alias doesn't hang the walk", () => {
     expect(unrepresentable("extra: &x { self: *x, big: 9007199254740993 }")).toEqual([{ key: "extra", reason: safe }]);
+  });
+});
+
+describe("reasonFor (#105)", () => {
+  test("a class instance changes in JSON", () => {
+    class X {
+      a = 1;
+    }
+    expect(reasonFor(new X())).toBe("changes in JSON");
+  });
+
+  test("a plain object holding the same field is a container, not a verdict", () => {
+    expect(reasonFor({ a: 1 })).toBeNull();
+  });
+
+  test("!!pairs is not a change of value (#75)", () => {
+    expect(unrepresentable("p: !!pairs [a: 1]")).toEqual([]);
   });
 });
 
