@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { aggregate, authProblem, extractAnswer, parseCli, probeProblems, scoreAnswer, type Question, type Row } from "../../scripts/eval-agent-answer.ts";
+import { aggregate, authProblem, extractAnswer, parseCli, probeProblems, RUN_BUDGET_USD, runCost, scoreAnswer, type Question, type Row } from "../../scripts/eval-agent-answer.ts";
 import { loadConfig } from "../../src/core/bank.ts";
 import { listRecords } from "../../src/core/query.ts";
 
@@ -89,6 +89,16 @@ describe("file-read extraction on a real transcript", () => {
       "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
       "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
       "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md",
+    ]);
+  });
+});
+
+describe("file-read extraction of Bash ltm query --json", () => {
+  // Real CLI stdout: inside a Bank `ltm query --json` prints a bare array; with --bank or from a Consumer repo it prints {results:[…]}.
+  test("both CLI shapes count every path they list", () => {
+    expect([...load("cli-query-json.jsonl").filesRead].sort()).toEqual([
+      "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+      "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
     ]);
   });
 });
@@ -198,12 +208,26 @@ describe("runner helpers", () => {
     expect(() => parseCli(["--limit", "0"])).toThrow();
     expect(() => parseCli(["--limit", "2.5"])).toThrow();
   });
+  test("runCost: a result event's total_cost_usd is the cost; without one the cost is unknown and the guard charges the per-run cap", () => {
+    const raw = readFileSync(join(import.meta.dir, "../fixtures/agent-answer/extraction.jsonl"), "utf8");
+    expect(runCost(raw)).toEqual({ cost_usd: 0.1944172, charged_usd: 0.1944172 });
+    const killed = raw.trim().split("\n").filter((l) => JSON.parse(l).type !== "result").join("\n");
+    expect(runCost(killed)).toEqual({ cost_usd: null, charged_usd: 0.5 });
+    expect(RUN_BUDGET_USD).toBe(0.5);
+  });
   test("aggregate: per-style accuracy, recall averaged only over non-null, cost summed", () => {
-    const row = (id: string, style: Row["style"], correct: boolean, file_recall: number | null, cost_usd: number): Row => ({ id, style, correct, answer: "", cited: [], file_recall, cost_usd, plugin_loaded: true, files_read: [] });
+    const row = (id: string, style: Row["style"], correct: boolean, file_recall: number | null, cost_usd: number | null): Row => ({ id, style, correct, answer: "", cited: [], file_recall, cost_usd, plugin_loaded: true, files_read: [] });
     const a = aggregate([row("a", "single-hop", true, 1, 0.1), row("b", "single-hop", false, 0, 0.2), row("c", "abstention", true, null, 0.3)]);
     expect(a.by_style["single-hop"]).toEqual({ n: 2, correct: 1, accuracy: 0.5, file_recall: 0.5 });
     expect(a.by_style.abstention).toEqual({ n: 1, correct: 1, accuracy: 1, file_recall: null });
     expect(a.overall).toEqual({ n: 3, correct: 2, accuracy: 2 / 3, file_recall: 0.5 });
     expect(a.total_cost_usd).toBeCloseTo(0.6);
+    expect(a.cost_unknown_runs).toBe(0);
+  });
+  test("aggregate: an unknown cost adds nothing to total_cost_usd and is counted in cost_unknown_runs", () => {
+    const row = (id: string, cost_usd: number | null): Row => ({ id, style: "single-hop", correct: true, answer: "", cited: [], file_recall: 1, cost_usd, plugin_loaded: true, files_read: [] });
+    const a = aggregate([row("a", 0.1), row("b", null)]);
+    expect(a.total_cost_usd).toBeCloseTo(0.1);
+    expect(a.cost_unknown_runs).toBe(1);
   });
 });

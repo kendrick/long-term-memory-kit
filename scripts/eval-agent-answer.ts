@@ -57,10 +57,11 @@ function fileArgs(rest: string): string[] {
   return out;
 }
 
-// `ltm query --json` prints {results:[{path}]}, and Claude Code 2.1.311 hands the agent the MCP query tool's structuredContent in that shape; the line regex covers the tool's human `bank:path  type ...` text.
+// The `ltm query --json` CLI prints a bare array of {path}, while Claude Code 2.1.311 hands the agent the MCP query tool's structuredContent as {results:[{path}]}; the line regex covers the tool's human `bank:path  type ...` text.
 function queryPaths(result: string): string[] {
   try {
-    const rows = (JSON.parse(result) as { results?: unknown }).results;
+    const parsed = JSON.parse(result) as unknown;
+    const rows = Array.isArray(parsed) ? parsed : (parsed as { results?: unknown } | null)?.results;
     if (Array.isArray(rows)) return rows.flatMap((r) => (typeof r?.path === "string" ? [r.path] : []));
   } catch {}
   return [...result.matchAll(/^(?:[^\s:]+:)?(\S+\.md)\s{2}/gm)].map((m) => m[1] as string);
@@ -203,7 +204,15 @@ export function probeProblems(streamJson: string): string[] {
   return p;
 }
 
-export type Row = { id: string; style: Style; correct: boolean; answer: string; cited: string[] | null; file_recall: number | null; cost_usd: number; plugin_loaded: boolean; files_read: string[] };
+export type Row = { id: string; style: Style; correct: boolean; answer: string; cited: string[] | null; file_recall: number | null; cost_usd: number | null; plugin_loaded: boolean; files_read: string[] };
+
+export const RUN_BUDGET_USD = 0.5;
+
+// A run that failed or was killed before its result event still spent up to the per-run cap, so the guard charges the cap; the row records null because the real figure is unknown, never 0.
+export function runCost(streamJson: string): { cost_usd: number | null; charged_usd: number } {
+  const c = resultEvent(streamJson)?.total_cost_usd;
+  return typeof c === "number" ? { cost_usd: c, charged_usd: c } : { cost_usd: null, charged_usd: RUN_BUDGET_USD };
+}
 
 type Agg = { n: number; correct: number; accuracy: number; file_recall: number | null };
 const agg = (rows: Row[]): Agg => {
@@ -212,11 +221,11 @@ const agg = (rows: Row[]): Agg => {
   return { n: rows.length, correct, accuracy: rows.length ? correct / rows.length : 0, file_recall: recalls.length ? recalls.reduce((a, b) => a + b, 0) / recalls.length : null };
 };
 
-// File recall averages only questions that have one, so abstention (always null) doesn't drag it to zero.
-export function aggregate(rows: Row[]): { by_style: Partial<Record<Style, Agg>>; overall: Agg; total_cost_usd: number } {
+// File recall averages only questions that have one, so abstention (always null) doesn't drag it to zero. total_cost_usd sums known costs only, so cost_unknown_runs says how far it may undercount.
+export function aggregate(rows: Row[]): { by_style: Partial<Record<Style, Agg>>; overall: Agg; total_cost_usd: number; cost_unknown_runs: number } {
   const by_style: Partial<Record<Style, Agg>> = {};
   for (const style of [...new Set(rows.map((r) => r.style))]) by_style[style] = agg(rows.filter((r) => r.style === style));
-  return { by_style, overall: agg(rows), total_cost_usd: rows.reduce((a, r) => a + r.cost_usd, 0) };
+  return { by_style, overall: agg(rows), total_cost_usd: rows.reduce((a, r) => a + (r.cost_usd ?? 0), 0), cost_unknown_runs: rows.filter((r) => r.cost_usd === null).length };
 }
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -277,7 +286,7 @@ function runClaude(question: string) {
       "--allowedTools", "Read,Glob,Grep,Bash(ltm *),Bash(cat *),mcp__plugin_ltm_ltm__*",
       "--disallowedTools", "Edit,Write,WebFetch,WebSearch",
       "--permission-mode", "dontAsk",
-      "--max-budget-usd", "0.50",
+      "--max-budget-usd", String(RUN_BUDGET_USD),
     ];
     const r = spawnSync("claude", args, {
       cwd: s.repo,
@@ -348,11 +357,12 @@ function main() {
     }
     const t = extractAnswer(stream, bank, idPaths);
     const s = scoreAnswer(q, t);
-    const cost = resultEvent(stream)?.total_cost_usd ?? 0;
-    spent += cost;
+    const { cost_usd: cost, charged_usd } = runCost(stream);
+    spent += charged_usd;
+    if (cost === null) console.error(`${q.id}: no result event, so its cost is unknown; counting $${RUN_BUDGET_USD.toFixed(2)} toward the $${TOTAL_BUDGET_USD} guard`);
     const row: Row = { id: q.id, style: q.style, correct: s.correct, answer: t.answer, cited: t.cited, file_recall: s.fileRecall, cost_usd: cost, plugin_loaded: pluginProblems(initEvent(stream)).length === 0, files_read: [...t.filesRead].sort() };
     rows.push(row);
-    console.error(`${q.id}: ${row.correct ? "correct" : "wrong"} cited=${JSON.stringify(row.cited)} recall=${row.file_recall} $${cost.toFixed(3)}${row.plugin_loaded ? "" : " PLUGIN NOT LOADED"}`);
+    console.error(`${q.id}: ${row.correct ? "correct" : "wrong"} cited=${JSON.stringify(row.cited)} recall=${row.file_recall} ${cost === null ? "cost unknown" : `$${cost.toFixed(3)}`}${row.plugin_loaded ? "" : " PLUGIN NOT LOADED"}`);
   }
 
   const summary = aggregate(rows);
@@ -381,7 +391,7 @@ function main() {
   console.log(`agent-answer ${version}: ${result.model}, Claude Code ${claudeVersion}`);
   for (const [style, a] of Object.entries(summary.by_style)) console.log(`  ${style.padEnd(17)} ${a!.correct}/${a!.n} correct (${pct(a!.accuracy)}), file recall ${pct(a!.file_recall)}`);
   console.log(`  ${"overall".padEnd(17)} ${summary.overall.correct}/${summary.overall.n} correct (${pct(summary.overall.accuracy)}), file recall ${pct(summary.overall.file_recall)}`);
-  console.log(`  cost $${(summary.total_cost_usd + probeCost).toFixed(2)} (probe $${probeCost.toFixed(2)})${result.partial ? `, partial` : ""} -> ${relative(ROOT, out)}`);
+  console.log(`  cost $${(summary.total_cost_usd + probeCost).toFixed(2)} (probe $${probeCost.toFixed(2)})${summary.cost_unknown_runs ? `, plus ${summary.cost_unknown_runs} run(s) of unknown cost` : ""}${result.partial ? `, partial` : ""} -> ${relative(ROOT, out)}`);
 }
 
 if (import.meta.main) main();
