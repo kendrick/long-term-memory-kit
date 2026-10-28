@@ -1,0 +1,309 @@
+[
+  {
+    "id": "sh-order-events",
+    "style": "single-hop",
+    "question": "How does order-service get order lifecycle events to the downstream services that need them?",
+    "gold_ids": ["hT5cY8dUa6"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"]
+  },
+  {
+    "id": "sh-duplicate-events",
+    "style": "single-hop",
+    "question": "What must a service that consumes order-service's order events be prepared to handle?",
+    "gold_ids": ["hT5cY8dUa6"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"]
+  },
+  {
+    "id": "sh-log-fields",
+    "style": "single-hop",
+    "question": "Where should order-service write its logs, in what format, and which fields does each line need?",
+    "gold_ids": ["vD8mH3zQb5"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"]
+  },
+  {
+    "id": "sh-release-branches",
+    "style": "single-hop",
+    "question": "Should order-service cut a long-lived release branch for its next feature, or how else should unfinished work ship?",
+    "gold_ids": ["rX6jK1fWc9"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md"]
+  },
+  {
+    "id": "sh-fulfillment-term",
+    "style": "single-hop",
+    "question": "In Acme's commerce domain, at what point does an order become a fulfillment?",
+    "gold_ids": ["xO4bV1cPi0"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/context/commerce-domain-glossary-xO4bV1cPi0.md"]
+  },
+  {
+    "id": "sh-event-subscribers",
+    "style": "single-hop",
+    "question": "Which downstream services consume order-service's events?",
+    "gold_ids": ["gN5yD9sMe2"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/context/order-service-overview-gN5yD9sMe2.md"]
+  },
+  {
+    "id": "sh-billing-db-read",
+    "style": "single-hop",
+    "question": "Can order-service open a connection to billing-service's database to look up invoice status?",
+    "gold_ids": ["cA9wE6uJr3"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"]
+  },
+  {
+    "id": "ms-redis-exception-why",
+    "style": "multi-session",
+    "question": "order-service reads stock levels straight from inventory-service's Redis. Which rule would normally forbid that, and which Record allows it anyway?",
+    "gold_ids": ["cA9wE6uJr3", "wJ3nC7hTy4"],
+    "forbidden_ids": [],
+    "gold_files": [
+      "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+      "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+    ]
+  },
+  {
+    "id": "ms-returns-store",
+    "style": "multi-session",
+    "question": "order-service needs a relational store for a new returns table. Which engine must it use, and what is both the rule and the reasoning behind it?",
+    "gold_ids": ["nR5hB2yTq8", "kQ7vN2xLp4"],
+    "forbidden_ids": ["mB3tR9wZe1"],
+    "gold_files": [
+      "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+      "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md"
+    ]
+  },
+  {
+    "id": "ms-postgres-shared",
+    "style": "multi-session",
+    "question": "order-service plans to keep its order data in PostgreSQL and let fulfillment-service query that database directly. Which half of that plan is allowed and which isn't?",
+    "gold_ids": ["nR5hB2yTq8", "cA9wE6uJr3"],
+    "forbidden_ids": [],
+    "gold_files": [
+      "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+      "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+    ]
+  },
+  {
+    "id": "ms-events-and-subscribers",
+    "style": "multi-session",
+    "question": "Which services subscribe to order-service's order events, how do those events reach them, and what do the subscribers have to tolerate?",
+    "gold_ids": ["gN5yD9sMe2", "hT5cY8dUa6"],
+    "forbidden_ids": [],
+    "gold_files": [
+      "_memory/context/order-service-overview-gN5yD9sMe2.md",
+      "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"
+    ]
+  },
+  {
+    "id": "ms-list-orders-shape",
+    "style": "multi-session",
+    "question": "A client lists orders through order-service's API. How does it page through the results, and what kind of identifier does each order carry?",
+    "gold_ids": ["cR7mT2vKb5", "uL5eX1pJd8"],
+    "forbidden_ids": ["oP4gN8zYa3", "sQ9dW3nHc6"],
+    "gold_files": [
+      "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+      "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md"
+    ]
+  },
+  {
+    "id": "ms-billing-data",
+    "style": "multi-session",
+    "question": "At checkout, order-service needs billing-service to learn about the new order, and later needs billing data back. How should it do each, without a synchronous call chain or a shared database?",
+    "gold_ids": ["hT5cY8dUa6", "cA9wE6uJr3"],
+    "forbidden_ids": [],
+    "gold_files": [
+      "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+      "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+    ]
+  },
+  {
+    "id": "ms-cart-to-fulfillment",
+    "style": "multi-session",
+    "question": "Order-service is the system of record for which commerce objects, and at what points does a cart become an order and an order become a fulfillment?",
+    "gold_ids": ["gN5yD9sMe2", "xO4bV1cPi0"],
+    "forbidden_ids": [],
+    "gold_files": [
+      "_memory/context/order-service-overview-gN5yD9sMe2.md",
+      "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md"
+    ]
+  },
+  {
+    "id": "tm-redis-2027-01-10",
+    "style": "temporal",
+    "question": "As of 2027-01-10, may order-service read stock levels directly from inventory-service's Redis?",
+    "gold_ids": ["wJ3nC7hTy4", "cA9wE6uJr3"],
+    "forbidden_ids": [],
+    "gold_files": [
+      "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+      "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+    ]
+  },
+  {
+    "id": "tm-redis-2027-04-15",
+    "style": "temporal",
+    "question": "As of 2027-04-15, may order-service still read stock levels directly from inventory-service's Redis?",
+    "gold_ids": ["cA9wE6uJr3"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"]
+  },
+  {
+    "id": "tm-redis-deadline-2027-03-20",
+    "style": "temporal",
+    "question": "As of 2027-03-20, a teammate wants to keep order-service's direct stock-level reads from inventory-service's Redis for now. Is that allowed today, and until what date?",
+    "gold_ids": ["wJ3nC7hTy4", "cA9wE6uJr3"],
+    "forbidden_ids": [],
+    "gold_files": [
+      "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+      "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+    ]
+  },
+  {
+    "id": "tm-stock-path-2027-06-01",
+    "style": "temporal",
+    "question": "As of 2027-06-01, how should order-service get inventory-service's stock levels?",
+    "gold_ids": ["cA9wE6uJr3"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"]
+  },
+  {
+    "id": "tm-review-2027-02-10",
+    "style": "temporal",
+    "question": "As of 2027-02-10, has the review date for order-service's Redis exception passed?",
+    "gold_ids": ["wJ3nC7hTy4"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"]
+  },
+  {
+    "id": "tm-review-2027-02-20",
+    "style": "temporal",
+    "question": "As of 2027-02-20, is order-service's Redis exception past its review date, and by how many days?",
+    "gold_ids": ["wJ3nC7hTy4"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"]
+  },
+  {
+    "id": "tm-expiry-window-2026-08-01",
+    "style": "temporal",
+    "question": "As of 2026-08-01, does any accepted Exception that applies to order-service expire within the next six months?",
+    "gold_ids": ["wJ3nC7hTy4"],
+    "forbidden_ids": [],
+    "gold_files": ["_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"]
+  },
+  {
+    "id": "ku-mysql-default",
+    "style": "knowledge-update",
+    "question": "Acme once decided new services default to MySQL. Is that still the decision for a new commerce service, and if not, what replaced it?",
+    "gold_ids": ["kQ7vN2xLp4"],
+    "forbidden_ids": ["mB3tR9wZe1"],
+    "gold_files": ["_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md"]
+  },
+  {
+    "id": "ku-mysql-migration",
+    "style": "knowledge-update",
+    "question": "An order-service component was built on MySQL back when MySQL was the default. It is about to get a major change. What happens to its database?",
+    "gold_ids": ["kQ7vN2xLp4"],
+    "forbidden_ids": ["mB3tR9wZe1"],
+    "gold_files": ["_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md"]
+  },
+  {
+    "id": "ku-page-size",
+    "style": "knowledge-update",
+    "question": "How should a client fetch the second page of order-service's order list: with page and size query parameters?",
+    "gold_ids": ["cR7mT2vKb5"],
+    "forbidden_ids": ["oP4gN8zYa3"],
+    "gold_files": ["_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md"]
+  },
+  {
+    "id": "ku-page-numbers",
+    "style": "knowledge-update",
+    "question": "Does order-service's list endpoint still use page numbers, and why or why not?",
+    "gold_ids": ["cR7mT2vKb5"],
+    "forbidden_ids": ["oP4gN8zYa3"],
+    "gold_files": ["_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md"]
+  },
+  {
+    "id": "ku-new-order-id",
+    "style": "knowledge-update",
+    "question": "How does order-service assign the identifier for a newly created order?",
+    "gold_ids": ["uL5eX1pJd8"],
+    "forbidden_ids": ["sQ9dW3nHc6"],
+    "gold_files": ["_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md"]
+  },
+  {
+    "id": "ku-ids-repeat",
+    "style": "knowledge-update",
+    "question": "Can two order-service orders in different regions end up with the same order identifier?",
+    "gold_ids": ["uL5eX1pJd8"],
+    "forbidden_ids": ["sQ9dW3nHc6"],
+    "gold_files": ["_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md"]
+  },
+  {
+    "id": "ku-support-lookup",
+    "style": "knowledge-update",
+    "question": "How does support staff look up an order when a customer calls: by a per-region order number?",
+    "gold_ids": ["uL5eX1pJd8"],
+    "forbidden_ids": ["sQ9dW3nHc6"],
+    "gold_files": ["_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md"]
+  },
+  {
+    "id": "ab-rate-limits",
+    "style": "abstention",
+    "question": "What rate limits does order-service apply to its public API?",
+    "gold_ids": [],
+    "forbidden_ids": [],
+    "gold_files": []
+  },
+  {
+    "id": "ab-latency-slo",
+    "style": "abstention",
+    "question": "What is order-service's p99 latency SLO for checkout?",
+    "gold_ids": [],
+    "forbidden_ids": [],
+    "gold_files": []
+  },
+  {
+    "id": "ab-order-retention",
+    "style": "abstention",
+    "question": "How long must order-service retain completed order records for compliance?",
+    "gold_ids": [],
+    "forbidden_ids": [],
+    "gold_files": []
+  },
+  {
+    "id": "ab-on-call",
+    "style": "abstention",
+    "question": "Who is on call for order-service, and what is the paging escalation path?",
+    "gold_ids": [],
+    "forbidden_ids": [],
+    "gold_files": []
+  },
+  {
+    "id": "ab-service-auth",
+    "style": "abstention",
+    "question": "How should order-service authenticate its calls to other internal services: mTLS, JWTs, or something else?",
+    "gold_ids": [],
+    "forbidden_ids": [],
+    "gold_files": []
+  },
+  {
+    "id": "ab-currency-rounding",
+    "style": "abstention",
+    "question": "Which rounding rule does order-service apply to order totals in currencies with no minor unit?",
+    "gold_ids": [],
+    "forbidden_ids": [],
+    "gold_files": []
+  },
+  {
+    "id": "ab-api-versioning",
+    "style": "abstention",
+    "question": "How does order-service version its public HTTP API: in the URL path or in a header?",
+    "gold_ids": [],
+    "forbidden_ids": [],
+    "gold_files": []
+  }
+]
