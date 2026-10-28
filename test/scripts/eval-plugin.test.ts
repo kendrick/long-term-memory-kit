@@ -37,11 +37,41 @@ describe("scrubPaths", () => {
   });
 
   test("scrubs a prefix after // or before a sentence-ending dot, but not before .name", () => {
-    expect(scrubPaths(["file:///Users/me/x", "see /tmp.", "in /Users/me. Done", `at ${ROOT}.`, "//tmp/x"], map)).toEqual([
-      "file://~/x", "see <tmp>.", "in ~. Done", "at ..", "/<tmp>/x",
+    expect(scrubPaths(["file:///Users/me/x", "see /tmp.", "in /Users/me. Done", `at ${ROOT}.`, ], map)).toEqual([
+      "file://~/x", "see <tmp>.", "in ~. Done", "at ..",
     ]);
     const same = ["/Users/me.config", "/tmp.d/x", "/Users/me-other", "-I/Users/me/inc"];
     expect(scrubPaths(same, map)).toEqual(same);
+  });
+});
+
+describe("scrubPaths idempotence and URLs", () => {
+  test("leaves already-scrubbed paths alone", () => {
+    const same = ["~/tmp/x", "~/Users/me/x", "<tmp>/Users/me/x", "<tmp>/tmp/x", "./tmp/x", "./Users/me/x"];
+    expect(scrubPaths(same, map)).toEqual(same);
+  });
+
+  test("leaves non-file URLs and scheme-less // paths alone", () => {
+    const same = ["http://tmp/x", "https://tmp/x", "https://host/Users/me/x", "//tmp/x"];
+    expect(scrubPaths(same, map)).toEqual(same);
+  });
+
+  test("$HOME/tmp/x becomes ~/tmp/x, and a second scrub changes nothing", () => {
+    const once = scrubPaths("/Users/me/tmp/x", map);
+    expect(once).toBe("~/tmp/x");
+    expect(scrubPaths(once, map)).toBe("~/tmp/x");
+  });
+
+  test("scrub(scrub(s)) equals scrub(s) for every fixture string", () => {
+    const all = [
+      ROOT, `${ROOT}/evals/x`, `${ROOT}.`, "/private/tmp/e-abc/out/trace.jsonl", "/var/folders/zz/abc/T/x",
+      "/Users/me/.config/ltm", "hello world", "/tmpfoo/bar", "a/tmp/b", "/opt/ltm-other/x", "/Users/meow/x", "", "ratio 1/tmp",
+      "file:///Users/me/x", "see /tmp.", "in /Users/me. Done", "//tmp/x", "/Users/me.config", "/tmp.d/x",
+      "/Users/me-other", "-I/Users/me/inc", "~/tmp/x", "~/Users/me/x", "http://tmp/x", "https://tmp/x",
+      "https://host/Users/me/x", "/Users/me/tmp/x", "/tmp/tmp/x", "/tmp/Users/me/x", `${ROOT}/tmp/x`, `${ROOT}/Users/me/x`,
+      "/Users/me/Users/me/x", "file:///tmp/x", "file:///tmp/tmp/x",
+    ];
+    for (const s of all) expect(scrubPaths(scrubPaths(s, map), map)).toBe(scrubPaths(s, map));
   });
 });
 

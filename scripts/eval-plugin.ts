@@ -10,10 +10,11 @@ const root = resolve(import.meta.dir, "..");
 
 const esc = (p: string) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// Committed results must not carry machine paths. One pass, longest prefix first so `/private/tmp` beats `/tmp`; the lookarounds leave `/tmpfoo`, `a/tmp/b`, and `/Users/me.config` alone but still match `file:///Users/me` and a path ending a sentence (`/tmp.`). `-I/Users/me` stays unscrubbed: telling it from `/opt/Users/me` needs the char before the prefix, and no rule on that is safe.
+// Committed results must not carry machine paths. One pass, longest prefix first so `/private/tmp` beats `/tmp`; the lookarounds leave `/tmpfoo`, `a/tmp/b`, and `/Users/me.config` alone but still match `file:///Users/me` and a path ending a sentence (`/tmp.`). The scrub must be idempotent, so a prefix right after our own outputs (`~`, `.`, `>` of `<tmp>`) is never rewritten again, and `//tmp/x` or anything inside a non-file `scheme://` URL is a host or URL path, not a local one. `-I/Users/me` stays unscrubbed: telling it from `/opt/Users/me` needs the char before the prefix, and no rule on that is safe.
 export function scrubPaths<T>(value: T, replacements: [string, string][]): T {
   const by = new Map(replacements.map(([from, to]) => [from.replace(/\/+$/, ""), to]));
-  const re = new RegExp(`(?<![\\w.\\-])(?<![\\w.\\-]/)(?:${[...by.keys()].sort((a, b) => b.length - a.length).map(esc).join("|")})(?![\\w\\-])(?!\\.\\w)`, "g");
+  const prefixes = [...by.keys()].sort((a, b) => b.length - a.length).map(esc).join("|");
+  const re = new RegExp(`(?<![\\w.\\-~>])(?<!(?<!file:/)/)(?<!\\b(?!file:)[a-z][a-z0-9+.\\-]*://\\S*)(?:${prefixes})(?![\\w\\-])(?!\\.\\w)`, "g");
   const walk = (v: unknown): unknown =>
     typeof v === "string" ? v.replace(re, (m) => by.get(m)!)
     : Array.isArray(v) ? v.map(walk)
