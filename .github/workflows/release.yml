@@ -123,9 +123,19 @@ jobs:
           install -m 755 dist/ltm-linux-x64 "$RUNNER_TEMP/bin/ltm"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - if: steps.key.outputs.present == 'true'
-        run: bun scripts/eval-plugin.ts --version "${GITHUB_REF_NAME#v}"
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          echo "PLUGIN_EVAL_VERSION=$v" >> "$GITHUB_ENV"
+          bun scripts/eval-plugin.ts --version "$v"
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # always(): a below-threshold score exits nonzero, and that is the report worth keeping.
+      - if: always() && steps.key.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-eval
+          path: evals/results/${{ env.PLUGIN_EVAL_VERSION }}/plugin-eval.json
+          if-no-files-found: warn
 
   # Only tag pushes trigger `push`, so this gate means "real release". Gating on github.ref would let a dispatch run on a tag ref publish. `release` waits on `npm` so a failed publish can't leave a Release whose packages never reached the registry.
   release:

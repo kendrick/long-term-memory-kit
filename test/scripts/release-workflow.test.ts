@@ -37,4 +37,12 @@ describe("release.yml", () => {
       expect([job.needs ?? []].flat()).not.toContain("plugin-eval");
     }
   });
+
+  test("plugin-eval uploads its report last, even when the eval step fails", () => {
+    const steps = wf.jobs["plugin-eval"].steps;
+    const last = steps[steps.length - 1];
+    expect(last.uses).toStartWith("actions/upload-artifact@");
+    expect(last.if).toContain("always()");
+    expect(last.with.path).not.toContain("*");
+  });
 });
