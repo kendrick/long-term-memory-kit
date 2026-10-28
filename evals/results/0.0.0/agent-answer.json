@@ -3,27 +3,50 @@
   "model": "claude-sonnet-5-5",
   "claude_code_version": "2.1.311",
   "isolation": "temp CLAUDE_CONFIG_DIR, CLAUDE_CODE_DISABLE_CLAUDE_MDS=1, CLAUDE_CODE_DISABLE_AUTO_MEMORY=1, --plugin-dir <repo>, ltm shim with LTM_CONFIG on PATH",
-  "started_at": "2026-10-28T21:10:45.762Z",
-  "finished_at": "2026-10-28T21:11:30.079Z",
-  "partial": true,
-  "limit": 3,
+  "started_at": "2026-10-28T21:24:20.478Z",
+  "finished_at": "2026-10-28T21:32:02.814Z",
+  "partial": false,
   "stopped_for_budget": false,
-  "probe_cost_usd": 0.0094248,
+  "probe_cost_usd": 0.009403,
   "by_style": {
     "single-hop": {
-      "n": 3,
-      "correct": 3,
+      "n": 7,
+      "correct": 5,
+      "accuracy": 0.7142857142857143,
+      "file_recall": 1
+    },
+    "multi-session": {
+      "n": 7,
+      "correct": 6,
+      "accuracy": 0.8571428571428571,
+      "file_recall": 0.9285714285714286
+    },
+    "temporal": {
+      "n": 7,
+      "correct": 7,
       "accuracy": 1,
       "file_recall": 1
+    },
+    "knowledge-update": {
+      "n": 7,
+      "correct": 0,
+      "accuracy": 0,
+      "file_recall": 1
+    },
+    "abstention": {
+      "n": 7,
+      "correct": 7,
+      "accuracy": 1,
+      "file_recall": null
     }
   },
   "overall": {
-    "n": 3,
-    "correct": 3,
-    "accuracy": 1,
-    "file_recall": 1
+    "n": 35,
+    "correct": 25,
+    "accuracy": 0.7142857142857143,
+    "file_recall": 0.9821428571428571
   },
-  "total_cost_usd": 0.0795617,
+  "total_cost_usd": 0.8847153999999998,
   "questions": [
     {
       "id": "sh-order-events",
@@ -33,7 +56,7 @@
         "hT5cY8dUa6"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0139798,
+      "cost_usd": 0.0091771,
       "plugin_loaded": true,
       "files_read": [
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"
@@ -45,13 +68,25 @@
       "correct": true,
       "cited": [
         "hT5cY8dUa6",
-        "uL5eX1pJd8",
-        "cA9wE6uJr3",
-        "gN5yD9sMe2",
-        "xO4bV1cPi0"
+        "gN5yD9sMe2"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0343861,
+      "cost_usd": 0.0247846,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"
+      ]
+    },
+    {
+      "id": "sh-log-fields",
+      "style": "single-hop",
+      "correct": true,
+      "cited": [
+        "vD8mH3zQb5"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.038219800000000005,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
@@ -68,14 +103,589 @@
       ]
     },
     {
-      "id": "sh-log-fields",
+      "id": "sh-release-branches",
       "style": "single-hop",
       "correct": true,
       "cited": [
-        "vD8mH3zQb5"
+        "rX6jK1fWc9"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0311958,
+      "cost_usd": 0.027381300000000004,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "sh-fulfillment-term",
+      "style": "single-hop",
+      "correct": false,
+      "cited": [],
+      "file_recall": 1,
+      "cost_usd": 0.0215859,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md"
+      ]
+    },
+    {
+      "id": "sh-event-subscribers",
+      "style": "single-hop",
+      "correct": false,
+      "cited": [],
+      "file_recall": 1,
+      "cost_usd": 0.0218562,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "sh-billing-db-read",
+      "style": "single-hop",
+      "correct": true,
+      "cited": [
+        "cA9wE6uJr3",
+        "wJ3nC7hTy4"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.020315200000000002,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+      ]
+    },
+    {
+      "id": "ms-redis-exception-why",
+      "style": "multi-session",
+      "correct": true,
+      "cited": [
+        "cA9wE6uJr3",
+        "wJ3nC7hTy4"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0158333,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+      ]
+    },
+    {
+      "id": "ms-returns-store",
+      "style": "multi-session",
+      "correct": true,
+      "cited": [
+        "nR5hB2yTq8",
+        "kQ7vN2xLp4"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0418474,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "ms-postgres-shared",
+      "style": "multi-session",
+      "correct": true,
+      "cited": [
+        "kQ7vN2xLp4",
+        "nR5hB2yTq8",
+        "cA9wE6uJr3",
+        "hT5cY8dUa6",
+        "wJ3nC7hTy4"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.033127199999999996,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "ms-events-and-subscribers",
+      "style": "multi-session",
+      "correct": true,
+      "cited": [
+        "hT5cY8dUa6",
+        "gN5yD9sMe2",
+        "cA9wE6uJr3",
+        "uL5eX1pJd8"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0654528,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "ms-list-orders-shape",
+      "style": "multi-session",
+      "correct": false,
+      "cited": [
+        "uL5eX1pJd8"
+      ],
+      "file_recall": 0.5,
+      "cost_usd": 0.028245399999999997,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "ms-billing-data",
+      "style": "multi-session",
+      "correct": true,
+      "cited": [
+        "hT5cY8dUa6",
+        "cA9wE6uJr3",
+        "gN5yD9sMe2"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.05312410000000001,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "ms-cart-to-fulfillment",
+      "style": "multi-session",
+      "correct": true,
+      "cited": [
+        "gN5yD9sMe2",
+        "xO4bV1cPi0",
+        "hT5cY8dUa6",
+        "uL5eX1pJd8"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.041305999999999995,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "tm-redis-2027-01-10",
+      "style": "temporal",
+      "correct": true,
+      "cited": [
+        "wJ3nC7hTy4",
+        "cA9wE6uJr3"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0205606,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+      ]
+    },
+    {
+      "id": "tm-redis-2027-04-15",
+      "style": "temporal",
+      "correct": true,
+      "cited": [
+        "wJ3nC7hTy4",
+        "cA9wE6uJr3"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0159235,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+      ]
+    },
+    {
+      "id": "tm-redis-deadline-2027-03-20",
+      "style": "temporal",
+      "correct": true,
+      "cited": [
+        "wJ3nC7hTy4",
+        "cA9wE6uJr3"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0218825,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md;",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "cA9wE6uJr3",
+        "grep",
+        "head",
+        "|"
+      ]
+    },
+    {
+      "id": "tm-stock-path-2027-06-01",
+      "style": "temporal",
+      "correct": true,
+      "cited": [
+        "cA9wE6uJr3",
+        "wJ3nC7hTy4"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.025774,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "tm-review-2027-02-10",
+      "style": "temporal",
+      "correct": true,
+      "cited": [
+        "wJ3nC7hTy4",
+        "cA9wE6uJr3"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0104293,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "tm-review-2027-02-20",
+      "style": "temporal",
+      "correct": true,
+      "cited": [
+        "wJ3nC7hTy4"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.011277700000000002,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "tm-expiry-window-2026-08-01",
+      "style": "temporal",
+      "correct": true,
+      "cited": [
+        "wJ3nC7hTy4"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0140577,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "ku-mysql-default",
+      "style": "knowledge-update",
+      "correct": false,
+      "cited": [
+        "kQ7vN2xLp4",
+        "mB3tR9wZe1",
+        "nR5hB2yTq8"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0322136,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "ku-mysql-migration",
+      "style": "knowledge-update",
+      "correct": false,
+      "cited": [
+        "kQ7vN2xLp4",
+        "mB3tR9wZe1"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0259956,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md"
+      ]
+    },
+    {
+      "id": "ku-page-size",
+      "style": "knowledge-update",
+      "correct": false,
+      "cited": [
+        "cR7mT2vKb5",
+        "oP4gN8zYa3"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0202138,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md"
+      ]
+    },
+    {
+      "id": "ku-page-numbers",
+      "style": "knowledge-update",
+      "correct": false,
+      "cited": [
+        "cR7mT2vKb5",
+        "oP4gN8zYa3"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.031775700000000004,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "ku-new-order-id",
+      "style": "knowledge-update",
+      "correct": false,
+      "cited": [
+        "uL5eX1pJd8",
+        "sQ9dW3nHc6"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0196419,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "ku-ids-repeat",
+      "style": "knowledge-update",
+      "correct": false,
+      "cited": [
+        "uL5eX1pJd8",
+        "sQ9dW3nHc6"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0190599,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md"
+      ]
+    },
+    {
+      "id": "ku-support-lookup",
+      "style": "knowledge-update",
+      "correct": false,
+      "cited": [
+        "uL5eX1pJd8",
+        "sQ9dW3nHc6"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0204005,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "ab-rate-limits",
+      "style": "abstention",
+      "correct": true,
+      "cited": [],
+      "file_recall": null,
+      "cost_usd": 0.0236573,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "ab-latency-slo",
+      "style": "abstention",
+      "correct": true,
+      "cited": [],
+      "file_recall": null,
+      "cost_usd": 0.0208354,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "ab-order-retention",
+      "style": "abstention",
+      "correct": true,
+      "cited": [],
+      "file_recall": null,
+      "cost_usd": 0.0335193,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "ab-on-call",
+      "style": "abstention",
+      "correct": true,
+      "cited": [],
+      "file_recall": null,
+      "cost_usd": 0.0207937,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+      ]
+    },
+    {
+      "id": "ab-service-auth",
+      "style": "abstention",
+      "correct": true,
+      "cited": [],
+      "file_recall": null,
+      "cost_usd": 0.0305906,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
@@ -83,8 +693,30 @@
         "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
         "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
         "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
         "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
       ]
+    },
+    {
+      "id": "ab-currency-rounding",
+      "style": "abstention",
+      "correct": true,
+      "cited": [],
+      "file_recall": null,
+      "cost_usd": 0.012172100000000002,
+      "plugin_loaded": true,
+      "files_read": []
+    },
+    {
+      "id": "ab-api-versioning",
+      "style": "abstention",
+      "correct": true,
+      "cited": [],
+      "file_recall": null,
+      "cost_usd": 0.0116844,
+      "plugin_loaded": true,
+      "files_read": []
     }
   ]
 }

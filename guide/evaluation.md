@@ -125,6 +125,84 @@ The 0.0.0 baseline ran 14 agent runs, seven cases with and without the plugin, o
 
 The `plugin-eval` job in [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs on tag pushes only, so pull requests and manual dispatches never bill model calls. It needs the `ANTHROPIC_API_KEY` secret. When that secret is empty, the job prints a notice and skips the eval instead of failing. The job installs CLI 2.1.311, puts the linux binary on `PATH` as `ltm`, and runs `bun scripts/eval-plugin.ts --version <tag without v>`. It has `continue-on-error: true` and no other job needs it, so its result never blocks a release.
 
+## The Agent-Answer Eval
+
+The agent-answer eval asks whether Claude, working in a Consumer repo with the `ltm` plugin loaded, gets the right answer from the Bank and cites the Records it used. It runs the 35 questions in [`evals/agent-answer/questions.json`](../evals/agent-answer/questions.json), seven in each of LongMemEval's five styles: single-hop, multi-session, temporal, knowledge-update, and abstention. Every question is asked from a copy of [`fixtures/consumer-repo/`](../fixtures/consumer-repo/), the order-service Consumer repo, against the demo Bank.
+
+Each question names the Records that answer it in `gold_ids` and the ones that must not appear in `forbidden_ids`. A knowledge-update question forbids the superseded Record, and a temporal question states its reference date in the question text. An abstention question has no gold Records, because the Bank holds no answer.
+
+The agent ends its reply with a `CITED:` line listing the Record ids it relied on, or `CITED: NONE`. The runner reads the last such line from the transcript and scores it without looking at the prose. An answer is correct when it cites every `gold_ids` entry and no `forbidden_ids` entry. An abstention answer is correct when it cites nothing. A reply with no `CITED:` line scores as wrong.
+
+File recall is a second score. It is the share of a question's `gold_files` that entered the agent's context, through a `Read`, an `ltm head`, or a result from the MCP `query` tool. A `grep` that printed only paths doesn't count, and neither does a tool call that returned an error.
+
+### Run the Agent-Answer Eval
+
+You need the Claude Code CLI, 2.1.311 in the baseline run. From the repo root, run:
+
+```sh
+bun scripts/eval-agent-answer.ts
+```
+
+The runner takes these flags:
+
+| Flag | Default | Effect |
+| :- | :- | :- |
+| `--limit <n>` | all 35 | Runs only the first `n` questions and marks the result `partial` |
+| `--version <v>` | `version` in `package.json` | The version written into the result and its directory |
+| `--out <path>` | `evals/results/<version>/agent-answer.json` | Where the result goes |
+| `--transcripts <dir>` | off | Saves each run's raw stream-json as `<id>.jsonl` |
+
+Raw transcripts hold absolute temp paths, so point `--transcripts` at a scratch directory and scrub any transcript before you commit it as a fixture.
+
+Every run uses an empty temp `CLAUDE_CONFIG_DIR`, which can't use the keychain login of your normal sessions. Set `ANTHROPIC_API_KEY`, or set `CLAUDE_CODE_OAUTH_TOKEN` to a token from `claude setup-token`. Without one of them the runner prints why and exits before any paid call.
+
+### What the Probe Checks
+
+Before it scores anything, the runner makes one probe run on the first question and inspects the init event. The eval stops with exit code 2 unless all of these hold:
+
+- The plugin `ltm` is loaded with no plugin errors.
+- The only MCP server is `plugin:ltm:ltm`.
+- No memory files are loaded.
+- No other plugin is loaded, apart from the three with `path: "builtin"` that Claude Code 2.1.311 always loads: `cc-plugin-agents-md`, `cc-plugin-telemetry`, and `cc-plugin-plugin-authoring`. The probe allows those by name.
+
+The runner doesn't pass `--strict-mcp-config` or `--bare`. Both drop a `--plugin-dir` plugin's own MCP server, so the agent would lose the tools the eval exists to test. The empty temp `CLAUDE_CONFIG_DIR` already leaves `plugin:ltm:ltm` as the only server.
+
+### Cost
+
+A full run is 35 headless runs plus the probe. The baseline cost $0.89 at list price: $0.88 for the questions and $0.01 for the probe. The runner caps each run at $0.50 and stops starting new questions once the total passes $15, marking the result `stopped_for_budget` and `partial`.
+
+### Read the Results
+
+The runner writes `evals/results/<version>/agent-answer.json`. Unlike `bench.json`, it holds timestamps, so two runs never produce the same bytes. Its top-level fields are:
+
+| Field | Holds |
+| :- | :- |
+| `version`, `model`, `claude_code_version` | What was measured and with what |
+| `isolation` | The environment settings the runs used |
+| `started_at`, `finished_at` | Run times |
+| `partial`, `limit`, `stopped_for_budget` | Whether fewer than 35 questions ran, and why. `limit` appears only with `--limit`. |
+| `probe_cost_usd`, `total_cost_usd` | Probe cost, and the cost of the scored runs without the probe |
+| `by_style`, `overall` | `n`, `correct`, `accuracy`, and `file_recall` per style and in total |
+| `questions` | One entry per question: `id`, `style`, `correct`, `cited`, `file_recall`, `cost_usd`, `plugin_loaded`, and `files_read` |
+
+`cited` is `null` when the reply had no `CITED:` line and `[]` for `CITED: NONE`. `file_recall` is `null` for abstention questions, which have no gold files, and the aggregate averages only the questions that have gold files. `plugin_loaded` is false when a run's init event shows a plugin problem.
+
+The 0.0.0 baseline ran on `claude-sonnet-5-5` and CLI 2.1.311. It answered 25 of 35 questions correctly (71%), with 98% file recall.
+
+| Style | Correct | File recall |
+| :- | :- | :- |
+| single-hop | 5/7 | 100% |
+| multi-session | 6/7 | 93% |
+| temporal | 7/7 | 100% |
+| knowledge-update | 0/7 | 100% |
+| abstention | 7/7 | n/a |
+
+The knowledge-update score is the one to read closely. In all seven answers the agent found the current Record and cited the superseded one beside it, which the scorer counts as wrong. Two single-hop answers cited nothing despite reading the right file. Model output varies between runs, so treat a single run as a rough reading.
+
+### In the Release Workflow
+
+The agent-answer eval reports on releases and doesn't gate them. Nothing compares its result with an earlier one, and a low score never stops a release. Gating waits until two releases have each committed a result, so there is a measured spread to set a threshold against. The plugin eval gets the same treatment.
+
 ## Format Findings
 
 The bench borrows qmd's fixture format, and the plugin cases use the format `claude plugin eval` defines.
