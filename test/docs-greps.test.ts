@@ -83,10 +83,11 @@ describe("doc greps", () => {
     expect(inDocs.length).toBeGreaterThanOrEqual(MIN_GREPS);
   });
 
+  // One sh spawn per grep; with guide/'s greps added this runs 5-7s on a loaded machine, past bun's 5s default.
   test("every doc grep matches something in the demo Bank", () => {
     const failures = collectAll().flatMap((g) => failure(g) ?? []);
     expect(failures.join("\n")).toBe("");
-  });
+  }, 30_000);
 });
 
 describe("the grep test's falsifier", () => {

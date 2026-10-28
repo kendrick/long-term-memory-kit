@@ -8,14 +8,14 @@ import { parse } from "yaml";
 const repo = new URL("..", import.meta.url).pathname;
 const page = join(repo, "guide/getting-started.md");
 
-// Same fence rule as docs-greps.test.ts: only a bare ```sh fence runs, so ```bash steps (download, push, plugin install) stay reader-only.
-function shFences(text: string): string[] {
+// Same fence rule as docs-greps.test.ts: a fence counts only when its opening line is exactly ```<lang>.
+function fences(text: string, lang: string): string[] {
   const blocks: string[] = [];
   let lines: string[] | null = null;
   let other = false;
   for (const line of text.split("\n")) {
     if (lines === null && !other) {
-      if (line === "```sh") lines = [];
+      if (line === "```" + lang) lines = [];
       else if (line.startsWith("```")) other = true;
     } else if (line.trim() === "```") {
       if (lines !== null) blocks.push(lines.join("\n"));
@@ -26,6 +26,9 @@ function shFences(text: string): string[] {
   return blocks;
 }
 
+// Only bare ```sh fences run, so ```bash steps (download, push, plugin install) stay reader-only.
+const shFences = (text: string) => fences(text, "sh");
+
 const recordsUnder = (dir: string): string[] =>
   readdirSync(dir, { recursive: true, encoding: "utf8" })
     .filter((p) => p.endsWith(".md"))
@@ -34,9 +37,20 @@ const recordsUnder = (dir: string): string[] =>
 const frontmatter = (path: string): Record<string, unknown> =>
   parse(readFileSync(path, "utf8").split("\n---\n")[0]!.replace(/^---\n/, "")) as Record<string, unknown>;
 
+// The bash fences never run, so nothing else notices one that leaves the reader in the wrong directory for the steps after it.
+test("every bash fence on guide/getting-started.md returns to the directory it started in", () => {
+  const blocks = fences(readFileSync(page, "utf8"), "bash");
+  expect(blocks.length).toBeGreaterThan(0);
+  for (const block of blocks) {
+    const cds = block.split("\n").filter((l) => /^cd\s/.test(l));
+    const up = cds.filter((l) => /^cd \.\.$/.test(l)).length;
+    expect(cds.length - up, `cd into a directory without cd .. back out:\n${block}`).toBe(up);
+  }
+});
+
 test("guide/getting-started.md, run literally, ends with a valid Bank a Consumer repo can query", () => {
-  const fences = shFences(readFileSync(page, "utf8"));
-  expect(fences.length).toBeGreaterThan(0);
+  const runnable = shFences(readFileSync(page, "utf8"));
+  expect(runnable.length).toBeGreaterThan(0);
 
   // Realpath'd because macOS tmpdir() is a symlink and the page writes $PWD into the user config.
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "ltm-getting-started-")));
@@ -59,7 +73,7 @@ test("guide/getting-started.md, run literally, ends with a valid Bank a Consumer
     };
     const sh = (cwd: string, script: string) => spawnSync("sh", ["-e", "-c", script], { cwd, env, encoding: "utf8" });
 
-    const walk = sh(dir, fences.join("\n"));
+    const walk = sh(dir, runnable.join("\n"));
     expect(walk.status, `the page's sh fences failed:\n${walk.stdout}\n${walk.stderr}`).toBe(0);
 
     const bank = join(dir, "acme-bank");

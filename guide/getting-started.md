@@ -100,6 +100,7 @@ Create an empty repository for the Bank on GitHub and push to it:
 cd acme-bank
 git remote add origin https://github.com/acme/acme-bank.git
 git push -u origin main
+cd ..
 ```
 
 `ltm init` wrote three workflows and an issue form, and GitHub picks them up on the first push:
