@@ -259,9 +259,14 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
     git(tmp, ["add", "--", inTree]);
     git(tmp, ["commit", "--quiet", "-m", `Propose ${input.type}: ${input.title}`]);
     const sha = git(tmp, ["rev-parse", "HEAD"]).trim();
-    // A URL rather than the remote name, so git adds no remote-tracking ref in the caller's repo. Push from root, never tmp, because git resolves a relative URL like ../bank.git against the -C dir. The worktree shares root's object store, so root already has the commit.
+    // A URL rather than the remote name, so a relative URL like ../bank.git resolves as written. Push from root, never tmp, because git resolves that URL against the -C dir. The worktree shares root's object store, so root already has the commit.
     const pushUrl = git(root, ["remote", "get-url", "--push", "origin"]).trim();
+    // git 2.56 records a push by URL as refs/remotes/origin/<branch>; older git doesn't. Delete only a ref the push made, never one the caller already had.
+    const trackingRef = `refs/remotes/origin/${branch}`;
+    const hadTrackingRef = gitMaybe(root, ["rev-parse", "--verify", "--quiet", trackingRef]) !== null;
     git(root, ["push", "--quiet", pushUrl, `${sha}:refs/heads/${branch}`]);
+    // Best effort, like cleanup(): a failed delete must not hide a successful push.
+    if (!hadTrackingRef) gitMaybe(root, ["update-ref", "-d", trackingRef]);
   } catch (e) {
     if (e instanceof ConfigError) return { refusal: `the fetched default branch has no usable Bank config: ${firstLine(e.message)}` };
     if (!(e instanceof GitError)) throw e;
