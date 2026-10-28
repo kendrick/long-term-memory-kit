@@ -1,6 +1,6 @@
 # Evaluating ltm
 
-Two evals check this kit before a release. The retrieval bench asks whether `ltm query --text` finds the right Records in the demo Bank, and it gates every release. The plugin eval asks whether Claude picks up the `ltm` plugin's skills and tools when it should, and it only reports. Results for each version are committed under `evals/results/<version>/`.
+Three evals check this kit before a release. The retrieval bench asks whether `ltm query --text` finds the right Records in the demo Bank, and it gates every release. The plugin eval asks whether Claude picks up the `ltm` plugin's skills and tools when it should. The agent-answer eval asks whether Claude, with the plugin loaded, answers questions from the Bank and cites the Records it used. The plugin eval and the agent-answer eval only report. Results for each version are committed under `evals/results/<version>/`.
 
 ## The Retrieval Bench
 
@@ -129,11 +129,19 @@ The `plugin-eval` job in [`.github/workflows/release.yml`](../.github/workflows/
 
 The agent-answer eval asks whether Claude, working in a Consumer repo with the `ltm` plugin loaded, gets the right answer from the Bank and cites the Records it used. It runs the 35 questions in [`evals/agent-answer/questions.json`](../evals/agent-answer/questions.json), seven in each of LongMemEval's five styles: single-hop, multi-session, temporal, knowledge-update, and abstention. Every question is asked from a copy of [`fixtures/consumer-repo/`](../fixtures/consumer-repo/), the order-service Consumer repo, against the demo Bank.
 
-Each question names the Records that answer it in `gold_ids` and the ones that must not appear in `forbidden_ids`. A knowledge-update question forbids the superseded Record, and a temporal question states its reference date in the question text. An abstention question has no gold Records, because the Bank holds no answer.
+Each question names the Records that answer it in `gold_ids` and the ones that must not appear in `forbidden_ids`. A knowledge-update question forbids the superseded Record. A temporal question states its reference date in the question text. One dated after an Exception's `effective_to` forbids that Exception, because the Exception grants nothing once it expires. An abstention question has no gold Records, because the Bank holds no answer.
 
 The agent ends its reply with a `CITED:` line listing the Record ids it relied on, or `CITED: NONE`. The runner reads the last such line from the transcript and scores it without looking at the prose. An answer is correct when it cites every `gold_ids` entry and no `forbidden_ids` entry. An abstention answer is correct when it cites nothing. A reply with no `CITED:` line scores as wrong.
 
-File recall is a second score. It is the share of a question's `gold_files` that entered the agent's context, through a `Read`, an `ltm head`, or a result from the MCP `query` tool. A `grep` that printed only paths doesn't count, and neither does a tool call that returned an error.
+File recall is a second score. It is the share of a question's `gold_files` that entered the agent's context. A file counts as read through any of these calls:
+
+- `Read` on the file
+- the MCP `head` tool, by `path` or by `id`
+- the MCP `query` tool, for every path in its results
+- `cat`, `head`, or `ltm head` on the file in Bash
+- `ltm query --json` in Bash, for every path in its results
+
+The runner splits a Bash command at `&&` and `;` and checks each part. A `cd` in an earlier part sets the directory for relative paths after it, so `cd <bank-root> && ltm head <path>` counts. A `grep` that printed only paths doesn't count, and neither does a tool call that returned an error.
 
 ### Run the Agent-Answer Eval
 
@@ -183,21 +191,21 @@ The runner writes `evals/results/<version>/agent-answer.json`. Unlike `bench.jso
 | `partial`, `limit`, `stopped_for_budget` | Whether fewer than 35 questions ran, and why. `limit` appears only with `--limit`. |
 | `probe_cost_usd`, `total_cost_usd` | Probe cost, and the cost of the scored runs without the probe |
 | `by_style`, `overall` | `n`, `correct`, `accuracy`, and `file_recall` per style and in total |
-| `questions` | One entry per question: `id`, `style`, `correct`, `cited`, `file_recall`, `cost_usd`, `plugin_loaded`, and `files_read` |
+| `questions` | One entry per question: `id`, `style`, `correct`, `answer`, `cited`, `file_recall`, `cost_usd`, `plugin_loaded`, and `files_read` |
 
-`cited` is `null` when the reply had no `CITED:` line and `[]` for `CITED: NONE`. `file_recall` is `null` for abstention questions, which have no gold files, and the aggregate averages only the questions that have gold files. `plugin_loaded` is false when a run's init event shows a plugin problem.
+`answer` is the reply without its `CITED:` line. `cited` is `null` when the reply had no `CITED:` line and `[]` for `CITED: NONE`. `file_recall` is `null` for abstention questions, which have no gold files, and the aggregate averages only the questions that have gold files. `plugin_loaded` is false when a run's init event shows a plugin problem.
 
-The 0.0.0 baseline ran on `claude-sonnet-5-5` and CLI 2.1.311. It answered 25 of 35 questions correctly (71%), with 98% file recall.
+The 0.0.0 baseline ran on `claude-sonnet-5-5` and CLI 2.1.311. It answered 22 of 35 questions correctly (63%), with 95% file recall.
 
 | Style | Correct | File recall |
 | :- | :- | :- |
 | single-hop | 5/7 | 100% |
-| multi-session | 6/7 | 93% |
-| temporal | 7/7 | 100% |
+| multi-session | 5/7 | 93% |
+| temporal | 5/7 | 86% |
 | knowledge-update | 0/7 | 100% |
 | abstention | 7/7 | n/a |
 
-The knowledge-update score is the one to read closely. In all seven answers the agent found the current Record and cited the superseded one beside it, which the scorer counts as wrong. Two single-hop answers cited nothing despite reading the right file. Model output varies between runs, so treat a single run as a rough reading.
+The knowledge-update score is the one to read closely. In all seven answers the agent found the current Record and cited the superseded one beside it, which the scorer counts as wrong. The two temporal questions dated after Exception `wJ3nC7hTy4` expired on 2027-03-31 scored wrong the same way. Both answers said the Exception had lapsed, then cited it beside the PolicyRule. Two single-hop answers cited nothing. The right Record was in their query results, which counts toward file recall, but both answers said the agent saw only the Record's summary and not its body. Model output varies between runs, so treat a single run as a rough reading.
 
 ### In the Release Workflow
 

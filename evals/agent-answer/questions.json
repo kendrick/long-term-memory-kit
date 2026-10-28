@@ -148,7 +148,7 @@
     "style": "temporal",
     "question": "As of 2027-04-15, may order-service still read stock levels directly from inventory-service's Redis?",
     "gold_ids": ["cA9wE6uJr3"],
-    "forbidden_ids": [],
+    "forbidden_ids": ["wJ3nC7hTy4"],
     "gold_files": ["_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"]
   },
   {
@@ -167,7 +167,7 @@
     "style": "temporal",
     "question": "As of 2027-06-01, how should order-service get inventory-service's stock levels?",
     "gold_ids": ["cA9wE6uJr3"],
-    "forbidden_ids": [],
+    "forbidden_ids": ["wJ3nC7hTy4"],
     "gold_files": ["_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"]
   },
   {

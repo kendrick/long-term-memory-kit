@@ -61,6 +61,25 @@ describe("file-read extraction", () => {
   });
 });
 
+describe("file-read extraction of MCP head by id and compound Bash", () => {
+  const IDS = new Map([["kQ7vN2xLp4", PG]]);
+  const raw = readFileSync(join(import.meta.dir, "../fixtures/agent-answer/compound-reads.jsonl"), "utf8");
+  test("head by id resolves through the id map; cd re-roots each && / ; segment; head -n counts like cat", () => {
+    expect([...extractAnswer(raw, BANK, IDS).filesRead].sort()).toEqual(
+      [
+        PG,
+        MY,
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+      ].sort(),
+    );
+  });
+  test("without the id map, head by id counts as nothing", () => {
+    expect(extractAnswer(raw, BANK).filesRead).not.toContain(PG);
+  });
+});
+
 describe("file-read extraction on a real transcript", () => {
   // Trimmed from a real 2.1.311 run: two Reads of a path that didn't exist and a failed MCP facets call came back is_error.
   test("errored tool results count as no read; a JSON MCP query result does", () => {
@@ -180,7 +199,7 @@ describe("runner helpers", () => {
     expect(() => parseCli(["--limit", "2.5"])).toThrow();
   });
   test("aggregate: per-style accuracy, recall averaged only over non-null, cost summed", () => {
-    const row = (id: string, style: Row["style"], correct: boolean, file_recall: number | null, cost_usd: number): Row => ({ id, style, correct, cited: [], file_recall, cost_usd, plugin_loaded: true, files_read: [] });
+    const row = (id: string, style: Row["style"], correct: boolean, file_recall: number | null, cost_usd: number): Row => ({ id, style, correct, answer: "", cited: [], file_recall, cost_usd, plugin_loaded: true, files_read: [] });
     const a = aggregate([row("a", "single-hop", true, 1, 0.1), row("b", "single-hop", false, 0, 0.2), row("c", "abstention", true, null, 0.3)]);
     expect(a.by_style["single-hop"]).toEqual({ n: 2, correct: 1, accuracy: 0.5, file_recall: 0.5 });
     expect(a.by_style.abstention).toEqual({ n: 1, correct: 1, accuracy: 1, file_recall: null });

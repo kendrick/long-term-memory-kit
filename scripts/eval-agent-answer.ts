@@ -5,6 +5,8 @@ import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, 
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { loadConfig } from "../src/core/bank.ts";
+import { listRecords } from "../src/core/query.ts";
 import { scrubPaths } from "./eval-plugin.ts";
 
 export type Style = "single-hop" | "multi-session" | "temporal" | "knowledge-update" | "abstention";
@@ -22,7 +24,6 @@ export type Transcript = {
   answer: string;
   /** null when the final line has no `CITED:` line; `[]` for `CITED: NONE`. */
   cited: string[] | null;
-  /** Bank-relative paths whose content entered the agent's context. */
   filesRead: string[];
 };
 
@@ -44,34 +45,60 @@ function normalize(p: string, bankRoot: string): string {
   return rel.startsWith("..") ? q : rel;
 }
 
-const args = (rest: string) => rest.split(/\s+/).filter((t) => t !== "" && !t.startsWith("-"));
+// Flags drop out; `-n`/`-c` also take their count, so `head -n 20 <path>` yields only the path.
+function fileArgs(rest: string): string[] {
+  const out: string[] = [];
+  const toks = rest.split(/\s+/).filter(Boolean);
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i] as string;
+    if (t === "-n" || t === "-c") i++;
+    else if (!t.startsWith("-")) out.push(t.replace(/^['"]|['"]$/g, ""));
+  }
+  return out;
+}
 
-// `ltm query --json` prints {results:[{path}]}; the MCP tool's text content is the human `bank:path  type ...` lines.
+// `ltm query --json` prints {results:[{path}]}, and Claude Code 2.1.311 hands the agent the MCP query tool's structuredContent in that shape; the line regex covers the tool's human `bank:path  type ...` text.
 function queryPaths(result: string): string[] {
   try {
-    const parsed = JSON.parse(result) as unknown;
-    const rows = Array.isArray(parsed) ? parsed : (parsed as { results?: unknown }).results;
+    const rows = (JSON.parse(result) as { results?: unknown }).results;
     if (Array.isArray(rows)) return rows.flatMap((r) => (typeof r?.path === "string" ? [r.path] : []));
   } catch {}
   return [...result.matchAll(/^(?:[^\s:]+:)?(\S+\.md)\s{2}/gm)].map((m) => m[1] as string);
 }
 
-function pathsRead(name: string, input: Record<string, unknown>, result: string): string[] {
-  if (name === "Read") return typeof input.file_path === "string" ? [input.file_path] : [];
-  if (name === MCP_HEAD) return typeof input.path === "string" ? [input.path] : [];
-  if (name === MCP_QUERY) return queryPaths(result);
-  if (name === "Bash" && typeof input.command === "string") {
-    const cmd = input.command.trim();
-    const cat = /^cat\s+(.+)$/.exec(cmd);
-    if (cat) return args(cat[1] as string);
-    const head = /^ltm head\s+(.+)$/.exec(cmd);
-    if (head) return args(head[1] as string);
-    if (/^ltm query\b/.test(cmd) && /(^|\s)--json(\s|$)/.test(cmd)) return queryPaths(result);
+// The query-memory skill tells agents to `cd <bank-root> && ltm head <path>`, so each `&&`/`;` segment counts on its own and a `cd` re-roots the relative paths after it.
+function bashPaths(command: string, result: string): string[] {
+  let cwd: string | undefined;
+  const out: string[] = [];
+  for (const seg of command.split(/&&|;/).map((s) => s.trim())) {
+    const cd = /^cd\s+(\S+)$/.exec(seg);
+    if (cd) {
+      const dir = (cd[1] as string).replace(/^['"]|['"]$/g, "");
+      cwd = cwd === undefined || isAbsolute(dir) ? dir : join(cwd, dir);
+      continue;
+    }
+    const files = /^(?:cat|head|ltm head)\s+(.+)$/.exec(seg);
+    const found = files ? fileArgs(files[1] as string) : /^ltm query\b/.test(seg) && /(^|\s)--json(\s|$)/.test(seg) ? queryPaths(result) : [];
+    const base = cwd;
+    out.push(...(files && base !== undefined ? found.map((f) => (isAbsolute(f) ? f : join(base, f))) : found));
   }
+  return out;
+}
+
+function pathsRead(name: string, input: Record<string, unknown>, result: string, idPaths: ReadonlyMap<string, string>): string[] {
+  if (name === "Read") return typeof input.file_path === "string" ? [input.file_path] : [];
+  if (name === MCP_HEAD) {
+    if (typeof input.path === "string") return [input.path];
+    const byId = typeof input.id === "string" ? idPaths.get(input.id) : undefined;
+    return byId ? [byId] : [];
+  }
+  if (name === MCP_QUERY) return queryPaths(result);
+  if (name === "Bash" && typeof input.command === "string") return bashPaths(input.command, result);
   return [];
 }
 
-export function extractAnswer(streamJson: string, bankRoot: string): Transcript {
+// MCP head by id never echoes the path, so the caller passes the Bank's id -> path map and this stays free of fs access.
+export function extractAnswer(streamJson: string, bankRoot: string, idPaths: ReadonlyMap<string, string> = new Map()): Transcript {
   const calls = new Map<string, { name: string; input: Record<string, unknown> }>();
   const read = new Set<string>();
   let final = "";
@@ -91,7 +118,7 @@ export function extractAnswer(streamJson: string, bankRoot: string): Transcript 
       // An errored result (missing file, denied command, MCP error) put no Record content in context.
       if (ev.type === "user" && b.type === "tool_result" && b.tool_use_id && b.is_error !== true) {
         const call = calls.get(b.tool_use_id);
-        if (call) for (const p of pathsRead(call.name, call.input, toText(b.content))) read.add(normalize(p, bankRoot));
+        if (call) for (const p of pathsRead(call.name, call.input, toText(b.content), idPaths)) read.add(normalize(p, bankRoot));
       }
     }
   }
@@ -176,7 +203,7 @@ export function probeProblems(streamJson: string): string[] {
   return p;
 }
 
-export type Row = { id: string; style: Style; correct: boolean; cited: string[] | null; file_recall: number | null; cost_usd: number; plugin_loaded: boolean; files_read: string[] };
+export type Row = { id: string; style: Style; correct: boolean; answer: string; cited: string[] | null; file_recall: number | null; cost_usd: number; plugin_loaded: boolean; files_read: string[] };
 
 type Agg = { n: number; correct: number; accuracy: number; file_recall: number | null };
 const agg = (rows: Row[]): Agg => {
@@ -287,6 +314,8 @@ function main() {
   const all = JSON.parse(readFileSync(join(ROOT, "evals/agent-answer/questions.json"), "utf8")) as Question[];
   const questions = cli.limit ? all.slice(0, cli.limit) : all;
   const started_at = new Date().toISOString();
+  // Bank-relative paths match the staged copy's, which is gone by the time a transcript is read.
+  const idPaths = new Map(listRecords(loadConfig(join(ROOT, "fixtures/demo-bank")), () => {}).map((r) => [String(r.frontmatter.id), r.path]));
 
   const auth = authProblem(process.env);
   if (auth) {
@@ -317,11 +346,11 @@ function main() {
       mkdirSync(cli.transcripts, { recursive: true });
       writeFileSync(join(cli.transcripts, `${q.id}.jsonl`), stream);
     }
-    const t = extractAnswer(stream, bank);
+    const t = extractAnswer(stream, bank, idPaths);
     const s = scoreAnswer(q, t);
     const cost = resultEvent(stream)?.total_cost_usd ?? 0;
     spent += cost;
-    const row: Row = { id: q.id, style: q.style, correct: s.correct, cited: t.cited, file_recall: s.fileRecall, cost_usd: cost, plugin_loaded: pluginProblems(initEvent(stream)).length === 0, files_read: [...t.filesRead].sort() };
+    const row: Row = { id: q.id, style: q.style, correct: s.correct, answer: t.answer, cited: t.cited, file_recall: s.fileRecall, cost_usd: cost, plugin_loaded: pluginProblems(initEvent(stream)).length === 0, files_read: [...t.filesRead].sort() };
     rows.push(row);
     console.error(`${q.id}: ${row.correct ? "correct" : "wrong"} cited=${JSON.stringify(row.cited)} recall=${row.file_recall} $${cost.toFixed(3)}${row.plugin_loaded ? "" : " PLUGIN NOT LOADED"}`);
   }
