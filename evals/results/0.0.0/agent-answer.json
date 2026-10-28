@@ -1,0 +1,90 @@
+{
+  "version": "0.0.0",
+  "model": "claude-sonnet-5-5",
+  "claude_code_version": "2.1.311",
+  "isolation": "temp CLAUDE_CONFIG_DIR, CLAUDE_CODE_DISABLE_CLAUDE_MDS=1, CLAUDE_CODE_DISABLE_AUTO_MEMORY=1, --plugin-dir <repo>, ltm shim with LTM_CONFIG on PATH",
+  "started_at": "2026-10-28T21:10:45.762Z",
+  "finished_at": "2026-10-28T21:11:30.079Z",
+  "partial": true,
+  "limit": 3,
+  "stopped_for_budget": false,
+  "probe_cost_usd": 0.0094248,
+  "by_style": {
+    "single-hop": {
+      "n": 3,
+      "correct": 3,
+      "accuracy": 1,
+      "file_recall": 1
+    }
+  },
+  "overall": {
+    "n": 3,
+    "correct": 3,
+    "accuracy": 1,
+    "file_recall": 1
+  },
+  "total_cost_usd": 0.0795617,
+  "questions": [
+    {
+      "id": "sh-order-events",
+      "style": "single-hop",
+      "correct": true,
+      "cited": [
+        "hT5cY8dUa6"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0139798,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"
+      ]
+    },
+    {
+      "id": "sh-duplicate-events",
+      "style": "single-hop",
+      "correct": true,
+      "cited": [
+        "hT5cY8dUa6",
+        "uL5eX1pJd8",
+        "cA9wE6uJr3",
+        "gN5yD9sMe2",
+        "xO4bV1cPi0"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0343861,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "sh-log-fields",
+      "style": "single-hop",
+      "correct": true,
+      "cited": [
+        "vD8mH3zQb5"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0311958,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    }
+  ]
+}

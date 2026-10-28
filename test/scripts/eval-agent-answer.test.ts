@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { extractAnswer, scoreAnswer, type Question } from "../../scripts/eval-agent-answer.ts";
+import { aggregate, authProblem, extractAnswer, parseCli, probeProblems, scoreAnswer, type Question, type Row } from "../../scripts/eval-agent-answer.ts";
 import { loadConfig } from "../../src/core/bank.ts";
 import { listRecords } from "../../src/core/query.ts";
 
@@ -58,6 +58,19 @@ describe("file-read extraction", () => {
     expect([...t.filesRead].sort()).toEqual(
       [PG, MY, "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"].sort(),
     );
+  });
+});
+
+describe("file-read extraction on a real transcript", () => {
+  // Trimmed from a real 2.1.311 run: two Reads of a path that didn't exist and a failed MCP facets call came back is_error.
+  test("errored tool results count as no read; a JSON MCP query result does", () => {
+    const t = load("real-errored-reads.jsonl");
+    expect([...t.filesRead].sort()).toEqual([
+      "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+      "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+      "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+      "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md",
+    ]);
   });
 });
 
@@ -121,5 +134,57 @@ describe("questions.json", () => {
       expect(q.gold_ids).toEqual([]);
       expect(q.gold_files).toEqual([]);
     }
+  });
+});
+
+describe("isolation probe", () => {
+  const raw = (name: string) => readFileSync(join(import.meta.dir, "../fixtures/agent-answer", name), "utf8");
+  // Both fixtures are trimmed from real Claude Code 2.1.311 runs under a temp CLAUDE_CONFIG_DIR.
+  test("--strict-mcp-config drops the plugin's MCP server, and a logged-out run fails", () => {
+    expect(probeProblems(raw("probe-strict-mcp-not-logged-in.jsonl"))).toEqual([
+      "MCP server plugin:ltm:ltm not listed",
+      "run failed: Not logged in · Please run /login",
+    ]);
+  });
+  test("builtin plugins don't count as other plugins; only the failed run does", () => {
+    expect(probeProblems(raw("probe-no-strict-mcp-not-logged-in.jsonl"))).toEqual(["run failed: Not logged in · Please run /login"]);
+  });
+  test("passes only with no leak: another plugin, MCP server, plugin error or memory path each fail it", () => {
+    const [init, result] = raw("probe-no-strict-mcp-not-logged-in.jsonl").trim().split("\n").map((l) => JSON.parse(l));
+    const ok = { ...result, is_error: false, result: "fine" };
+    const run = (patch: object) => [JSON.stringify({ ...init, ...patch }), JSON.stringify(ok)].join("\n");
+    expect(probeProblems(run({}))).toEqual([]);
+    expect(probeProblems(run({ plugins: [...init.plugins, { name: "superpowers", path: "/x" }] }))).toEqual(["other plugins loaded: superpowers"]);
+    // Only the three named builtins are allowed; a new builtin still fails.
+    expect(probeProblems(run({ plugins: [...init.plugins, { name: "cc-plugin-new", path: "builtin" }] }))).toEqual(["other plugins loaded: cc-plugin-new"]);
+    expect(probeProblems(run({ mcp_servers: [...init.mcp_servers, { name: "context7", status: "connected" }] }))).toEqual(["other MCP servers loaded: context7"]);
+    expect(probeProblems(run({ plugin_errors: [{ plugin: "ltm" }] }))).toHaveLength(1);
+    expect(probeProblems(run({ memory_paths: ["~/.claude/CLAUDE.md"] }))).toHaveLength(1);
+    expect(probeProblems(run({ plugins: init.plugins.slice(1) }))).toEqual(["plugin ltm not loaded"]);
+    expect(probeProblems(run({ mcp_servers: [{ name: "plugin:ltm:ltm", status: "failed" }] }))).toEqual(["MCP server plugin:ltm:ltm is failed"]);
+    expect(probeProblems(JSON.stringify(ok))).toEqual(["no system/init event"]);
+  });
+});
+
+describe("runner helpers", () => {
+  test("auth: fails with neither key nor OAuth token, so a run never falls back to the real config dir", () => {
+    expect(authProblem({})).toBeString();
+    expect(authProblem({ ANTHROPIC_API_KEY: "", CLAUDE_CODE_OAUTH_TOKEN: "" })).toBeString();
+    expect(authProblem({ CLAUDE_CODE_OAUTH_TOKEN: "x" })).toBeUndefined();
+    expect(authProblem({ ANTHROPIC_API_KEY: "x" })).toBeUndefined();
+  });
+  test("--limit must be a positive integer", () => {
+    expect(parseCli(["--limit", "3"]).limit).toBe(3);
+    expect(parseCli([]).limit).toBeUndefined();
+    expect(() => parseCli(["--limit", "0"])).toThrow();
+    expect(() => parseCli(["--limit", "2.5"])).toThrow();
+  });
+  test("aggregate: per-style accuracy, recall averaged only over non-null, cost summed", () => {
+    const row = (id: string, style: Row["style"], correct: boolean, file_recall: number | null, cost_usd: number): Row => ({ id, style, correct, cited: [], file_recall, cost_usd, plugin_loaded: true, files_read: [] });
+    const a = aggregate([row("a", "single-hop", true, 1, 0.1), row("b", "single-hop", false, 0, 0.2), row("c", "abstention", true, null, 0.3)]);
+    expect(a.by_style["single-hop"]).toEqual({ n: 2, correct: 1, accuracy: 0.5, file_recall: 0.5 });
+    expect(a.by_style.abstention).toEqual({ n: 1, correct: 1, accuracy: 1, file_recall: null });
+    expect(a.overall).toEqual({ n: 3, correct: 2, accuracy: 2 / 3, file_recall: 0.5 });
+    expect(a.total_cost_usd).toBeCloseTo(0.6);
   });
 });
