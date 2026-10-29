@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -49,7 +49,7 @@ export function createServer(env: Env, cwd: string): McpServer {
     }
   };
 
-  // Records are read only through run(), so the MCP and CLI routes can't drift. head's id lookup is the one exception, because `ltm head` takes only a path.
+  // Records are read only through run(), so the MCP and CLI routes can't drift. Two exceptions: head's id lookup, because `ltm head` takes only a path, and read, because no `ltm` command prints a whole Record.
   const cli = (argv: string[], at: string) => run({ argv, cwd: at, env });
 
   // Another request's refresh can fast-forward the clone mid-read. A read counts only when HEAD held still across it, so bank_commits names the commit the data came from.
@@ -135,6 +135,38 @@ export function createServer(env: Env, cwd: string): McpServer {
     },
   );
 
+  const locate = async (
+    tool: string,
+    input: { id?: string; path?: string; bank?: string },
+  ): Promise<{ root: string; realRoot: string; rel: string; notes: string[] } | CallToolResult> => {
+    if ((input.id === undefined) === (input.path === undefined)) return fail("give exactly one of id or path");
+    const at = await pickRoot(tool, input.bank);
+    if ("content" in at) return at;
+    const { root, notes } = at;
+    const realRoot = realpathSync(root);
+    let rel: string;
+    if (input.id !== undefined) {
+      const id = input.id;
+      let held: string[];
+      try {
+        held = listRecords(loadConfig(root), () => {}).filter((r) => r.frontmatter.id === id).map((r) => r.path);
+      } catch (e) {
+        if (!(e instanceof ConfigError)) throw e;
+        return fail(configErrorLine(tool, e).trimEnd());
+      }
+      if (held.length === 0) return fail(`'${id}' matches no Record`);
+      if (held.length > 1) return fail(`'${id}' is held by ${held.length} Records`);
+      rel = held[0] as string;
+    } else {
+      // Realpath before the check, so neither `..` nor a symlink lets an agent read a file outside the Bank.
+      const abs = resolve(realRoot, input.path as string);
+      const target = existsSync(abs) ? realpathSync(abs) : abs;
+      if (!isInside(realRoot, target)) return fail(`${input.path} is outside the Bank`);
+      rel = relative(realRoot, target);
+    }
+    return { root, realRoot, rel, notes };
+  };
+
   server.registerTool(
     "head",
     {
@@ -146,36 +178,44 @@ export function createServer(env: Env, cwd: string): McpServer {
       }),
     },
     async (input) => {
-      if ((input.id === undefined) === (input.path === undefined)) return fail("give exactly one of id or path");
-      const at = await pickRoot("head", input.bank);
+      const at = await locate("head", input);
       if ("content" in at) return at;
-      const { root, notes } = at;
-      const realRoot = realpathSync(root);
-      let rel: string;
-      if (input.id !== undefined) {
-        const id = input.id;
-        let held: string[];
-        try {
-          held = listRecords(loadConfig(root), () => {}).filter((r) => r.frontmatter.id === id).map((r) => r.path);
-        } catch (e) {
-          if (!(e instanceof ConfigError)) throw e;
-          return fail(configErrorLine("head", e).trimEnd());
-        }
-        if (held.length === 0) return fail(`'${id}' matches no Record`);
-        if (held.length > 1) return fail(`'${id}' is held by ${held.length} Records`);
-        rel = held[0] as string;
-      } else {
-        // Realpath before the check, so neither `..` nor a symlink lets an agent read a file outside the Bank.
-        const abs = resolve(realRoot, input.path as string);
-        const target = existsSync(abs) ? realpathSync(abs) : abs;
-        if (!isInside(realRoot, target)) return fail(`${input.path} is outside the Bank`);
-        rel = relative(realRoot, target);
-      }
+      const { root, realRoot, rel, notes } = at;
       const read = await pinned(() => [namedRoot(root)], () => cli(["head", "--", rel], realRoot));
       if ("content" in read) return read;
       const r = read.out;
       if (r.exitCode !== 0 && r.stdout === "") return fail(r.stderr.trimEnd());
       return { structuredContent: withCommits({ path: rel, head: r.stdout }, read.commits, notes), content: [{ type: "text", text: r.stdout }] };
+    },
+  );
+
+  server.registerTool(
+    "read",
+    {
+      description: "Print one Record file whole, frontmatter and body, found by id or by Bank-relative path.",
+      inputSchema: z.object({
+        id: z.string().optional().describe(schemaDesc("id")),
+        path: z.string().optional().describe("Bank-relative path of the Record file."),
+        bank: bankInput,
+      }),
+    },
+    async (input) => {
+      const at = await locate("read", input);
+      if ("content" in at) return at;
+      const { root, realRoot, rel, notes } = at;
+      // Unlike head, which hands its path to `ltm head`, this prints any file it's given, and a bank_url clone's .git/config can hold a credentialed remote. So Records only.
+      let records: string[];
+      try {
+        records = listRecords(loadConfig(root), () => {}).map((r) => r.path);
+      } catch (e) {
+        if (!(e instanceof ConfigError)) throw e;
+        return fail(configErrorLine("read", e).trimEnd());
+      }
+      if (!records.includes(rel)) return fail(`${input.path ?? rel} is not a Record in the Bank`);
+      const read = await pinned(() => [namedRoot(root)], async () => readFileSync(join(realRoot, rel), "utf8"));
+      if ("content" in read) return read;
+      const text = read.out;
+      return { structuredContent: withCommits({ path: rel, text }, read.commits, notes), content: [{ type: "text", text }] };
     },
   );
 

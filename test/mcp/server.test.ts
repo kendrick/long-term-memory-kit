@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Client } from "@modelcontextprotocol/client";
@@ -53,11 +53,11 @@ async function withServer<T>(fn: (s: { client: Client; bank: string; consumer: s
 
 describe("ltm mcp, read-only tools", () => {
   test(
-    "lists the five tools, every input described",
+    "lists the six tools, every input described",
     () =>
       withServer(async ({ client }) => {
         const { tools } = await client.listTools();
-        expect(tools.map((t) => t.name).sort()).toEqual(["facets", "head", "propose", "query", "validate"]);
+        expect(tools.map((t) => t.name).sort()).toEqual(["facets", "head", "propose", "query", "read", "validate"]);
         for (const t of tools) {
           const props = (t.inputSchema.properties ?? {}) as Record<string, { description?: string }>;
           expect(Object.keys(props).length).toBeGreaterThan(0);
@@ -109,6 +109,44 @@ describe("ltm mcp, read-only tools", () => {
         expect(textOf(out)).toContain("outside the Bank");
         expect((await call(client, "head", { id: "kQ7vN2xLp4", path: POSTGRES })).isError).toBe(true);
       }),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "read by id and by path returns the whole Record file, and refuses what isn't one",
+    async () => {
+      const outside = mkdtempSync(join(tmpdir(), "ltm-mcp-outside-"));
+      writeFileSync(join(outside, "secret.md"), "not a Record\n");
+      try {
+        await withServer(
+          async ({ client, bank }) => {
+            const expected = readFileSync(join(bank, POSTGRES), "utf8");
+            // head stops at the frontmatter, so a read that wraps head can't pass on this.
+            expect(expected).toContain("\n## Decision\n");
+            expect(ok(await call(client, "head", { id: "kQ7vN2xLp4" })).head).not.toContain("\n## Decision\n");
+            for (const args of [{ id: "kQ7vN2xLp4" }, { path: POSTGRES }]) {
+              const r = await call(client, "read", args);
+              expect(ok(r)).toEqual({ path: POSTGRES, text: expected, bank_commits: { acme: head(bank) } });
+              expect(textOf(r)).toBe(expected);
+            }
+            const refusals: [Record<string, unknown>, string][] = [
+              [{ path: "../memory-bank.yaml" }, "../memory-bank.yaml is outside the Bank"],
+              [{ path: "_memory/leak.md" }, "_memory/leak.md is outside the Bank"],
+              [{ path: "memory-bank.yaml" }, "memory-bank.yaml is not a Record in the Bank"],
+              [{ id: "kQ7vN2xLp4", path: POSTGRES }, "give exactly one of id or path"],
+              [{}, "give exactly one of id or path"],
+            ];
+            for (const [args, msg] of refusals) {
+              const r = await call(client, "read", args);
+              expect({ args, isError: r.isError, text: textOf(r) }).toEqual({ args, isError: true, text: msg });
+            }
+          },
+          (root) => symlinkSync(join(outside, "secret.md"), join(root, "_memory/leak.md")),
+        );
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    },
     MCP_TEST_TIMEOUT,
   );
 
