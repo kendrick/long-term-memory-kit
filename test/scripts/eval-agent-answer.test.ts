@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { aggregate, authProblem, extractAnswer, parseCli, probeProblems, RUN_BUDGET_USD, runCost, scoreAnswer, type Question, type Row } from "../../scripts/eval-agent-answer.ts";
+import { aggregate, authProblem, extractAnswer, parseCli, probeProblems, RUN_BUDGET_USD, runCost, scoreAnswer, spawnOutput, type Question, type Row } from "../../scripts/eval-agent-answer.ts";
 import { loadConfig } from "../../src/core/bank.ts";
 import { listRecords } from "../../src/core/query.ts";
 
@@ -229,5 +229,23 @@ describe("runner helpers", () => {
     const a = aggregate([row("a", 0.1), row("b", null)]);
     expect(a.total_cost_usd).toBeCloseTo(0.1);
     expect(a.cost_unknown_runs).toBe(1);
+  });
+});
+
+describe("spawnOutput", () => {
+  const partial = '{"type":"system","subtype":"init"}\n';
+  test("a timeout keeps its partial stdout and reads as unknown cost", () => {
+    const err = Object.assign(new Error("spawnSync claude ETIMEDOUT"), { code: "ETIMEDOUT" });
+    const o = spawnOutput({ error: err, stdout: partial, stderr: "" });
+    expect(o.stream).toBe(partial);
+    expect(runCost(o.stream)).toEqual({ cost_usd: null, charged_usd: RUN_BUDGET_USD });
+  });
+  test("a signal kill (no error) keeps its stdout; null output becomes empty", () => {
+    expect(spawnOutput({ stdout: partial, stderr: null }).stream).toBe(partial);
+    expect(spawnOutput({ stdout: null, stderr: null })).toEqual({ stream: "", stderr: "" });
+  });
+  test("a launch failure throws", () => {
+    const err = Object.assign(new Error("spawnSync claude ENOENT"), { code: "ENOENT" });
+    expect(() => spawnOutput({ error: err, stdout: null, stderr: null })).toThrow("ENOENT");
   });
 });

@@ -209,7 +209,7 @@ The knowledge-update score is the one to read closely. In all seven answers the 
 
 ### In the Release Workflow
 
-The agent-answer eval reports on releases and doesn't gate them. Nothing compares its result with an earlier one, and a low score never stops a release. Gating waits until two releases have each committed a result, so there is a measured spread to set a threshold against. The plugin eval gets the same treatment.
+`release.yml` doesn't run the agent-answer eval, since it needs a paid job and a secret the workflow doesn't have. Run it by hand before or after you tag a release, with the auth that [Run the Agent-Answer Eval](#run-the-agent-answer-eval) names, and commit the result as `evals/results/<version>/agent-answer.json`. The eval reports and never gates. Nothing compares its result with an earlier one, and a low score never stops a release. Gating waits until two releases have each committed a result, so there is a measured spread to set a threshold against.
 
 ## Format Findings
 

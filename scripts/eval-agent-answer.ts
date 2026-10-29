@@ -208,6 +208,12 @@ export type Row = { id: string; style: Style; correct: boolean; answer: string; 
 
 export const RUN_BUDGET_USD = 0.5;
 
+// A timeout surfaces as r.error (ETIMEDOUT) with the partial stdout attached; throwing there would abort the loop before the results file is written and lose every finished question. Timeouts and signal kills fall through to runCost's unknown-cost path; only a failure to launch claude (ENOENT, EACCES) or a maxBuffer overrun stops the run.
+export function spawnOutput(r: { error?: Error; stdout: string | null; stderr: string | null }): { stream: string; stderr: string } {
+  if (r.error && (r.error as NodeJS.ErrnoException).code !== "ETIMEDOUT") throw r.error;
+  return { stream: r.stdout ?? "", stderr: r.stderr ?? "" };
+}
+
 // A run that failed or was killed before its result event still spent up to the per-run cap, so the guard charges the cap; the row records null because the real figure is unknown, never 0.
 export function runCost(streamJson: string): { cost_usd: number | null; charged_usd: number } {
   const c = resultEvent(streamJson)?.total_cost_usd;
@@ -302,8 +308,7 @@ function runClaude(question: string) {
         CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
       },
     });
-    if (r.error) throw r.error;
-    return { stream: r.stdout, stderr: r.stderr, bank: s.bank };
+    return { ...spawnOutput(r), bank: s.bank };
   } finally {
     rmSync(s.tmp, { recursive: true, force: true });
   }
