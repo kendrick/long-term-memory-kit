@@ -34,11 +34,11 @@ To find the root, look up the Bank's name in the `banks` map of your `ltm` user 
 
 The MCP `head` tool takes the path as `path`. When the plugin's `bank_path` or `bank_url` is set, the server already knows the Bank and refuses a `bank` argument, so leave `bank` out. Pass the Bank's name as `bank` only when neither setting is set and the server picks Banks through your `ltm` user config.
 
-When only the MCP server is connected, stage 4 uses the `read` tool, which returns a Record's whole file, frontmatter and body. It takes an `id` or a `path`, not both, and follows the same `bank` rule as `head`.
-
 When results come from more than one Bank, keep each path with its Bank's name and read its header from that Bank. Two Banks can hold Records at the same path.
 
 Read the whole file only for the Records that still look relevant.
+
+Over MCP, use the `read` tool for this. It returns a Record's whole file, frontmatter and body, and takes an `id` or a `path`, not both. It follows the same `bank` rule as `head`.
 
 ## By Hand
 
