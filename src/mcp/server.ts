@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -204,16 +204,44 @@ export function createServer(env: Env, cwd: string): McpServer {
       if ("content" in at) return at;
       const { root, realRoot, rel, notes } = at;
       // head can pass any in-Bank path because `ltm head` prints only the frontmatter block. readFileSync prints any file whole, and a bank_url clone's .git/config can hold a remote URL with credentials, so read serves only the paths listRecords returns.
-      let records: string[];
-      try {
-        records = listRecords(loadConfig(root), () => {}).map((r) => r.path);
-      } catch (e) {
-        if (!(e instanceof ConfigError)) throw e;
-        return fail(configErrorLine("read", e).trimEnd());
-      }
-      if (!records.includes(rel)) return fail(`${input.path ?? rel} is not a Record in the Bank`);
-      const read = await pinned(() => [namedRoot(root)], async () => readFileSync(join(realRoot, rel), "utf8"));
+      const notRecord = fail(`${input.path ?? rel} is not a Record in the Bank`);
+      // A refresh can swap the file or a parent dir for a symlink after locate's realpath check. So each pinned attempt rechecks listRecords and confirms the open fd is still the in-Bank file.
+      const read = await pinned(() => [namedRoot(root)], async (): Promise<string | CallToolResult> => {
+        let records: string[];
+        try {
+          records = listRecords(loadConfig(root), () => {}).map((r) => r.path);
+        } catch (e) {
+          if (!(e instanceof ConfigError)) throw e;
+          return fail(configErrorLine("read", e).trimEnd());
+        }
+        if (!records.includes(rel)) return notRecord;
+        const abs = join(realRoot, rel);
+        let fd: number;
+        try {
+          fd = openSync(abs, constants.O_RDONLY | constants.O_NOFOLLOW);
+        } catch (e) {
+          if (["ELOOP", "ENOENT", "ENOTDIR"].includes((e as NodeJS.ErrnoException).code ?? "")) return notRecord;
+          throw e;
+        }
+        try {
+          const opened = fstatSync(fd);
+          if (!opened.isFile()) return notRecord;
+          // O_NOFOLLOW checks only the last path component. If a parent dir was a symlink at open time, the fd's inode won't match the inode at the canonical path.
+          let here;
+          try {
+            if (realpathSync(abs) !== abs) return notRecord;
+            here = lstatSync(abs);
+          } catch {
+            return notRecord;
+          }
+          if (here.dev !== opened.dev || here.ino !== opened.ino) return notRecord;
+          return readFileSync(fd, "utf8");
+        } finally {
+          closeSync(fd);
+        }
+      });
       if ("content" in read) return read;
+      if (typeof read.out !== "string") return read.out;
       const text = read.out;
       return { structuredContent: withCommits({ path: rel, text }, read.commits, notes), content: [{ type: "text", text }] };
     },
