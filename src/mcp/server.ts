@@ -49,7 +49,7 @@ export function createServer(env: Env, cwd: string): McpServer {
     }
   };
 
-  // Records are read only through run(), so the MCP and CLI routes can't drift. Two exceptions: head's id lookup, because `ltm head` takes only a path, and read, because no `ltm` command prints a whole Record.
+  // Records are read only through run(), so the MCP and CLI routes can't drift. Two exceptions: locate's id lookup, because `ltm head` takes only a path, and read, because no `ltm` command prints a whole Record.
   const cli = (argv: string[], at: string) => run({ argv, cwd: at, env });
 
   // Another request's refresh can fast-forward the clone mid-read. A read counts only when HEAD held still across it, so bank_commits names the commit the data came from.
@@ -203,7 +203,7 @@ export function createServer(env: Env, cwd: string): McpServer {
       const at = await locate("read", input);
       if ("content" in at) return at;
       const { root, realRoot, rel, notes } = at;
-      // Unlike head, which hands its path to `ltm head`, this prints any file it's given, and a bank_url clone's .git/config can hold a credentialed remote. So Records only.
+      // head can pass any in-Bank path because `ltm head` prints only the frontmatter block. readFileSync prints any file whole, and a bank_url clone's .git/config can hold a remote URL with credentials, so read serves only the paths listRecords returns.
       let records: string[];
       try {
         records = listRecords(loadConfig(root), () => {}).map((r) => r.path);
