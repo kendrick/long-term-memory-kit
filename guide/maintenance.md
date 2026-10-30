@@ -10,6 +10,12 @@ Run it from the Bank root:
 ltm doctor
 ```
 
+From any other directory, pass the Bank's path with `--bank`:
+
+```sh
+ltm doctor --bank ../acme-bank
+```
+
 Each finding prints on one line as `<file>: <check>: <message>`:
 
 ```text
@@ -23,7 +29,7 @@ For a script, pass `--json`. It prints the same findings as an array of objects 
 ltm doctor --json
 ```
 
-`ltm doctor` exits `0` whenever the checks ran, with or without findings. It exits `1` outside a Bank, when the `doctor` block in `memory-bank.yaml` is invalid, or when `LTM_TODAY` isn't a valid date. To see what the report will say on a later day, set `LTM_TODAY` to that date in `YYYY-MM-DD` form.
+`ltm doctor` exits `0` whenever the checks ran, with or without findings. It exits `1` outside a Bank without `--bank`, when `--bank` doesn't name a Bank, when the `doctor` block in `memory-bank.yaml` is invalid, or when `LTM_TODAY` isn't a valid date. To see what the report will say on a later day, set `LTM_TODAY` to that date in `YYYY-MM-DD` form.
 
 ## Run It on a Schedule
 

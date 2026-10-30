@@ -1,6 +1,6 @@
 # ltm doctor
 
-`ltm doctor` reads every Record in a Bank and reports the ones that look stale, unlinked, or due for review. It only reports. It never edits a Record, and it exits `0` whenever the checks ran, findings or not. It exits `1` when you run it outside a Bank, when the `doctor` block in `memory-bank.yaml` is invalid, or when `LTM_TODAY` isn't a valid date.
+`ltm doctor` reads every Record in a Bank and reports the ones that look stale, unlinked, or due for review. It only reports. It never edits a Record, and it exits `0` whenever the checks ran, findings or not. To check a Bank from another directory, such as a Consumer repo or a CI job, pass its path with `--bank`. It exits `1` when you run it outside a Bank without `--bank`, when `--bank` doesn't name a Bank, when the `doctor` block in `memory-bank.yaml` is invalid, or when `LTM_TODAY` isn't a valid date.
 
 Each finding prints as `<file>: <check>: <message>`, sorted by file and then by check, in the order the sections below appear. `ltm doctor --json` prints the same findings as an array of objects with the keys `file`, `check`, `message`, and `related_files`.
 
