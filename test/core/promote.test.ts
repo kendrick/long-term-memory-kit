@@ -278,6 +278,60 @@ describe("readEntry", () => {
   });
 });
 
+describe("readEntry dated headings", () => {
+  const DATED = "2026-10-02: Batch order events per partition";
+  const log = `# Log\n\n## ${DATED}\n\nBody.\n\n## Q3: Cap retries\n\nq\n\n## 2026-13-01: Cap retries\n\nx\n`;
+
+  test("both spellings select the dated entry and title it with the bare title", () => {
+    for (const h of [DATED, "Batch order events per partition"]) {
+      const s = source(readEntry("log.md", log, h));
+      if (s.kind !== "entry") throw new Error("expected an entry");
+      expect(s.title).toBe("Batch order events per partition");
+      expect(s.body).toBe("\nBody.\n\n");
+    }
+  });
+
+  test("both spellings give one slug and one stamp", () => {
+    const a = source(readEntry("log.md", log, DATED));
+    const b = source(readEntry("log.md", log, "Batch order events per partition"));
+    if (a.kind !== "entry" || b.kind !== "entry") throw new Error("expected an entry");
+    expect(a.slug).toBe("2026-10-02-batch-order-events-per-partition");
+    expect(b.slug).toBe(a.slug);
+    expect(b.stamp("promoted_to: x")).toEqual(a.stamp("promoted_to: x"));
+  });
+
+  test("a non-date prefix keeps its title and is not matched bare", () => {
+    const s = source(readEntry("log.md", log, "Q3: Cap retries"));
+    if (s.kind !== "entry") throw new Error("expected an entry");
+    expect(s.title).toBe("Q3: Cap retries");
+  });
+
+  test("a prefix that is not a calendar date keeps its whole heading and is not matched bare", () => {
+    const s = source(readEntry("log.md", log, "2026-13-01: Cap retries"));
+    if (s.kind !== "entry") throw new Error("expected an entry");
+    expect(s.title).toBe("2026-13-01: Cap retries");
+    expect(refusal(readEntry("log.md", "## 2026-13-01: Batch\n", "Batch"))).toBe("log.md has no '## Batch' heading");
+  });
+
+  test("two dated twins sharing a bare title are refused", () => {
+    const text = "## 2026-10-01: Cap retries\na\n## 2026-10-02: Cap retries\nb\n";
+    expect(refusal(readEntry("log.md", text, "Cap retries"))).toBe("log.md has 2 '## Cap retries' headings");
+  });
+
+  test("an undated heading beside a dated one with the same bare title is refused", () => {
+    const text = "## Cap retries\na\n## 2026-10-02: Cap retries\nb\n";
+    expect(refusal(readEntry("log.md", text, "Cap retries"))).toBe("log.md has 2 '## Cap retries' headings");
+  });
+
+  test("the full dated spelling selects its one entry among twins", () => {
+    const text = "## 2026-10-01: Cap retries\na\n## 2026-10-02: Cap retries\nb\n";
+    const s = source(readEntry("log.md", text, "2026-10-02: Cap retries"));
+    if (s.kind !== "entry") throw new Error("expected an entry");
+    expect(s.body).toBe("b\n");
+    expect(s.title).toBe("Cap retries");
+  });
+});
+
 describe("entrySlug", () => {
   test("lowercases and collapses each run of other characters to one dash", () => {
     expect(entrySlug("Use pnpm: v9 & up!")).toBe("use-pnpm-v9-up");

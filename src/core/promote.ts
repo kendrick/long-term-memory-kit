@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { parse } from "yaml";
 import { isMapping, type MemoryType } from "./bank.ts";
 import { proposeRecord, type ProposalInput, type ProposeDeps, type ProposeDryRun, type ProposeRefusal, type Proposed } from "./propose.ts";
+import { isCalendarDate } from "./clock.ts";
 import { splitFrontmatter } from "./record.ts";
 import { firstLine } from "./text.ts";
 
@@ -110,14 +111,21 @@ function headingTitle(body: string): string | null {
   return null;
 }
 
+// working-memory-kit logs write `## YYYY-MM-DD: Title`; only a real calendar date counts as that prefix.
+function datedTitle(text: string): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2}): (.+)$/.exec(text);
+  return m && isCalendarDate(m[1]!) ? m[2]! : null;
+}
+
 export function readEntry(rel: string, text: string, heading: string): PromoteSource | { refusal: string } {
   const lines = scanLines(text);
   const headings = outsideFences(lines).filter((l) => l.content.startsWith("## "));
-  const matches = headings.filter((l) => l.content.slice(3) === heading);
+  const matches = headings.filter((l) => l.content.slice(3) === heading || datedTitle(l.content.slice(3)) === heading);
   if (matches.length === 0) return { refusal: `${rel} has no '## ${heading}' heading` };
   if (matches.length > 1) return { refusal: `${rel} has ${matches.length} '## ${heading}' headings` };
   const match = matches[0]!;
   const end = headings.find((l) => l.start > match.start)?.start ?? text.length;
+  const full = match.content.slice(3);
   const body = text.slice(match.next, end);
   // Fence state comes from the whole file, so a fenced yaml sample in the entry never reads as a stamp.
   const stamped = outsideFences(lines).find((l) => l.start >= match.next && l.start < end && l.content.startsWith("promoted_to:"));
@@ -125,8 +133,9 @@ export function readEntry(rel: string, text: string, heading: string): PromoteSo
   const lineNo = lines.indexOf(match) + 2;
   return {
     kind: "entry",
-    slug: entrySlug(heading),
-    title: heading,
+    // Slug and title come from the matched heading, so both spellings stamp the same anchor.
+    slug: entrySlug(full),
+    title: datedTitle(full) ?? full,
     body,
     existing: stamped ? stamped.content.slice("promoted_to:".length).trim() : null,
     // A heading on the last line has no terminator to insert after, so the stamp brings its own leading one and the file keeps its missing final newline.
