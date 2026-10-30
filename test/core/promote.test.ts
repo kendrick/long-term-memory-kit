@@ -322,9 +322,18 @@ describe("readEntry dated headings", () => {
     expect(refusal(readEntry("log.md", text, "Cap retries"))).toBe("log.md has 2 '## Cap retries' headings");
   });
 
-  test("an undated heading beside a dated one with the same bare title is refused", () => {
+  test("an exact heading beats the bare-title match: undated and dated twins each select their own", () => {
     const text = "## Cap retries\na\n## 2026-10-02: Cap retries\nb\n";
-    expect(refusal(readEntry("log.md", text, "Cap retries"))).toBe("log.md has 2 '## Cap retries' headings");
+    const bare = source(readEntry("log.md", text, "Cap retries"));
+    if (bare.kind !== "entry") throw new Error("expected an entry");
+    expect(bare.body).toBe("a\n");
+    expect(bare.title).toBe("Cap retries");
+    expect(bare.slug).toBe("cap-retries");
+    const dated = source(readEntry("log.md", text, "2026-10-02: Cap retries"));
+    if (dated.kind !== "entry") throw new Error("expected an entry");
+    expect(dated.body).toBe("b\n");
+    expect(dated.title).toBe("Cap retries");
+    expect(dated.slug).toBe("2026-10-02-cap-retries");
   });
 
   test("the full dated spelling selects its one entry among twins", () => {

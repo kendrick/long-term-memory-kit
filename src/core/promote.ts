@@ -120,7 +120,9 @@ function datedTitle(text: string): string | null {
 export function readEntry(rel: string, text: string, heading: string): PromoteSource | { refusal: string } {
   const lines = scanLines(text);
   const headings = outsideFences(lines).filter((l) => l.content.startsWith("## "));
-  const matches = headings.filter((l) => l.content.slice(3) === heading || datedTitle(l.content.slice(3)) === heading);
+  const exact = headings.filter((l) => l.content.slice(3) === heading);
+  // An exact heading wins so an undated entry stays reachable beside a dated one with the same bare title.
+  const matches = exact.length > 0 ? exact : headings.filter((l) => datedTitle(l.content.slice(3)) === heading);
   if (matches.length === 0) return { refusal: `${rel} has no '## ${heading}' heading` };
   if (matches.length > 1) return { refusal: `${rel} has ${matches.length} '## ${heading}' headings` };
   const match = matches[0]!;
