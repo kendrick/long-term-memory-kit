@@ -12,7 +12,7 @@ export const doctor: Command = {
   summary: "Report Records that have gone stale, lost links, or need review",
   options: {
     json: { type: "boolean", description: "Print the findings as JSON" },
-    bank: { type: "string", description: "Path to the Bank to use" },
+    bank: { type: "string", description: "Bank name from your user config, or path to a Bank" },
   },
   async run(ctx) {
     // Findings are advice, not failure: exit 0 whenever the checks ran, so a script can read the output

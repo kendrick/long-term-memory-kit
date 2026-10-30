@@ -114,10 +114,10 @@ export const query: Command = {
     json: { type: "boolean", description: "Print each result's full frontmatter as JSON" },
     type: { type: "string", description: "Only Records of this memory type" },
     facet: { type: "string", multiple: true, description: "Only Records that apply to this Facet" },
-    status: { type: "string", multiple: true, description: "Only Records with this status, even a retired one" },
+    status: { type: "string", multiple: true, description: "Only Records with this status, even a Retired one" },
     text: { type: "string", description: "Rank results by matches in title and summary" },
     all: { type: "boolean", description: "Include Retired Records" },
-    bank: { type: "string", description: "Path to the Bank to use" },
+    bank: { type: "string", description: "Bank name from your user config, or path to a Bank" },
   },
   positionals: [{ name: "filter", required: false, variadic: true }],
   // Exit 2 has to come before run() so a malformed filter never reads the Bank.

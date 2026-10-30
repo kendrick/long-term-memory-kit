@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { run } from "../../src/cli/run.ts";
-import type { Command } from "../../src/cli/run.ts";
+import type { Command, Option } from "../../src/cli/run.ts";
 import { defaultCommands } from "../../src/cli/commands.ts";
 
 // Read independently of run's own import so the test can't agree with itself.
@@ -232,6 +232,13 @@ describe("run <command> --help", () => {
       }
       expect([...columns], cmd.name).toHaveLength(1);
     }
+  });
+
+  test("an option without a description doesn't typecheck", () => {
+    // tsc rejects an unused @ts-expect-error, so `bun run typecheck` fails here if `description` ever turns optional.
+    // @ts-expect-error `description` is required on Option.
+    const bare: Option = { type: "boolean" };
+    expect(bare.type).toBe("boolean");
   });
 
   test("ltm query --help marks --facet and --status repeatable, and nothing else", async () => {
