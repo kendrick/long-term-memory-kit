@@ -551,6 +551,18 @@ describe("ltm validate picks its Bank from the paths", () => {
     });
   });
 
+  test("a Bank root mixed with a Record validates the whole Bank", async () => {
+    const other = "_memory/decisions/" + readdirSync(join(demo, "_memory/decisions")).find((f) => !f.startsWith("postgres-"))!;
+    expect(await ltm(repoRoot, "validate", `${demoRel}/`, `${demoRel}/${PG}`)).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+    await withScratch(demo, async (copy) => {
+      edit(join(copy, PG), (t) => replaceLine(t, "title:", null));
+      const r = await ltm(repoRoot, "validate", join(copy, other), copy);
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).not.toContain(NOT_A_RECORD);
+      expect(lines(r.stdout).some((l) => l.startsWith(`${PG}:`) && l.includes("error schema: title:"))).toBe(true);
+    });
+  });
+
   test("a path outside any Bank names its start dir", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ltm-nobank-"));
     try {
