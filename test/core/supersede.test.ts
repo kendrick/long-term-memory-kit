@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { loadConfig } from "../../src/core/bank.ts";
 import { splitFrontmatter } from "../../src/core/record.ts";
-import { applyEdits, type BankIndex, type Edit, type EditFs, planAccept, planSupersede, readBankIndex } from "../../src/core/supersede.ts";
+import { applyEdits, type BankIndex, type Edit, type EditFs, planAccept, planStamp, planSupersede, readBankIndex } from "../../src/core/supersede.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const demoBank = fileURLToPath(new URL("../../fixtures/demo-bank", import.meta.url));
@@ -271,6 +271,81 @@ describe("planAccept", () => {
       expect(planAccept(indexOf(dir), "pL2sG4nVq0", "2026-10-09")).toEqual({
         refusal: `${P}: last_confirmed '2026-02-30' is not a YYYY-MM-DD date`,
       });
+    });
+  });
+});
+
+describe("planStamp", () => {
+  const TODAY = "2026-10-30";
+
+  test("confirm on an accepted id changes only last_confirmed", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const original = await readFile(join(dir, H), "utf8");
+      const edits = editsOf(planStamp(indexOf(dir), [{ id: "hT5cY8dUa6" }], "confirm", TODAY));
+      expect(edits.map((e) => e.rel)).toEqual([H]);
+      expect(fm(edits[0]!.text)).toEqual({ ...fm(original), last_confirmed: TODAY });
+      expect(body(edits[0]!.text)).toBe(body(original));
+    });
+  });
+
+  test("confirm keeps a last_confirmed later than today", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await patch(dir, H, "date: 2026-04-22\n", "date: 2026-04-22\nlast_confirmed: 2027-01-01\n");
+      expect(planStamp(indexOf(dir), [{ id: "hT5cY8dUa6" }], "confirm", TODAY)).toEqual({ edits: [] });
+    });
+  });
+
+  test("deprecate changes only status", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const original = await readFile(join(dir, H), "utf8");
+      const edits = editsOf(planStamp(indexOf(dir), [{ id: "hT5cY8dUa6" }], "deprecate", TODAY));
+      expect(edits.map((e) => e.rel)).toEqual([H]);
+      expect(fm(edits[0]!.text)).toEqual({ ...fm(original), status: "deprecated" });
+    });
+  });
+
+  test("a Proposal is refused for both changes", async () => {
+    await withScratch(demoBank, async (dir) => {
+      for (const change of ["confirm", "deprecate"] as const) {
+        expect(planStamp(indexOf(dir), [{ id: "pL2sG4nVq0" }], change, TODAY)).toEqual({ refusal: `${P} is a Proposal; accept it with ltm accept` });
+      }
+    });
+  });
+
+  test("a deprecated Record is refused for both changes", async () => {
+    await withScratch(demoBank, async (dir) => {
+      await patch(dir, H, "status: accepted\n", "status: deprecated\n");
+      for (const change of ["confirm", "deprecate"] as const) {
+        expect(planStamp(indexOf(dir), [{ id: "hT5cY8dUa6" }], change, TODAY)).toEqual({ refusal: `${H} has status 'deprecated', not 'accepted'` });
+      }
+    });
+  });
+
+  test("a mixed list returns the first refusal in argument order and no edits", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const planned = planStamp(indexOf(dir), [{ id: "hT5cY8dUa6" }, { id: "pL2sG4nVq0" }, { id: "nope" }], "confirm", TODAY);
+      expect(planned).toEqual({ refusal: `${P} is a Proposal; accept it with ltm accept` });
+    });
+  });
+
+  test("an unknown id and an unknown path are refused", async () => {
+    await withScratch(demoBank, async (dir) => {
+      expect(planStamp(indexOf(dir), [{ id: "nope" }], "confirm", TODAY)).toEqual({ refusal: "'nope' matches no Record" });
+      expect(planStamp(indexOf(dir), [{ rel: "memory-bank.yaml" }], "confirm", TODAY)).toEqual({ refusal: "memory-bank.yaml is not a Record in the Bank" });
+    });
+  });
+
+  test("a rel target and its id plan the same edit", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const index = indexOf(dir);
+      expect(planStamp(index, [{ rel: H }], "confirm", TODAY)).toEqual(planStamp(index, [{ id: "hT5cY8dUa6" }], "confirm", TODAY));
+    });
+  });
+
+  test("a target named twice, by id and by path, gives one edit", async () => {
+    await withScratch(demoBank, async (dir) => {
+      const edits = editsOf(planStamp(indexOf(dir), [{ id: "hT5cY8dUa6" }, { rel: H }, { id: "hT5cY8dUa6" }], "deprecate", TODAY));
+      expect(edits.map((e) => e.rel)).toEqual([H]);
     });
   });
 });

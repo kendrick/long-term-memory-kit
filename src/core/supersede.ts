@@ -174,6 +174,31 @@ export function planAccept(index: BankIndex, id: string, today: string): Planned
   return finish(w);
 }
 
+export type StampTarget = { id: string } | { rel: string };
+
+// Stamps are for live Records only: a Proposal has its own path (accept), and a retired one has nothing left to confirm or retire.
+export function planStamp(index: BankIndex, targets: StampTarget[], change: "confirm" | "deprecate", today: string): Planned {
+  const w = newWork(index);
+  for (const target of targets) {
+    const rec = "id" in target ? resolveId(index, target.id) : index.records.find((r) => r.rel === target.rel) ?? `${target.rel} is not a Record in the Bank`;
+    if (typeof rec === "string") return { refusal: rec };
+    const { status, last_confirmed: confirmed } = rec.data;
+    if (status === "proposed") return { refusal: `${rec.rel} is a Proposal; accept it with ltm accept` };
+    if (status !== "accepted") return { refusal: `${rec.rel} has status '${String(status)}', not 'accepted'` };
+    if (change === "deprecate") {
+      set(w, rec, "status", "deprecated");
+      continue;
+    }
+    const hasConfirmed = Object.hasOwn(rec.data, "last_confirmed");
+    if (hasConfirmed && !(typeof confirmed === "string" && isCalendarDate(confirmed))) {
+      return { refusal: `${rec.rel}: last_confirmed '${String(confirmed)}' is not a YYYY-MM-DD date` };
+    }
+    // Same high-water mark as planAccept; a repeated target re-sets the same value, which `set` drops.
+    set(w, rec, "last_confirmed", hasConfirmed && (confirmed as string) > today ? confirmed : today);
+  }
+  return finish(w);
+}
+
 export type EditFs = Pick<typeof fs, "accessSync" | "chmodSync" | "readFileSync" | "renameSync" | "statSync" | "unlinkSync" | "writeFileSync">;
 
 const failure = (rel: string, e: unknown) => ({ rel, message: firstLine((e as Error).message) });

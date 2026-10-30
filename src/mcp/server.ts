@@ -49,7 +49,7 @@ export function createServer(env: Env, cwd: string): McpServer {
     }
   };
 
-  // Records are read only through run(), so the MCP and CLI routes can't drift. Two exceptions: locate's id lookup, because `ltm head` takes only a path, and read, because no `ltm` command prints a whole Record.
+  // Records are read only through run(), so the MCP and CLI routes can't drift. Two exceptions: locate's id lookup, because `ltm head` takes only a path, and read, which reads the file itself so the pinned retry can tie its bytes to one commit.
   const cli = (argv: string[], at: string) => run({ argv, cwd: at, env });
 
   // Another request's refresh can fast-forward the clone mid-read. A read counts only when HEAD held still across it, so bank_commits names the commit the data came from.
