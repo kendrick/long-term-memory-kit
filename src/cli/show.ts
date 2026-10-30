@@ -20,6 +20,7 @@ export const show: Command = {
       return 1;
     };
     const matches: string[] = [];
+    let contained = false;
     try {
       let roots: string[];
       const flag = ctx.values.bank;
@@ -46,7 +47,9 @@ export const show: Command = {
         const realRoot = realpathSync(root);
         const abs = resolve(realRoot, target);
         const real = existsSync(abs) ? realpathSync(abs) : abs;
-        if (!isInside(realRoot, real)) return fail(`${target} is outside the Bank`);
+        // With several Banks resolved, a path is outside all but one of them; refuse only if no Bank holds it.
+        if (!isInside(realRoot, real)) continue;
+        contained = true;
         // Only listRecords paths, so an in-Bank non-Record like a clone's .git/config stays unreadable.
         const rel = relative(realRoot, real);
         if (records.some((r) => r.path === rel)) matches.push(real);
@@ -56,6 +59,7 @@ export const show: Command = {
       ctx.err(configErrorLine("show", e));
       return 1;
     }
+    if (isPath && !contained) return fail(`${target} is outside the Bank`);
     if (matches.length === 0) return fail(isPath ? `${target} is not a Record in the Bank` : `'${target}' matches no Record`);
     if (matches.length > 1) return fail(`'${target}' is held by ${matches.length} Records`);
     ctx.out(readFileSync(matches[0] as string, "utf8"));

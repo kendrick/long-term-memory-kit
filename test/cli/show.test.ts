@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cpSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { run } from "../../src/cli/run.ts";
 import { withConsumerRepo } from "../helpers/consumer-repo.ts";
@@ -102,6 +103,25 @@ describe("ltm show", () => {
       expect(r.exitCode).toBe(0);
       expect(r.stdout).toBe(postgresBytes);
     });
+  });
+
+  test("an absolute path into the second of two resolved Banks prints that Record", async () => {
+    const home = tempDir();
+    const banks = ["acme", "personal"].map((name) => {
+      const dir = join(home, "banks", name);
+      cpSync(demo, dir, { recursive: true });
+      return dir;
+    });
+    const repo = join(home, "repo");
+    mkdirSync(repo);
+    spawnSync("git", ["-C", repo, "init", "-q"]);
+    const config = join(home, "config.yaml");
+    writeFileSync(config, `banks:\n  acme: { path: ${banks[0]} }\n  personal: { path: ${banks[1]} }\n`);
+    writeFileSync(join(repo, ".ltm.yaml"), "banks: [acme, personal]\n");
+    const r = await run({ argv: ["show", join(banks[1] as string, POSTGRES)], cwd: repo, env: { LTM_CONFIG: config, HOME: home } });
+    expect(r.stderr).toBe("");
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe(postgresBytes);
   });
 
   test("no Bank anywhere prints where it looked", async () => {
