@@ -114,7 +114,7 @@ export const query: Command = {
     json: { type: "boolean", description: "Print each result's full frontmatter as JSON" },
     type: { type: "string", description: "Only Records of this memory type" },
     facet: { type: "string", multiple: true, description: "Only Records that apply to this Facet" },
-    status: { type: "string", multiple: true, description: "Only Records with this status, even a Retired one" },
+    status: { type: "string", multiple: true, description: "Only Records with this status, which may be a retired one" },
     text: { type: "string", description: "Rank results by matches in title and summary" },
     all: { type: "boolean", description: "Include Retired Records" },
     bank: { type: "string", description: "Bank name from your user config, or path to a Bank" },
