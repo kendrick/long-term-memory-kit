@@ -314,9 +314,9 @@ describe("planStamp", () => {
 
   test("a deprecated Record is refused for both changes", async () => {
     await withScratch(demoBank, async (dir) => {
-      await patch(dir, H, "status: accepted\n", "status: deprecated\n");
+      const Y = "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md";
       for (const change of ["confirm", "deprecate"] as const) {
-        expect(planStamp(indexOf(dir), [{ id: "hT5cY8dUa6" }], change, TODAY)).toEqual({ refusal: `${H} has status 'deprecated', not 'accepted'` });
+        expect(planStamp(indexOf(dir), [{ id: "yF4kP7tNs2" }], change, TODAY)).toEqual({ refusal: `${Y} has status 'deprecated', not 'accepted'` });
       }
     });
   });
