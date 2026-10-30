@@ -32,7 +32,7 @@ export type Command = {
 
 const usageError = (stderr: string): RunResult => ({ exitCode: 2, stdout: "", stderr });
 
-function distance(a: string, b: string): number {
+function editDistance(a: string, b: string): number {
   let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
     const row = [i];
@@ -44,9 +44,9 @@ function distance(a: string, b: string): number {
   return prev[b.length]!;
 }
 
-// Every name tied at the minimum distance, or none when even the best is past 2.
+// Past 2 edits a "match" is usually a different word, and a wrong hint is worse than none.
 function closest(typed: string, names: string[]): string[] {
-  const scored = names.map((n) => [n, distance(typed, n)] as const);
+  const scored = names.map((n) => [n, editDistance(typed, n)] as const);
   const best = Math.min(...scored.map(([, d]) => d));
   return best <= 2 ? scored.filter(([, d]) => d === best).map(([n]) => n) : [];
 }
@@ -54,12 +54,13 @@ function closest(typed: string, names: string[]): string[] {
 function didYouMean(typed: string, names: string[]): string {
   const hits = closest(typed, names).map((n) => `'${n}'`);
   if (hits.length === 0) return "";
-  const list = hits.length === 1 ? hits[0]! : hits.length === 2 ? hits.join(" or ") : `${hits.slice(0, -1).join(", ")}, or ${hits.at(-1)}`;
-  return `Did you mean ${list}?\n`;
+  return `Did you mean ${new Intl.ListFormat("en", { type: "disjunction" }).format(hits)}?\n`;
 }
 
+const visible = (commands: Command[]) => commands.filter((c) => !c.hidden);
+
 function helpText(commands: Command[]): string {
-  const lines = commands.filter((c) => !c.hidden).map((c) => `  ${c.name}  ${c.summary}`);
+  const lines = visible(commands).map((c) => `  ${c.name}  ${c.summary}`);
   return ["Usage: ltm <command> [options]", ...lines].join("\n") + "\n";
 }
 
@@ -99,8 +100,9 @@ export async function run(
 
   const cmd = commands.find((c) => c.name === head);
   if (!cmd) {
-    const kind = head.startsWith("-") ? "option" : "command";
-    const names = head.startsWith("-") ? ["--help", "--version"] : commands.filter((c) => !c.hidden).map((c) => c.name);
+    const isOption = head.startsWith("-");
+    const kind = isOption ? "option" : "command";
+    const names = isOption ? ["--help", "--version"] : visible(commands).map((c) => c.name);
     return usageError(`ltm: unknown ${kind} '${head}'\n${didYouMean(head, names)}Run 'ltm --help' for usage.\n`);
   }
 
