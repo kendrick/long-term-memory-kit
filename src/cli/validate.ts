@@ -9,7 +9,10 @@ type Format = (typeof FORMATS)[number];
 export const validate: Command = {
   name: "validate",
   summary: "Check memory-bank.yaml and each Record against the schemas and Bank rules",
-  options: { json: { type: "boolean" }, format: { type: "string" } },
+  options: {
+    json: { type: "boolean", description: "Print the findings as JSON" },
+    format: { type: "string", description: "Print the findings for CI: github, gitlab, or junit" },
+  },
   positionals: [{ name: "path", required: false, variadic: true }],
   checkArgs(_positionals, values) {
     const format = values.format;

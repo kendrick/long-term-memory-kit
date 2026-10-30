@@ -50,6 +50,8 @@ const collectAll = (): Cmd[] => pagesInScope().flatMap((f) => collect(f, readFil
 
 const ltm = (...argv: string[]) => run({ argv, cwd: repo, env: {} });
 const flagsIn = (s: string) => new Set(s.match(/--[a-z][a-z-]*/g) ?? []);
+// Only the flag column counts, so a description that names another flag can't make that flag look known.
+const helpFlagsIn = (help: string) => new Set([...help.matchAll(/^ {2}(--[a-z][a-z-]*)/gm)].map((m) => m[1]!));
 
 let subcommands: Set<string> | undefined;
 const helpFlags = new Map<string, Promise<Set<string>>>();
@@ -62,7 +64,7 @@ async function subcommandList(): Promise<Set<string>> {
 }
 
 function flagsOf(sub: string): Promise<Set<string>> {
-  if (!helpFlags.has(sub)) helpFlags.set(sub, ltm(sub, "--help").then((r) => flagsIn(r.stdout)));
+  if (!helpFlags.has(sub)) helpFlags.set(sub, ltm(sub, "--help").then((r) => helpFlagsIn(r.stdout)));
   return helpFlags.get(sub)!;
 }
 

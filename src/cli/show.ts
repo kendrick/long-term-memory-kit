@@ -9,7 +9,7 @@ import type { Command } from "./run.ts";
 export const show: Command = {
   name: "show",
   summary: "Print one Record file whole, frontmatter and body, found by id or by Bank-relative path",
-  options: { bank: { type: "string" } },
+  options: { bank: { type: "string", description: "Path to the Bank to use" } },
   positionals: [{ name: "id-or-path", required: true }],
   async run(ctx) {
     const target = ctx.positionals[0] as string;

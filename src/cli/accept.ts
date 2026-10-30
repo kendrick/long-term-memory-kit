@@ -10,7 +10,7 @@ export const accept: Command = {
   name: "accept",
   summary: "Accept a Proposal, stamping its dates and making its Supersessions",
   positionals: [{ name: "id", required: false }],
-  options: { "changed-since": { type: "string" } },
+  options: { "changed-since": { type: "string", description: "Accept every Proposal changed since this git ref" } },
   checkArgs(positionals, values) {
     const since = values["changed-since"] !== undefined;
     if (since && positionals.length > 0) return "pass either <id> or --changed-since, not both";

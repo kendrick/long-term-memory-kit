@@ -9,7 +9,7 @@ const bankLine = (b: ResolvedBank): string =>
 export const connect: Command = {
   name: "connect",
   summary: "Print a Markdown snippet that points a Consumer repo's agents at its Banks",
-  options: { bank: { type: "string" } },
+  options: { bank: { type: "string", description: "Path to the Bank to use" } },
   async run(ctx) {
     let banks: ResolvedBank[];
     try {

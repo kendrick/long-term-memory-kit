@@ -244,10 +244,10 @@ export const init: Command = {
   name: "init",
   summary: "Scaffold a Bank and its generated agent instructions (--check: report stale ones)",
   options: {
-    name: { type: "string" },
-    folder: { type: "string", multiple: true },
-    "facet-prefix": { type: "string", multiple: true },
-    check: { type: "boolean" },
+    name: { type: "string", description: "Bank name to write into memory-bank.yaml" },
+    folder: { type: "string", multiple: true, description: "Folder for one memory type, as Type=path" },
+    "facet-prefix": { type: "string", multiple: true, description: "Prefix that Records can scope themselves by" },
+    check: { type: "boolean", description: "Report stale agent instructions and write nothing" },
   },
   positionals: [{ name: "dir", required: false }],
   checkArgs(_positionals, values) {

@@ -22,7 +22,7 @@ const stub = (name: string): Command => ({
 const check: Command = {
   name: "check",
   summary: "stub that fails after parsing",
-  options: { strict: { type: "boolean" } },
+  options: { strict: { type: "boolean", description: "Fail on warnings" } },
   positionals: [{ name: "path", required: true }],
   async run(ctx) {
     ctx.err("1 problem\n");
@@ -167,7 +167,7 @@ describe("run", () => {
       const cmd: Command = {
         name: "stub",
         summary: "stub",
-        options: { type: { type: "string" } },
+        options: { type: { type: "string", description: "Memory type" } },
         checkArgs: (_p, values) => (values.type === "Bogus" ? "unknown type 'Bogus'" : undefined),
         async run() {
           return 0;
@@ -201,7 +201,10 @@ describe("run <command> --help", () => {
     ],
     options,
   });
-  const jsonAndTag = { json: { type: "boolean" }, tag: { type: "string", multiple: true } } as const;
+  const jsonAndTag = {
+    json: { type: "boolean", description: "Print JSON" },
+    tag: { type: "string", multiple: true, description: "Tag to match" },
+  } as const;
 
   test("every default command prints every declared option and exits 0", async () => {
     for (const cmd of defaultCommands) {
@@ -210,6 +213,31 @@ describe("run <command> --help", () => {
       expect(r.stderr).toBe("");
       for (const key of Object.keys(cmd.options ?? {})) expect(r.stdout).toContain(`--${key}`);
     }
+  });
+
+  // Each line is found by its own flag, so a renderer that pairs a description with the wrong flag fails.
+  test("every default option's line holds its own description, at one shared column", async () => {
+    for (const cmd of defaultCommands) {
+      const entries = Object.entries(cmd.options ?? {});
+      if (entries.length === 0) continue;
+      const lines = (await run({ ...base, argv: [cmd.name, "--help"] })).stdout.split("\n");
+      const columns = new Set<number>();
+      for (const [key, o] of entries) {
+        expect(o.description.trim()).not.toBe("");
+        const line = lines.find((l) => new RegExp(`^  --${key}( <value>)? +`).test(l));
+        expect(line, `${cmd.name} --${key}`).toBeDefined();
+        const start = /^  --\S+( <value>)? +/.exec(line!)![0].length;
+        expect(line!.slice(start), `${cmd.name} --${key}`).toBe(`${o.description}${o.multiple ? " (repeatable)" : ""}`);
+        columns.add(start);
+      }
+      expect([...columns], cmd.name).toHaveLength(1);
+    }
+  });
+
+  test("ltm query --help marks --facet and --status repeatable, and nothing else", async () => {
+    const lines = (await run({ ...base, argv: ["query", "--help"] })).stdout.split("\n");
+    const marked = lines.filter((l) => l.includes("(repeatable)")).map((l) => /^ {2}(--[a-z-]+)/.exec(l)?.[1]);
+    expect(marked).toEqual(["--facet", "--status"]);
   });
 
   test("-h prints the same as --help", async () => {
@@ -228,8 +256,8 @@ describe("run <command> --help", () => {
         "alpha summary",
         "",
         "Options:",
-        "  --json",
-        "  --tag <value>  (repeatable)",
+        "  --json         Print JSON",
+        "  --tag <value>  Tag to match (repeatable)",
         "",
       ].join("\n"),
     });
@@ -243,9 +271,9 @@ describe("run <command> --help", () => {
 
   test("adding an option adds its line", async () => {
     const r = await run({ ...base, argv: ["alpha", "--help"] }, [
-      alpha({ ...jsonAndTag, extra: { type: "boolean" } }),
+      alpha({ ...jsonAndTag, extra: { type: "boolean", description: "Extra" } }),
     ]);
-    expect(r.stdout).toContain("  --extra\n");
+    expect(r.stdout).toContain("  --extra        Extra\n");
   });
 
   test("a command with no options omits [options] and the Options block", async () => {

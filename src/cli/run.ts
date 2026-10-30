@@ -18,10 +18,12 @@ export type CommandContext = {
   out(text: string): void;
   err(text: string): void;
 };
+// `description` is required so a new flag can't ship without its --help line.
+export type Option = NonNullable<ParseArgsConfig["options"]>[string] & { description: string };
 export type Command = {
   name: string;
   summary: string;
-  options?: ParseArgsConfig["options"];
+  options?: Record<string, Option>;
   // `variadic` is honored only on the last entry; earlier entries are ignored for it.
   positionals?: { name: string; required: boolean; variadic?: true }[];
   checkArgs?(positionals: string[], values: CommandContext["values"]): string | undefined;
@@ -76,7 +78,7 @@ function commandHelp(cmd: Command): string {
     const flags = options.map(([key, o]) => [`--${key}${o.type === "string" ? " <value>" : ""}`, o] as const);
     const width = Math.max(...flags.map(([f]) => f.length)) + 2;
     lines.push("", "Options:");
-    for (const [flag, o] of flags) lines.push(`  ${o.multiple ? flag.padEnd(width) + "(repeatable)" : flag}`);
+    for (const [flag, o] of flags) lines.push(`  ${flag.padEnd(width)}${o.description}${o.multiple ? " (repeatable)" : ""}`);
   }
   return lines.join("\n") + "\n";
 }
@@ -119,7 +121,8 @@ export async function run(
   try {
     parsed = parseArgs({
       args: rest,
-      options: cmd.options ?? {},
+      // Strip the help-only `description` so parseArgs gets exactly the config Node defines.
+      options: Object.fromEntries(Object.entries(cmd.options ?? {}).map(([k, { description: _, ...o }]) => [k, o])),
       allowPositionals: true,
       strict: true,
     });

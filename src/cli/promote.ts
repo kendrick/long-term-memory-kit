@@ -14,14 +14,14 @@ export const promote: Command = {
   summary: "Promote a repo ADR or decision-log entry to a Bank Proposal",
   positionals: [{ name: "path", required: true }],
   options: {
-    bank: { type: "string" },
-    entry: { type: "string" },
-    type: { type: "string", default: "Decision" },
-    "applies-to": { type: "string", multiple: true },
-    title: { type: "string" },
-    summary: { type: "string" },
-    "dry-run": { type: "boolean" },
-    json: { type: "boolean" },
+    bank: { type: "string", description: "Path to the Bank to use" },
+    entry: { type: "string", description: "Decision-log heading to promote, exactly as written" },
+    type: { type: "string", default: "Decision", description: "Memory type of the Proposal (default Decision)" },
+    "applies-to": { type: "string", multiple: true, description: "Facet the decision covers, in place of the consumers map" },
+    title: { type: "string", description: "Title to use when the source has none" },
+    summary: { type: "string", description: "One-line summary for the Proposal" },
+    "dry-run": { type: "boolean", description: "Print the Proposal and write nothing" },
+    json: { type: "boolean", description: "Print the result as JSON" },
   },
   // Exit 2 has to come before run() so a bad flag never reads the repo or touches git.
   checkArgs(_positionals, values) {

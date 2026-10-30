@@ -8,7 +8,10 @@ import type { Command } from "./run.ts";
 export const discover: Command = {
   name: "discover",
   summary: "List Hydration source files under the given paths, with their kind and citations",
-  options: { json: { type: "boolean" }, bank: { type: "string" } },
+  options: {
+    json: { type: "boolean", description: "Print the sources as JSON" },
+    bank: { type: "string", description: "Path to the Bank to use" },
+  },
   positionals: [{ name: "path", required: true, variadic: true }],
   async run(ctx) {
     let bank: BankConfig | null = null;

@@ -32,7 +32,7 @@ function statusAliases(config: BankConfig): string[] {
 export const fmt: Command = {
   name: "fmt",
   summary: "Rewrite Record frontmatter canonically, leaving the body byte-identical",
-  options: { check: { type: "boolean" } },
+  options: { check: { type: "boolean", description: "Report Records that need rewriting and write nothing" } },
   positionals: [{ name: "path", required: false, variadic: true }],
   async run(ctx) {
     const config = openBank(ctx, "fmt");
