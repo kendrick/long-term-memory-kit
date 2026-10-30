@@ -1,11 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Client } from "@modelcontextprotocol/client";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { run } from "../../src/cli/run.ts";
+import * as query from "../../src/core/query.ts";
+import { createServer } from "../../src/mcp/server.ts";
 import { withConsumerRepo } from "../helpers/consumer-repo.ts";
 import { git, IDENTITY, withGitBank } from "../helpers/git-bank.ts";
 import { withDemoGitBank, withMcp } from "../helpers/mcp.ts";
@@ -366,6 +368,99 @@ describe("ltm mcp, an env-selected path that is not a Bank root", () => {
             expect(tools.map((t) => t.name)).toContain("query");
           }),
         ),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+});
+
+const MOVED = "_memory/decisions/postgres-moved-kQ7vN2xLp4.md";
+const OVERVIEW = "_memory/context/order-service-overview-gN5yD9sMe2.md";
+const idOf = (text: unknown): string | undefined => String(text).match(/^id: (\S+)$/m)?.[1];
+
+// The swap issue #111 names: kQ7vN2xLp4 leaves POSTGRES and gN5yD9sMe2 takes its old path, in one commit.
+function refresh(bank: string): void {
+  git(bank, "mv", POSTGRES, MOVED);
+  git(bank, "mv", OVERVIEW, POSTGRES);
+  git(bank, ...IDENTITY, "commit", "--quiet", "-m", "refresh");
+}
+
+// In-process rather than withMcp, because a spy in this process can't reach a stdio subprocess.
+async function inProcess<T>(bank: string, fn: (client: Client) => Promise<T>): Promise<T> {
+  const server = createServer({ ...process.env, LTM_BANK_PATH: bank, LTM_BANK_URL: undefined }, bank);
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverSide);
+  const client = new Client({ name: "ltm-test", version: "0.0.0" });
+  await client.connect(clientSide);
+  try {
+    return await fn(client);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
+
+// Lands the refresh right after the first listRecords call and hands back the pre-refresh list, so the race is deterministic.
+function refreshAfterFirstList(bank: string): void {
+  const real = query.listRecords;
+  let fired = false;
+  spyOn(query, "listRecords").mockImplementation((config, onSkip) => {
+    const out = real(config, onSkip);
+    if (!fired) {
+      fired = true;
+      refresh(bank);
+    }
+    return out;
+  });
+}
+
+describe("ltm mcp, a refresh that moves an id mid-request", () => {
+  afterEach(() => mock.restore());
+
+  for (const tool of ["head", "read"]) {
+    test(
+      `${tool} by id answers for the id at the commit bank_commits names, not for the Record now at its old path`,
+      () =>
+        withDemoGitBank((bank) =>
+          inProcess(bank, async (client) => {
+            const seed = head(bank);
+            refreshAfterFirstList(bank);
+            const sc = ok(await call(client, tool, { id: "kQ7vN2xLp4" }));
+            expect(head(bank)).not.toBe(seed);
+            expect(sc.bank_commits).toEqual({ acme: head(bank) });
+            expect({ path: sc.path, id: idOf(sc[tool === "head" ? "head" : "text"]) }).toEqual({ path: MOVED, id: "kQ7vN2xLp4" });
+          }),
+        ),
+      MCP_TEST_TIMEOUT,
+    );
+  }
+
+  test(
+    "read by path answers for the path, so after the same refresh it returns gN5yD9sMe2",
+    () =>
+      withDemoGitBank((bank) =>
+        inProcess(bank, async (client) => {
+          refreshAfterFirstList(bank);
+          const sc = ok(await call(client, "read", { path: POSTGRES }));
+          expect(sc.bank_commits).toEqual({ acme: head(bank) });
+          expect(sc.path).toBe(POSTGRES);
+          expect(idOf(sc.text)).toBe("gN5yD9sMe2");
+        }),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
+  // head by path never lists Records, so the refresh lands before the request instead.
+  test(
+    "head by path answers for the path, so after a refresh it returns gN5yD9sMe2",
+    () =>
+      withDemoGitBank((bank) =>
+        inProcess(bank, async (client) => {
+          refresh(bank);
+          const sc = ok(await call(client, "head", { path: POSTGRES }));
+          expect(sc.bank_commits).toEqual({ acme: head(bank) });
+          expect(sc.path).toBe(POSTGRES);
+          expect(idOf(sc.head)).toBe("gN5yD9sMe2");
+        }),
       ),
     MCP_TEST_TIMEOUT,
   );
