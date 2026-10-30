@@ -225,4 +225,40 @@ describe("ltm promote", () => {
     expect(both.exitCode).toBe(2);
     expect(both.stderr).toContain("--dry-run and --json can't be used together");
   });
+
+  test("a dated working-memory-kit heading promotes by either spelling, with the bare title and the full-heading anchor", async () => {
+    await withConsumerRepo(async (repo) => {
+      await withGitBank(async ({ clone }) => {
+        const log = "_working-memory/decisionLog.md";
+        for (const entry of ["Batch order events per partition", "2026-10-02: Batch order events per partition"]) {
+          const r = await ltm(repo, "promote", log, "--entry", entry, "--bank", clone, "--type", "Decision", "--dry-run");
+          expect(r.exitCode).toBe(0);
+          expect(r.stdout).toContain("title: Batch order events per partition\n");
+          expect(r.stdout).toContain(`promoted_from: acme/order-service:${log}#2026-10-02-batch-order-events-per-partition\n`);
+        }
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("the issue's repro: a log with only a dated heading gives the bare title for both spellings", async () => {
+    const scratch = realpathSync(mkdtempSync(join(tmpdir(), "ltm-dated-")));
+    try {
+      mkdirSync(join(scratch, "_working-memory"));
+      writeFileSync(
+        join(scratch, "_working-memory/decisionLog.md"),
+        "# Decision Log\n\n## 2026-10-01: Cap retries at three per request\n\n**Context:** x\n\n**Decision:** Retry at most three times.\n",
+      );
+      git(scratch, "init", "--quiet", "--initial-branch=main");
+      git(scratch, "remote", "add", "origin", "https://github.com/acme/order-service.git");
+      await withGitBank(async ({ clone }) => {
+        for (const entry of ["Cap retries at three per request", "2026-10-01: Cap retries at three per request"]) {
+          const r = await ltm(scratch, "promote", "_working-memory/decisionLog.md", "--entry", entry, "--bank", clone, "--type", "Decision", "--dry-run");
+          expect(r.exitCode).toBe(0);
+          expect(r.stdout).toContain("title: Cap retries at three per request\n");
+        }
+      });
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }, GIT_TEST_TIMEOUT);
 });
