@@ -504,3 +504,61 @@ describe("ltm validate", () => {
     });
   });
 });
+
+describe("ltm validate picks its Bank from the paths", () => {
+  const repoRoot = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
+  const demoRel = "fixtures/demo-bank";
+
+  test("1: from outside the Bank, a path inside it validates clean", async () => {
+    const r = await ltm(repoRoot, "validate", `${demoRel}/${PG}`);
+    expect(r).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+  });
+
+  test("2: from inside the demo Bank, a Record in a copy reports the copy's finding", async () => {
+    await withScratch(demo, async (copy) => {
+      edit(join(copy, PG), (t) => replaceLine(t, "title:", null));
+      const r = await ltm(demo, "validate", join(copy, PG));
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).not.toContain(NOT_A_RECORD);
+      expect(lines(r.stdout).some((l) => l.includes("error schema: title:"))).toBe(true);
+    });
+  });
+
+  test("3: no paths from the repo root still fails with no memory-bank.yaml", async () => {
+    const r = await ltm(repoRoot, "validate");
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toContain("no memory-bank.yaml");
+  });
+
+  test("paths in two Banks are refused, naming both roots", async () => {
+    await withScratch(demo, async (copy) => {
+      const r = await ltm(repoRoot, "validate", `${demoRel}/${PG}`, join(copy, PG));
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toContain("paths span two Banks");
+      expect(r.stderr).toContain(demo);
+      expect(r.stderr).toContain(copy);
+    });
+  });
+
+  test("the Bank root as a path validates the whole Bank", async () => {
+    expect(await ltm(repoRoot, "validate", demoRel)).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+    await withScratch(demo, async (copy) => {
+      edit(join(copy, PG), (t) => replaceLine(t, "title:", null));
+      const r = await ltm(repoRoot, "validate", copy);
+      expect(r.exitCode).toBe(1);
+      expect(lines(r.stdout).some((l) => l.startsWith(`${PG}:`) && l.includes("error schema: title:"))).toBe(true);
+    });
+  });
+
+  test("a path outside any Bank names its start dir", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ltm-nobank-"));
+    try {
+      const r = await ltm(repoRoot, "validate", join(dir, "x.md"));
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toBe(`ltm validate: no memory-bank.yaml in ${dir} or any parent directory\n`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

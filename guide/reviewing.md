@@ -74,6 +74,12 @@ Run `ltm validate` before you push. It catches a Supersession you wrote on one s
 ltm validate
 ```
 
+To check a Record from a Consumer repo, pass its path. `ltm validate` finds the Bank from the path, so you don't have to `cd` into the Bank first:
+
+```sh
+ltm validate ../acme-bank/_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md
+```
+
 ## Supersession
 
 A Supersession retires one Record in favor of a newer, accepted one. A Proposal that lists `supersedes` gets its Supersessions at Acceptance. To link two Records that are both already accepted, run `ltm supersede` from the Bank root with the old id first:

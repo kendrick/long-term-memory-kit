@@ -1,3 +1,5 @@
+import { statSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { ConfigError, findBank, loadConfig, type BankConfig } from "../core/bank.ts";
 import { firstLine } from "../core/text.ts";
 import type { CommandContext } from "./run.ts";
@@ -20,6 +22,38 @@ export function locateBank(ctx: CommandContext, command: string): string | null 
     ctx.err(configErrorLine(command, e));
     return 1;
   }
+}
+
+// A path names its Bank, not the cwd. A directory starts the walk at itself (so the Bank root works as a path); anything else starts at its dirname, so a missing file still finds its Bank.
+export function locateBankFrom(ctx: CommandContext, command: string, paths: readonly string[]): string | 1 {
+  let first: { root: string; start: string } | undefined;
+  for (const p of paths) {
+    const abs = resolve(ctx.cwd, p);
+    let start = dirname(abs);
+    try {
+      if (statSync(abs).isDirectory()) start = abs;
+    } catch {
+      // Missing or unreadable: the dirname walk above stands.
+    }
+    let root: string | null;
+    try {
+      root = findBank(start);
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      ctx.err(configErrorLine(command, e));
+      return 1;
+    }
+    if (root === null) {
+      ctx.err(noBankLine(command, start));
+      return 1;
+    }
+    first ??= { root, start };
+    if (root !== first.root) {
+      ctx.err(`ltm ${command}: paths span two Banks: ${first.root} and ${root}\n`);
+      return 1;
+    }
+  }
+  return first!.root;
 }
 
 export function loadBankAt(ctx: CommandContext, command: string, root: string): BankConfig | 1 {

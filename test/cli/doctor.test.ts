@@ -112,4 +112,41 @@ describe("ltm doctor", () => {
       expect(r.stderr).toMatch(/^ltm doctor: skipped _memory\/decisions\/broken-aaaaaaaaaa\.md: .+$/m);
     });
   });
+
+  describe("--bank", () => {
+    // resolveBankFlag reads the user config under HOME; an empty one keeps the real config out.
+    const withHome = async <T>(fn: (benv: Record<string, string>) => Promise<T>) => {
+      const home = mkdtempSync(join(tmpdir(), "ltm-home-"));
+      try {
+        return await fn({ ...env, HOME: home, XDG_CONFIG_HOME: join(home, ".config") });
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+      }
+    };
+    const root = new URL("../..", import.meta.url).pathname;
+
+    test("from the repo root prints what doctor prints inside the Bank", async () => {
+      await withHome(async (benv) => {
+        const flagged = await run({ argv: ["doctor", "--bank", "fixtures/demo-bank"], cwd: root, env: benv });
+        const inside = await run({ argv: ["doctor"], cwd: demo, env: benv });
+        expect(flagged.exitCode).toBe(0);
+        expect(inside.stdout).not.toBe("");
+        expect(flagged.stdout).toBe(inside.stdout);
+      });
+    });
+
+    test("naming a dir with no memory-bank.yaml exits 1 with resolveBankFlag's message", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "ltm-nobank-"));
+      try {
+        await withHome(async (benv) => {
+          const r = await run({ argv: ["doctor", "--bank", dir], cwd: root, env: benv });
+          expect(r.exitCode).toBe(1);
+          expect(r.stdout).toBe("");
+          expect(r.stderr).toContain(`ltm doctor: ${join(dir, "memory-bank.yaml")}: --bank '${dir}' is neither a Bank in `);
+        });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
 });

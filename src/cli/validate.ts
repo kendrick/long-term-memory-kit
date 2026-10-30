@@ -1,6 +1,7 @@
 import { toGithub, toGitlab, toJunit } from "../core/report.ts";
 import { validateBankReport } from "../core/validate.ts";
-import { locateBank, noBankLine } from "./bank.ts";
+import { resolve } from "node:path";
+import { locateBank, locateBankFrom, noBankLine } from "./bank.ts";
 import type { Command } from "./run.ts";
 
 const FORMATS = ["github", "gitlab", "junit"] as const;
@@ -22,14 +23,17 @@ export const validate: Command = {
     return undefined;
   },
   async run(ctx) {
-    const root = locateBank(ctx, "validate");
+    const named = ctx.positionals.length > 0;
+    const root = named ? locateBankFrom(ctx, "validate", ctx.positionals) : locateBank(ctx, "validate");
     if (root === 1) return 1;
     if (root === null) {
       ctx.err(noBankLine("validate", ctx.cwd));
       return 1;
     }
+    // validateBankReport would call the bare root "not a Record file"; naming the Bank root means the whole Bank.
+    const wholeBank = named && ctx.positionals.every((p) => resolve(ctx.cwd, p) === root);
     // No loadBankAt here: validateBankReport loads the config itself and reports a broken one as a config-schema finding on stdout, which --format github|gitlab|junit hands to CI and stderr would lose.
-    const { findings, files } = validateBankReport(root, ctx.positionals.length > 0 ? ctx.positionals : null, ctx.cwd);
+    const { findings, files } = validateBankReport(root, named && !wholeBank ? ctx.positionals : null, ctx.cwd);
     const format = ctx.values.format as Format | undefined;
     if (format === "github") ctx.out(toGithub(findings));
     else if (format === "gitlab") ctx.out(toGitlab(findings));
