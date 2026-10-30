@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
@@ -462,6 +462,47 @@ describe("ltm mcp, a refresh that moves an id mid-request", () => {
           expect(idOf(sc.head)).toBe("gN5yD9sMe2");
         }),
       ),
+    MCP_TEST_TIMEOUT,
+  );
+});
+
+describe("ltm mcp, id refusals", () => {
+  for (const tool of ["head", "read"]) {
+    test(
+      `${tool} by an unknown id says it matches no Record`,
+      () => withServer(async ({ client }) => {
+        const r = await call(client, tool, { id: "zzzzzzzzzz" });
+        expect(r.isError).toBe(true);
+        expect(textOf(r)).toContain("'zzzzzzzzzz' matches no Record");
+      }),
+      MCP_TEST_TIMEOUT,
+    );
+
+    test(
+      `${tool} by an id two Records share says it is held by 2 Records`,
+      () => withServer(
+        async ({ client }) => {
+          const r = await call(client, tool, { id: "kQ7vN2xLp4" });
+          expect(r.isError).toBe(true);
+          expect(textOf(r)).toContain("'kQ7vN2xLp4' is held by 2 Records");
+        },
+        (root) => cpSync(join(root, POSTGRES), join(root, "_memory/decisions/postgres-copy-kQ7vN2xLp4.md")),
+      ),
+      MCP_TEST_TIMEOUT,
+    );
+  }
+
+  // bank is refused while LTM_BANK_PATH picks the Bank, so this server's env drops both selectors and cwd sits outside the Bank.
+  test(
+    "read by id finds the Record in the Bank that bank names",
+    () => withDemoGitBank((bank) => withConsumerRepo((consumer) => {
+      const env = { ...process.env, LTM_BANK_PATH: undefined, LTM_BANK_URL: undefined };
+      return withMcp(env, consumer, async (client) => {
+        const sc = ok(await call(client, "read", { id: "kQ7vN2xLp4", bank }));
+        expect(sc.path).toBe(POSTGRES);
+        expect(idOf(sc.text)).toBe("kQ7vN2xLp4");
+      });
+    })),
     MCP_TEST_TIMEOUT,
   );
 });
