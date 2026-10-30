@@ -545,7 +545,10 @@ export function validateBankReport(root: string, paths: string[] | null, cwd: st
         return { abs, rel: isInside(bankRoot, abs) ? toPosix(relative(bankRoot, abs)) : p };
       })
     : null;
-  const namedRels = named ? new Set(named.map((n) => n.rel)) : null;
+  // Naming the Bank root asks for the whole Bank; any other named path still gets its walk check below.
+  const whole = !named || named.some((n) => n.abs === bankRoot);
+  const others = named ? named.filter((n) => n.abs !== bankRoot) : [];
+  const namedRels = whole ? null : new Set(others.map((n) => n.rel));
   // A skipped directory hides every named file beneath it, so it counts as named too.
   const touchesNamed = (rel: string): boolean =>
     !namedRels || [...namedRels].some((n) => n === rel || n.startsWith(`${rel}/`));
@@ -556,9 +559,9 @@ export function validateBankReport(root: string, paths: string[] | null, cwd: st
     if (touchesNamed(rel)) findings.push(finding(rel, 1, "walk", null, reason));
   });
 
-  if (named) {
+  if (others.length > 0) {
     const known = new Set(files.map((f) => resolve(f.abs)));
-    for (const n of named) {
+    for (const n of others) {
       if (known.has(n.abs) || skipped.has(n.rel)) continue;
       findings.push(finding(n.rel, 1, "walk", null, "not a Record file under any configured type folder"));
     }

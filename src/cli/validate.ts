@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import { toGithub, toGitlab, toJunit } from "../core/report.ts";
 import { validateBankReport } from "../core/validate.ts";
 import { locateBank, locateBankFrom, noBankLine } from "./bank.ts";
@@ -30,10 +29,8 @@ export const validate: Command = {
       ctx.err(noBankLine("validate", ctx.cwd));
       return 1;
     }
-    // validateBankReport would call the bare root "not a Record file"; naming the Bank root means the whole Bank, which already covers any other path (locateBankFrom proved they share it).
-    const wholeBank = hasPaths && ctx.positionals.some((p) => resolve(ctx.cwd, p) === root);
     // No loadBankAt here: validateBankReport loads the config itself and reports a broken one as a config-schema finding on stdout, which --format github|gitlab|junit hands to CI and stderr would lose.
-    const { findings, files } = validateBankReport(root, hasPaths && !wholeBank ? ctx.positionals : null, ctx.cwd);
+    const { findings, files } = validateBankReport(root, hasPaths ? ctx.positionals : null, ctx.cwd);
     const format = ctx.values.format as Format | undefined;
     if (format === "github") ctx.out(toGithub(findings));
     else if (format === "gitlab") ctx.out(toGitlab(findings));

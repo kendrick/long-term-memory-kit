@@ -563,6 +563,32 @@ describe("ltm validate picks its Bank from the paths", () => {
     });
   });
 
+  test("a Bank root mixed with a nonexistent Record path still reports that path", async () => {
+    const missing = "_memory/decisions/does-not-exist.md";
+    const r = await ltm(repoRoot, "validate", demoRel, `${demoRel}/${missing}`);
+    expect(r.exitCode).toBe(1);
+    expect(lines(r.stdout).some((l) => l.startsWith(`${missing}:`) && l.includes("error walk:") && l.includes(NOT_A_RECORD))).toBe(true);
+  });
+
+  test("a Bank root mixed with missing paths keeps findings in file order and gives each a junit testcase", async () => {
+    const z = "_memory/decisions/zz-missing.md";
+    const a = "_memory/aa-missing.md";
+    const r = await ltm(repoRoot, "validate", `${demoRel}/${z}`, demoRel, `${demoRel}/${a}`);
+    expect(r.exitCode).toBe(1);
+    expect(lines(r.stdout).map((l) => l.split(":")[0])).toEqual([a, z]);
+    const junit = await ltm(repoRoot, "validate", demoRel, `${demoRel}/${z}`, "--format", "junit");
+    expect(junit.stdout).toContain(z);
+  });
+
+  test("a Bank root mixed with a non-Record file in the Bank still reports that file", async () => {
+    await withScratch(demo, async (copy) => {
+      writeFileSync(join(copy, "notes.txt"), "x\n");
+      const r = await ltm(repoRoot, "validate", copy, join(copy, "notes.txt"));
+      expect(r.exitCode).toBe(1);
+      expect(lines(r.stdout).some((l) => l.startsWith("notes.txt:") && l.includes("error walk:") && l.includes(NOT_A_RECORD))).toBe(true);
+    });
+  });
+
   test("a path outside any Bank names its start dir", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ltm-nobank-"));
     try {
