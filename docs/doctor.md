@@ -20,7 +20,7 @@ Every report line below came from `ltm doctor` run with `LTM_TODAY=2026-10-09` o
 
 **False positives:** A Record that is still correct but that nobody re-read. A reference Record about a stable system can sit past 90 days and stay accurate.
 
-**Dismissal:** Re-read the Record and set `last_confirmed` to today's date. If the Record is no longer true, set its `status` to `deprecated`. If 90 days is too short for your Bank, raise `doctor.stale_confirmed_days`.
+**Dismissal:** Re-read the Record (`ltm show <id>` prints it). If it's still true, run `ltm confirm <id>` to set `last_confirmed` to today's date. If it's no longer true, run `ltm deprecate <id>` to set its `status` to `deprecated`. Both commands accept only an accepted Record, and editing the field by hand works too. If 90 days is too short for your Bank, raise `doctor.stale_confirmed_days`.
 
 ## review-due
 

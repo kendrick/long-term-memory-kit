@@ -78,7 +78,14 @@ There is no suppression list. To clear a finding, edit the Record, or change a t
 
 ### stale-confirmed
 
-The Record's `last_confirmed`, or its `date` when it has none, is more than 90 days old. Re-read the Record. If it's still true, set `last_confirmed` to today. If it isn't, set `status` to `deprecated`. See [stale-confirmed](../docs/doctor.md#stale-confirmed).
+The Record's `last_confirmed`, or its `date` when it has none, is more than 90 days old. Re-read the Record with `ltm show <id>`. If it's still true, run `ltm confirm <id>`. If it isn't, run `ltm deprecate <id>`. See [stale-confirmed](../docs/doctor.md#stale-confirmed).
+
+```sh
+ltm confirm uH7rF3kWj6
+ltm deprecate cR7mT2vKb5
+```
+
+Both commands accept only an accepted Record and write nothing if any Record you name is refused. Editing `last_confirmed` or `status` by hand does the same thing.
 
 To list the Records that have never been confirmed, run this from the Bank root:
 
