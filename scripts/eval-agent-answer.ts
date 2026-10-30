@@ -143,7 +143,10 @@ export function scoreAnswer(q: Question, t: Transcript): Score {
 }
 
 export const INSTRUCTION =
-  "Answer from this repo's org memory. End with a last line `CITED: <id>, <id>` listing the Record ids your answer relies on, or `CITED: NONE` if the memory doesn't cover it.";
+  "Answer from this repo's org memory. End with a last line `CITED: <id>, <id>` listing only the Records in force that your answer relies on, or `CITED: NONE` if the memory doesn't cover it. Leave off a superseded or expired Record, even when your answer mentions it as history.";
+
+// query-memory teaches `head -n 20 <path>` and `cd <bank-root> && ltm head <path>`, and Claude Code checks each `&&` segment against these rules on its own, so `cd` needs its own entry. Keep the list read-only, since dontAsk mode runs anything it matches without asking.
+export const ALLOWED_TOOLS = "Read,Glob,Grep,Bash(ltm *),Bash(cat *),Bash(head *),Bash(cd *),mcp__plugin_ltm_ltm__*";
 
 type Init = {
   model?: string;
@@ -278,22 +281,26 @@ function stage() {
   return { tmp, repo, bank, bin, configDir };
 }
 
+export function claudeArgs(question: string) {
+  return [
+    "-p", `${question}\n\n${INSTRUCTION}`,
+    "--plugin-dir", ROOT,
+    "--output-format", "stream-json", "--verbose",
+    "--model", "sonnet",
+    "--max-turns", "15",
+    "--no-session-persistence",
+    "--tools", "Read,Glob,Grep,Bash",
+    "--allowedTools", ALLOWED_TOOLS,
+    "--disallowedTools", "Edit,Write,WebFetch,WebSearch",
+    "--permission-mode", "dontAsk",
+    "--max-budget-usd", String(RUN_BUDGET_USD),
+  ];
+}
+
 function runClaude(question: string) {
   const s = stage();
   try {
-    const args = [
-      "-p", `${question}\n\n${INSTRUCTION}`,
-      "--plugin-dir", ROOT,
-      "--output-format", "stream-json", "--verbose",
-      "--model", "sonnet",
-      "--max-turns", "15",
-      "--no-session-persistence",
-      "--tools", "Read,Glob,Grep,Bash",
-      "--allowedTools", "Read,Glob,Grep,Bash(ltm *),Bash(cat *),mcp__plugin_ltm_ltm__*",
-      "--disallowedTools", "Edit,Write,WebFetch,WebSearch",
-      "--permission-mode", "dontAsk",
-      "--max-budget-usd", String(RUN_BUDGET_USD),
-    ];
+    const args = claudeArgs(question);
     const r = spawnSync("claude", args, {
       cwd: s.repo,
       encoding: "utf8",

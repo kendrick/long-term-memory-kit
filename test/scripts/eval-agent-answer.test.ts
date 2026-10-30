@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { aggregate, authProblem, extractAnswer, parseCli, probeProblems, RUN_BUDGET_USD, runCost, scoreAnswer, spawnOutput, type Question, type Row } from "../../scripts/eval-agent-answer.ts";
+import { aggregate, ALLOWED_TOOLS, authProblem, claudeArgs, extractAnswer, INSTRUCTION, parseCli, probeProblems, RUN_BUDGET_USD, runCost, scoreAnswer, spawnOutput, type Question, type Row } from "../../scripts/eval-agent-answer.ts";
 import { loadConfig } from "../../src/core/bank.ts";
 import { listRecords } from "../../src/core/query.ts";
 
@@ -247,5 +247,21 @@ describe("spawnOutput", () => {
   test("a launch failure throws", () => {
     const err = Object.assign(new Error("spawnSync claude ENOENT"), { code: "ENOENT" });
     expect(() => spawnOutput({ error: err, stdout: null, stderr: null })).toThrow("ENOENT");
+  });
+});
+
+describe("instruction and tool allowlist", () => {
+  test("INSTRUCTION says which Records go on CITED:", () => {
+    expect(INSTRUCTION).toBe(
+      "Answer from this repo's org memory. End with a last line `CITED: <id>, <id>` listing only the Records in force that your answer relies on, or `CITED: NONE` if the memory doesn't cover it. Leave off a superseded or expired Record, even when your answer mentions it as history.",
+    );
+  });
+  test("ALLOWED_TOOLS is the exact read-only list", () => {
+    expect(ALLOWED_TOOLS).toBe("Read,Glob,Grep,Bash(ltm *),Bash(cat *),Bash(head *),Bash(cd *),mcp__plugin_ltm_ltm__*");
+  });
+  test("the spawn argv carries ALLOWED_TOOLS right after --allowedTools", () => {
+    const args = claudeArgs("q?");
+    expect(args[args.indexOf("--allowedTools") + 1]).toBe(ALLOWED_TOOLS);
+    expect(args[args.indexOf("--disallowedTools") + 1]).toBe("Edit,Write,WebFetch,WebSearch");
   });
 });
