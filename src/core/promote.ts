@@ -2,8 +2,8 @@ import { isDeepStrictEqual } from "node:util";
 import { readFileSync, writeFileSync } from "node:fs";
 import { parse } from "yaml";
 import { isMapping, type MemoryType } from "./bank.ts";
-import { proposeRecord, type ProposalInput, type ProposeDeps, type ProposeDryRun, type ProposeRefusal, type Proposed } from "./propose.ts";
 import { isCalendarDate } from "./clock.ts";
+import { proposeRecord, type ProposalInput, type ProposeDeps, type ProposeDryRun, type ProposeRefusal, type Proposed } from "./propose.ts";
 import { splitFrontmatter } from "./record.ts";
 import { firstLine } from "./text.ts";
 
@@ -125,7 +125,7 @@ export function readEntry(rel: string, text: string, heading: string): PromoteSo
   if (matches.length > 1) return { refusal: `${rel} has ${matches.length} '## ${heading}' headings` };
   const match = matches[0]!;
   const end = headings.find((l) => l.start > match.start)?.start ?? text.length;
-  const full = match.content.slice(3);
+  const fullHeading = match.content.slice(3);
   const body = text.slice(match.next, end);
   // Fence state comes from the whole file, so a fenced yaml sample in the entry never reads as a stamp.
   const stamped = outsideFences(lines).find((l) => l.start >= match.next && l.start < end && l.content.startsWith("promoted_to:"));
@@ -134,8 +134,8 @@ export function readEntry(rel: string, text: string, heading: string): PromoteSo
   return {
     kind: "entry",
     // Slug and title come from the matched heading, so both spellings stamp the same anchor.
-    slug: entrySlug(full),
-    title: datedTitle(full) ?? full,
+    slug: entrySlug(fullHeading),
+    title: datedTitle(fullHeading) ?? fullHeading,
     body,
     existing: stamped ? stamped.content.slice("promoted_to:".length).trim() : null,
     // A heading on the last line has no terminator to insert after, so the stamp brings its own leading one and the file keeps its missing final newline.

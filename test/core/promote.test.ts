@@ -298,12 +298,16 @@ describe("readEntry dated headings", () => {
     expect(a.slug).toBe("2026-10-02-batch-order-events-per-partition");
     expect(b.slug).toBe(a.slug);
     expect(b.stamp("promoted_to: x")).toEqual(a.stamp("promoted_to: x"));
+    const stamped = a.stamp("promoted_to: x");
+    expect(stamped.line).toBe(4);
+    expect(stamped.text.split("\n").slice(2, 4)).toEqual([`## ${DATED}`, "promoted_to: x"]);
   });
 
   test("a non-date prefix keeps its title and is not matched bare", () => {
     const s = source(readEntry("log.md", log, "Q3: Cap retries"));
     if (s.kind !== "entry") throw new Error("expected an entry");
     expect(s.title).toBe("Q3: Cap retries");
+    expect(refusal(readEntry("log.md", "## Q3: Batch\n", "Batch"))).toBe("log.md has no '## Batch' heading");
   });
 
   test("a prefix that is not a calendar date keeps its whole heading and is not matched bare", () => {

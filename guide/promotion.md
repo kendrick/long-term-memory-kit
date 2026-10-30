@@ -68,6 +68,8 @@ The heading becomes the title, and the text under it becomes the body. `promoted
 promoted_to: acme:Hs7kD2pVn5
 ```
 
+The working-memory-kit template dates each heading, as in `## 2026-10-01: Cap retries at three per request`. When a heading opens with a calendar date and `: `, `--entry` also takes the text after the date. The title leaves the date out, and the anchor keeps it: `#2026-10-01-cap-retries-at-three-per-request`.
+
 `ltm promote` may print a `body-sections` warning, because a short entry has no Context or Consequences heading. The Proposal still opens. A reviewer can ask for those sections before accepting it.
 
 ## Commit the Stamp
