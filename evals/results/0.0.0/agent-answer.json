@@ -3,34 +3,34 @@
   "model": "claude-sonnet-5-5",
   "claude_code_version": "2.1.311",
   "isolation": "temp CLAUDE_CONFIG_DIR, CLAUDE_CODE_DISABLE_CLAUDE_MDS=1, CLAUDE_CODE_DISABLE_AUTO_MEMORY=1, --plugin-dir <repo>, ltm shim with LTM_CONFIG on PATH",
-  "started_at": "2026-10-28T23:17:17.206Z",
-  "finished_at": "2026-10-28T23:26:01.867Z",
+  "started_at": "2026-10-31T01:18:55.452Z",
+  "finished_at": "2026-10-31T01:32:35.929Z",
   "partial": false,
   "stopped_for_budget": false,
-  "probe_cost_usd": 0.0387916,
+  "probe_cost_usd": 0.0200747,
   "by_style": {
     "single-hop": {
       "n": 7,
       "correct": 5,
       "accuracy": 0.7142857142857143,
-      "file_recall": 0.8571428571428571
+      "file_recall": 0.7142857142857143
     },
     "multi-session": {
       "n": 7,
-      "correct": 5,
-      "accuracy": 0.7142857142857143,
+      "correct": 7,
+      "accuracy": 1,
       "file_recall": 0.9285714285714286
     },
     "temporal": {
       "n": 7,
-      "correct": 5,
-      "accuracy": 0.7142857142857143,
+      "correct": 7,
+      "accuracy": 1,
       "file_recall": 0.8571428571428571
     },
     "knowledge-update": {
       "n": 7,
-      "correct": 0,
-      "accuracy": 0,
+      "correct": 7,
+      "accuracy": 1,
       "file_recall": 1
     },
     "abstention": {
@@ -42,23 +42,23 @@
   },
   "overall": {
     "n": 35,
-    "correct": 22,
-    "accuracy": 0.6285714285714286,
-    "file_recall": 0.9107142857142857
+    "correct": 33,
+    "accuracy": 0.9428571428571428,
+    "file_recall": 0.875
   },
-  "total_cost_usd": 0.8922459,
+  "total_cost_usd": 1.1535379,
   "cost_unknown_runs": 0,
   "questions": [
     {
       "id": "sh-order-events",
       "style": "single-hop",
       "correct": true,
-      "answer": "Order-service publishes order lifecycle events to the shared message queue. It does not call downstream services directly. The Decision, \"Adopt a message queue for order events\", is accepted and dates from 2026-04-22. The commerce-architecture team owns it.\n\nThe record gives only the summary. It doesn't name the queue technology, the event types, the topics, or which downstream services consume the events.",
+      "answer": "Order-service publishes order lifecycle events to the shared message queue. It doesn't call the downstream services directly. This comes from an accepted Decision, \"Adopt a message queue for order events\", dated 2026-04-22. The deciders were alice and bob, and team commerce-architecture owns it.\n\nThe Record's summary doesn't say which queue technology is used, what the topics or event schemas are, or how delivery is guaranteed. I only read the summary and frontmatter, not the full body.",
       "cited": [
         "hT5cY8dUa6"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0094748,
+      "cost_usd": 0.012974800000000002,
       "plugin_loaded": true,
       "files_read": [
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"
@@ -68,31 +68,37 @@
       "id": "sh-duplicate-events",
       "style": "single-hop",
       "correct": true,
-      "answer": "The memory only partly covers this question. I could only read the Records' summaries, because the Record bodies weren't readable here. A shell command to read them was denied, and the `head` tool returns only frontmatter.\n\n- **Events are the integration path.** Order-service publishes its order lifecycle events to the shared message queue instead of calling downstream services directly (Decision hT5cY8dUa6). A consumer therefore has to get order information from those queued events, not from synchronous calls to order-service.\n- **No direct DB reads.** A commerce-domain service never reads another service's database directly. It goes through that service's API or events (PolicyRule cA9wE6uJr3). A consumer must not read order-service's tables to fill gaps. It should use the events or order-service's API.\n- **Order-service owns order state.** It owns carts, checkout, and order state (Context gN5yD9sMe2), and its events carry that lifecycle.\n\nThe memory doesn't say anything about the following, so I can't answer it from memory:\n- Event schemas or versioning.\n- Delivery guarantees such as at-least-once delivery, duplicates, or ordering.\n- Retry or dead-letter handling.\n- Idempotency requirements.\n\nDon't treat any of those as established. Check the Record bodies or the order-service team (team:commerce-architecture) for them.",
+      "answer": "The memory says little about this. It has no Record on event schemas, delivery guarantees, ordering, or idempotency. These points come from Record summaries only, because reading the full Record bodies failed.\n\n- **Events arrive over the shared message queue.** Order-service publishes order lifecycle events to the queue and doesn't call downstream services directly. A consumer should therefore expect to receive events asynchronously from the queue, not through synchronous calls from order-service.\n- **Order identifiers are ULIDs.** Order-service generates them. The older per-region sequential counters were superseded, so a consumer shouldn't assume numeric, sequential, or region-scoped order numbers.\n- **Consumers should use events or the API, not order-service's data store.** The policy rule says services in the commerce domain never read another service's database directly. The only exception recorded is order-service's own temporary permission to read inventory-service's Redis, which doesn't extend to consumers of order events.\n\nI found nothing in the memory on delivery semantics (duplicates, redelivery, ordering) or on event payload or versioning. I won't claim any requirements there.",
       "cited": [
         "hT5cY8dUa6",
-        "cA9wE6uJr3",
-        "gN5yD9sMe2"
+        "uL5eX1pJd8",
+        "cA9wE6uJr3"
       ],
       "file_recall": 1,
-      "cost_usd": 0.023316800000000002,
+      "cost_usd": 0.0310926,
       "plugin_loaded": true,
       "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
-        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
       ]
     },
     {
       "id": "sh-log-fields",
       "style": "single-hop",
       "correct": true,
-      "answer": "The org memory only partly answers this. It covers where and in what format, but I couldn't read the record body, so I can't tell you which fields each line needs.\n\n- **Where:** order-service should write logs to stdout.\n- **Format:** each log line should be one JSON object, i.e. structured JSON logging.\n\nThe accepted PolicyRule \"Structured JSON logging\" (`vD8mH3zQb5`) says: \"Acme services write logs to stdout as one JSON object per line.\" It is owned by platform-engineering and applies to the commerce domain and observability. Order-service is a commerce service, so the rule covers it. No order-service-specific logging record overrides it.\n\n**Required fields:** The query results only return each record's frontmatter and summary, not its body. The record's file isn't in the repo working directory, and the shell was denied, so I couldn't open it. If the body lists required fields, I haven't seen them. I'm not going to guess at a field list. The memory has no other record on log fields. The only other observability record is a still-proposed OpenTelemetry tracing decision (`pL2sG4nVq0`). A proposal isn't a constraint, so I'm not relying on it.\n\nTo get the field list, open `_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md` in the acme bank. Or tell me where the bank is checked out and I'll read it.",
+      "answer": "order-service should write its logs to **stdout**, in **JSON format with one JSON object per line**. Free-text log lines fail the pipeline parser.\n\nEach line needs three fields:\n- `level`\n- `timestamp`\n- `trace id`\n\nThe memory doesn't give the exact JSON key names, such as `trace_id` or `traceId`. It also doesn't list any fields beyond these three.\n\nThe rule is the PolicyRule \"Structured JSON logging\" (`vD8mH3zQb5`). It applies to all of the commerce domain, which includes order-service. No order-service-specific record changes it.\n\nThe only other observability record is a proposed, not yet accepted, decision to adopt OpenTelemetry tracing. It isn't a constraint, so I left it out.",
       "cited": [
         "vD8mH3zQb5"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0443368,
+      "cost_usd": 0.034643099999999996,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
@@ -110,33 +116,43 @@
       "id": "sh-release-branches",
       "style": "single-hop",
       "correct": true,
-      "answer": "No, order-service shouldn't cut a long-lived release branch. The org's accepted decision on trunk-based deployment says Acme services deploy from `main` behind feature flags, not from long-lived release branches. Order-service is in the commerce domain, so the decision covers it.\n\nFor the next feature, that means:\n- Merge the unfinished work to `main` in small increments.\n- Put it behind a feature flag that is off by default, so it ships dark.\n- Turn the flag on when the feature is ready.\n\nThe record only states the principle. I didn't find anything in memory on flag tooling, flag cleanup, or exceptions for order-service, and no order-service record overrides this decision. I also couldn't open the full record body, so this rests on its summary.",
+      "answer": "No, order-service shouldn't cut a long-lived release branch. Org memory has an accepted Decision, \"Trunk-based deployment\", that covers it.\n\n- **Where it applies:** the Decision applies to the commerce domain, and order-service is part of that domain. It says services deploy from `main` behind feature flags instead of long-lived release branches.\n- **How unfinished work ships:** merge to `main` daily and gate the unfinished work behind a feature flag. Releases then become routine.\n- **Why:** the Decision's stated reason is that release branches used to drift from `main` for weeks.\n- **What it costs:** flags need cleanup. Plan to remove the flag once the feature is fully rolled out.\n\nI found no Exception to this Decision for order-service. The only order-service Exception is about reading inventory-service's Redis, which has nothing to do with branching.",
       "cited": [
         "rX6jK1fWc9"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0400932,
-      "plugin_loaded": true,
+      "cost_usd": 0.0645196,
+      "plugin_loaded": false,
       "files_read": [
+        "<tmp>/ltm-agent-answer-MoYFsf/repo/_working-memory/decisionLog.md",
+        "<tmp>/ltm-agent-answer-MoYFsf/repo/docs/adr/0004-retry-budget.md",
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
         "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
         "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
         "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
         "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
         "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
         "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
         "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
       ]
     },
     {
       "id": "sh-fulfillment-term",
       "style": "single-hop",
-      "correct": false,
-      "answer": "The org memory doesn't say when an order becomes a fulfillment, so I can't answer from it.\n\nThe closest match is the \"Commerce domain glossary\" Record (`xO4bV1cPi0`). Its summary says Acme's commerce domain uses cart, order, and fulfillment as distinct terms with fixed meanings. I could only read its metadata, not its body. The Bank's files aren't in the working directory, and the tool that returns a Record's full text isn't available here. So I can't see the actual definitions or the point where an order turns into a fulfillment.\n\nThe other Records don't cover it either. `gN5yD9sMe2` says order-service owns carts, checkout and order state, and `hT5cY8dUa6` says it publishes order lifecycle events. Neither mentions fulfillment or a transition into it.\n\nThe body of `xO4bV1cPi0` probably has the answer. I can look again if you give me read access to the Bank directory or tell me where it is.",
-      "cited": [],
+      "correct": true,
+      "answer": "An order becomes a fulfillment when the warehouse accepts it. Before that, a cart becomes an order at checkout. The commerce domain glossary defines \"cart\", \"order\" and \"fulfillment\" as distinct terms with fixed meanings.",
+      "cited": [
+        "xO4bV1cPi0"
+      ],
       "file_recall": 1,
-      "cost_usd": 0.053600800000000004,
+      "cost_usd": 0.03883869999999999,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
@@ -149,7 +165,6 @@
         "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
         "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
         "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
-        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
         "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
         "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
         "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
@@ -159,31 +174,22 @@
     {
       "id": "sh-event-subscribers",
       "style": "single-hop",
-      "correct": true,
-      "answer": "The org memory doesn't say which downstream services consume order-service's events.\n\nIt does cover the publishing side:\n- **Publishing:** order-service publishes order lifecycle events to the shared message queue. It does this instead of calling downstream services directly (Decision hT5cY8dUa6).\n- **Ownership:** order-service owns carts, checkout, and order state, and it publishes order events (Context gN5yD9sMe2).\n\nI found no Record that names a consumer. I only read the Records' summaries and frontmatter. I couldn't open the Record bodies, so a body might list consumers. A shell search for the files was denied, and the file glob found nothing. I can retry with different access if you want.",
-      "cited": [
-        "hT5cY8dUa6",
-        "gN5yD9sMe2"
-      ],
-      "file_recall": 1,
-      "cost_usd": 0.029443800000000003,
-      "plugin_loaded": true,
-      "files_read": [
-        "_memory/context/order-service-overview-gN5yD9sMe2.md",
-        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
-        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
-        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
-        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
-      ]
+      "correct": false,
+      "answer": "The org memory doesn't say which downstream services consume order-service's events.\n\n- **Memory bank:** A query for order-service events and consumers, including retired Records, returned nothing. The repo also has no `memory-bank.yaml`, so there are no Records to read.\n- **Repo docs:** The ADRs and decision log mention the order service. They cover ioredis for Redis, a retry budget on outbound calls, and ULID order IDs. None of them name an event consumer.",
+      "cited": [],
+      "file_recall": 0,
+      "cost_usd": 0.0317319,
+      "plugin_loaded": false,
+      "files_read": []
     },
     {
       "id": "sh-billing-db-read",
       "style": "single-hop",
       "correct": false,
-      "answer": "The org memory doesn't cover this. I ran three queries (order-service and billing-service database access, \"database access\", and \"billing-service\" with retired Records included). All three returned no Records. The `acme` Bank is empty or has nothing on this topic. I can't say from memory whether order-service may connect to billing-service's database.\n\nIf the team has a rule on this, it hasn't been recorded. A common pattern is for order-service to call a billing-service API instead of reading its database directly. I haven't confirmed that pattern for this org, so treat it only as something to check with the billing-service owners.",
+      "answer": "Org memory has nothing on this. I ran three queries against the bank: one on order-service, billing-service, database connection and invoice, one on \"database access\", and one on \"billing-service\". I included retired Records in the last two. All three came back empty. So I can't say from memory whether order-service may open a connection to billing-service's database.\n\nI also couldn't list the bank's facets, because the repo has no `memory-bank.yaml`.\n\nNo Record, in force or retired, covers this question. If you need an answer, check with the billing-service owners or look for a policy elsewhere. Many teams require one service to read another's data through its API, not by direct database access. That is a general practice, not something this memory says.",
       "cited": [],
       "file_recall": 0,
-      "cost_usd": 0.013845100000000003,
+      "cost_usd": 0.0146272,
       "plugin_loaded": true,
       "files_read": []
     },
@@ -191,77 +197,29 @@
       "id": "ms-redis-exception-why",
       "style": "multi-session",
       "correct": true,
-      "answer": "**The rule that normally forbids it:** \"No cross-service DB reads\" (`cA9wE6uJr3`). It's an accepted PolicyRule for the commerce domain. A service there never reads another service's database directly and goes through that service's API or events instead.\n\n**The Record that allows it anyway:** \"order-service may use Redis until 2027-03\" (`wJ3nC7hTy4`). It's an accepted Exception, owned by team:commerce-architecture, and it is `constrained_by` the PolicyRule above. It lets order-service read inventory-service's Redis directly for stock levels despite that rule.\n\nThe Exception is time-limited. It is effective until 2027-03-31 and is due for review by 2027-02-15. After that, order-service should go through inventory-service's API or events.",
+      "answer": "**The rule that forbids it:** \"No cross-service DB reads\" (`cA9wE6uJr3`). It's a PolicyRule for the commerce domain. A service must not read another service's database directly. It has to use that service's API or published events instead.\n\n**The Record that allows it anyway:** the Exception \"order-service may use Redis until 2027-03\" (`wJ3nC7hTy4`). It lets order-service read inventory-service's Redis directly for stock levels. Its `constrained_by` link points back to the policy rule.\n\n- **Expiry:** it is in force until 2027-03-31, with a review due by 2027-02-15. Today is 2026-10-30, so it hasn't expired.\n- **Purpose:** it is meant as a stopgap until inventory publishes a stock-changed event stream.\n- **Scope:** it covers order-service only. Other services still have to go through inventory's API.",
       "cited": [
         "cA9wE6uJr3",
         "wJ3nC7hTy4"
       ],
-      "file_recall": 1,
-      "cost_usd": 0.0154935,
+      "file_recall": 0.5,
+      "cost_usd": 0.0228671,
       "plugin_loaded": true,
       "files_read": [
-        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
-        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
       ]
     },
     {
       "id": "ms-returns-store",
       "style": "multi-session",
-      "correct": false,
-      "answer": "order-service must use **PostgreSQL** for the returns table.\n\n**The rule:** The PolicyRule \"Relational stores use PostgreSQL\" says a service in the commerce domain that needs a relational store runs PostgreSQL, not another engine. The rule is accepted and was last confirmed on 2026-09-01. It is owned by team:commerce-architecture.\n\n**The reasoning:** It comes from the Decision \"Postgres everywhere\". That Decision makes PostgreSQL the relational store for Acme services, for all new and migrated services. It supersedes the earlier Decision \"MySQL for new services\", which is now retired. So MySQL is no longer an option for new tables.\n\n**Limit of this answer:** I could only read the Records' frontmatter, which includes their summaries. I couldn't open the Record bodies, because I couldn't find the Bank files on disk and shell access was denied. If the bodies give further rationale, such as operational or tooling reasons, it isn't covered here. What I've given is the rule and the supersession reasoning.",
+      "correct": true,
+      "answer": "order-service must use **PostgreSQL** for the new returns table.\n\n**Rule:** A service in the commerce domain that needs a relational store runs PostgreSQL, not another engine (PolicyRule `nR5hB2yTq8`, \"Relational stores use PostgreSQL\"). It covers new and migrated services. order-service is a commerce service, so it applies.\n\n**Reasoning:** The Decision \"Postgres everywhere\" (`kQ7vN2xLp4`) gives it. Running two relational engines doubled operational load. Standardizing on one engine means one thing to patch and back up. Existing MySQL services migrate to Postgres on their next major change.\n\n**History:** This Decision replaced the earlier \"MySQL for new services\" Decision (`mB3tR9wZe1`). That one is superseded, so don't follow it.\n\nThe repo's memory has no active Exception that lets order-service use a different relational engine. The Redis Exception (`wJ3nC7hTy4`) only covers reading inventory-service's stock levels. It has nothing to do with the choice of relational engine.",
       "cited": [
         "nR5hB2yTq8",
-        "kQ7vN2xLp4",
-        "mB3tR9wZe1"
+        "kQ7vN2xLp4"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0343078,
-      "plugin_loaded": true,
-      "files_read": [
-        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
-        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
-        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
-        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
-        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
-      ]
-    },
-    {
-      "id": "ms-postgres-shared",
-      "style": "multi-session",
-      "correct": true,
-      "answer": "Keeping order data in PostgreSQL is allowed. Letting fulfillment-service query that database directly is not.\n\n- **Allowed: PostgreSQL for order-service.** Commerce-domain services that need a relational store must run PostgreSQL, and the \"Postgres everywhere\" decision confirms it (`nR5hB2yTq8`, `kQ7vN2xLp4`).\n- **Not allowed: direct reads by fulfillment-service.** The \"No cross-service DB reads\" policy says a commerce-domain service never reads another service's database directly. It has to go through that service's API or events (`cA9wE6uJr3`).\n- **What to do instead.** Order-service already publishes order lifecycle events to the shared message queue instead of calling downstream services directly (`hT5cY8dUa6`). Fulfillment-service can consume those events. It can also call order-service's API.\n\nI found no Exception record in the memory that would carve out fulfillment-service from the cross-service rule.",
-      "cited": [
-        "nR5hB2yTq8",
-        "kQ7vN2xLp4",
-        "cA9wE6uJr3",
-        "hT5cY8dUa6"
-      ],
-      "file_recall": 1,
-      "cost_usd": 0.028055300000000002,
-      "plugin_loaded": true,
-      "files_read": [
-        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
-        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
-        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
-        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
-        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
-        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
-        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
-        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
-      ]
-    },
-    {
-      "id": "ms-events-and-subscribers",
-      "style": "multi-session",
-      "correct": true,
-      "answer": "The org memory only partly answers this. It covers how the events are delivered. It doesn't say which services subscribe or what they have to tolerate.\n\n**How events reach subscribers**\n- Order-service publishes order lifecycle events to the shared message queue. It doesn't call downstream services directly (Decision \"Adopt a message queue for order events\", `hT5cY8dUa6`, accepted 2026-04-22).\n- Order-service owns carts, checkout and order state, and it is the publisher of these events (Context \"order-service overview\", `gN5yD9sMe2`).\n- A commerce-domain service must not read another service's database directly. It goes through that service's API or events (PolicyRule `cA9wE6uJr3`). So the events are the sanctioned way to consume order data.\n- One time-boxed exception exists. Order-service may read inventory-service's Redis for stock levels until 2027-03-31 (`wJ3nC7hTy4`). That is order-service reading inventory data, not a subscriber consuming order events.\n\n**What the memory doesn't say**\n- **Subscribers:** no Record names any service that subscribes to order events.\n- **Tolerances:** no Record covers delivery guarantees, ordering, duplicates, retries, or event schema versioning. That means I can't say what subscribers must tolerate, such as at-least-once delivery or out-of-order events. I'd be guessing if I answered that.\n- **Record bodies:** I could only read each Record's frontmatter (title, summary, metadata). The memory bank files aren't in the repo, and I wasn't permitted to search the filesystem for them. The bodies of `hT5cY8dUa6` and `gN5yD9sMe2` might hold more detail. If you can point me to the bank directory or allow a file search, I'll read them.",
-      "cited": [
-        "hT5cY8dUa6",
-        "gN5yD9sMe2",
-        "cA9wE6uJr3"
-      ],
-      "file_recall": 1,
-      "cost_usd": 0.0578668,
+      "cost_usd": 0.0605012,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
@@ -282,19 +240,76 @@
       ]
     },
     {
+      "id": "ms-postgres-shared",
+      "style": "multi-session",
+      "correct": true,
+      "answer": "**Allowed: keeping order data in PostgreSQL.** Acme's PolicyRule \"Relational stores use PostgreSQL\" (nR5hB2yTq8) says a commerce service that needs a relational store runs PostgreSQL. The \"Postgres everywhere\" decision (kQ7vN2xLp4) says the same and supersedes the older MySQL decision.\n\n**Not allowed: fulfillment-service querying that database directly.** The PolicyRule \"No cross-service DB reads\" (cA9wE6uJr3) says a commerce service never reads another service's database directly. It must go through that service's API or events.\n\nThe memory points to two compliant routes:\n- **Events:** order-service already publishes order lifecycle events to the shared message queue instead of calling downstream services directly (hT5cY8dUa6). Fulfillment-service can consume those.\n- **API:** fulfillment-service can call order-service's API.\n\nThe one exception on file doesn't help here. It lets order-service read inventory-service's Redis until 2027-03-31 (wJ3nC7hTy4). It covers only that service pair, so fulfillment-service gets no waiver for order-service's database.",
+      "cited": [
+        "nR5hB2yTq8",
+        "kQ7vN2xLp4",
+        "cA9wE6uJr3",
+        "hT5cY8dUa6"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0327356,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "ms-events-and-subscribers",
+      "style": "multi-session",
+      "correct": true,
+      "answer": "**Subscribers:** Billing and fulfillment consume order-service's events (gN5yD9sMe2). The memory doesn't name any other subscribers. The decision mentions \"four downstream services\" that order-service used to call synchronously, but it doesn't say which four, or that all of them subscribe now.\n\n**How events reach them:** Order-service publishes order lifecycle events to the shared message queue, and consumers subscribe to it. It no longer calls downstream services directly. That change was made so a slow dependency can't stall checkout (hT5cY8dUa6). The memory doesn't name the queue technology, topics, or event schemas.\n\n**What subscribers must tolerate:** They must handle duplicate events, so their processing has to be idempotent (hT5cY8dUa6). The memory states no other delivery guarantees, such as ordering.\n\nThere's also a related policy. Commerce services never read another service's database directly and go through APIs or events instead (cA9wE6uJr3). It doesn't change the answer here. A time-limited exception lets order-service read inventory-service's Redis until 2027-03-31, but that concerns stock levels, not order events.",
+      "cited": [
+        "hT5cY8dUa6",
+        "gN5yD9sMe2"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.038165399999999995,
+      "plugin_loaded": true,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+      ]
+    },
+    {
       "id": "ms-list-orders-shape",
       "style": "multi-session",
-      "correct": false,
-      "answer": "Org memory only answers the identifier half of your question.\n\n- **Identifier:** Each order carries a ULID, which the service generates. This comes from the accepted Decision \"ULID order identifiers\". It supersedes the earlier per-region counters (record `sQ9dW3nHc6`).\n- **Paging:** I found no Record on how order-service's API pages through results, whether by cursor, offset, or page tokens. Searches for pagination, cursor, and page returned nothing. The order-service overview Record doesn't mention it either. I won't guess at a scheme, so you'll need the API spec or the service's code for that.",
+      "correct": true,
+      "answer": "Per the org memory:\n\n- **Paging:** Clients page with cursors. List endpoints return an opaque next cursor instead of page numbers. This replaced the older offset scheme that used page and size parameters.\n- **Identifier:** Each order carries a ULID that the service generates. This replaced the earlier per-region counters.\n\nI relied on the two decision records' summaries and didn't open the full Record bodies.",
       "cited": [
+        "cR7mT2vKb5",
         "uL5eX1pJd8"
       ],
-      "file_recall": 0.5,
-      "cost_usd": 0.020542499999999998,
+      "file_recall": 1,
+      "cost_usd": 0.021371300000000003,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
         "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
         "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
       ]
@@ -303,26 +318,30 @@
       "id": "ms-billing-data",
       "style": "multi-session",
       "correct": true,
-      "answer": "Org memory covers the checkout-to-billing notification and the rule that limits the return path. It doesn't cover how billing data should come back. I answered from the Records' summaries. I couldn't open the full Record bodies because the bank lives outside this repo.\n\n**Telling billing-service about the new order: publish an event.**\n- The Decision \"Adopt a message queue for order events\" (`hT5cY8dUa6`) says order-service publishes order lifecycle events to the shared message queue instead of calling downstream services directly.\n- At checkout, order-service publishes an \"order created\" event. Billing-service subscribes and reacts on its own. There is no synchronous call chain.\n- The order-service overview (`gN5yD9sMe2`) confirms that order-service owns checkout and order state and publishes order events.\n\n**Getting billing data back: use events or billing-service's API, never its database.**\n- The PolicyRule \"No cross-service DB reads\" (`cA9wE6uJr3`) says a commerce-domain service never reads another service's database directly. It goes through that service's API or events.\n- In practice, billing-service publishes its own events, such as invoice created or payment status changed. Order-service consumes them and keeps whatever it needs in its own store.\n- This fits your \"no shared database\" constraint.\n- The only exception I found (`wJ3nC7hTy4`) lets order-service read inventory-service's Redis until 2027-03-31. It doesn't cover billing, so don't treat it as precedent.\n\n**Gap:** memory doesn't say whether billing data should come back as events or through an API call. If order-service needs a synchronous lookup, the rule allows billing-service's API, but that would reintroduce a call dependency. Events fit your constraint better. The memory also doesn't define billing event names or schemas.",
+      "answer": "**Telling billing-service about the new order**\n\n- Order-service should publish an order lifecycle event, such as order-created, to the shared message queue at checkout. Billing-service subscribes to it. Order-service must not call billing-service directly (hT5cY8dUa6).\n- Checkout then doesn't wait on billing. The decision was made because one slow downstream service was stalling checkout.\n- The decision's stated consequence is that consumers must handle duplicate events. Billing-service should therefore process order events idempotently. The order ID is a service-generated ULID (uL5eX1pJd8), so it can serve as the dedupe key. That use of the ID is my inference. The records don't say so.\n\n**Getting billing data back**\n\n- The memory has no record that says how billing data should flow back, so this part is partly inferred.\n- The no-cross-service-DB-reads rule (cA9wE6uJr3) rules out order-service reading billing-service's database, including through a replica. Each service owns its schema. Order-service has to use billing-service's API or its published events.\n- Because you want to avoid a synchronous call chain, the fit is for billing-service to publish its own events, such as payment-authorized or invoice-issued. Order-service would subscribe to them and keep whatever it needs in its own store.\n- The rule also allows a billing-service API call. I'd keep that off the checkout path and use it only for occasional lookups.\n- The memory doesn't define billing event names or schemas. Those would need a new Record.\n\n**Exception that doesn't apply**\n\nThe Redis exception (wJ3nC7hTy4) covers only order-service reading inventory-service's Redis, until 2027-03-31. It gives no allowance for billing-service data.",
       "cited": [
         "hT5cY8dUa6",
         "cA9wE6uJr3",
-        "gN5yD9sMe2"
+        "uL5eX1pJd8"
       ],
       "file_recall": 1,
-      "cost_usd": 0.043500899999999995,
+      "cost_usd": 0.062461600000000006,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
         "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
         "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
         "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
         "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
         "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
         "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
         "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
         "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
       ]
     },
@@ -330,15 +349,13 @@
       "id": "ms-cart-to-fulfillment",
       "style": "multi-session",
       "correct": true,
-      "answer": "Order-service is the system of record for **carts, checkout, and order state**. The memory doesn't say where a cart becomes an order or where an order becomes a fulfillment.\n\n- **What it owns:** The order-service overview says it \"owns carts, checkout, and order state for Acme commerce and publishes order events\" (gN5yD9sMe2). It also publishes order lifecycle events to the shared message queue instead of calling downstream services directly (hT5cY8dUa6). Fulfillment is not listed among the objects it owns.\n- **Terminology:** The commerce glossary says cart, order, and fulfillment are distinct terms with fixed meanings (xO4bV1cPi0).\n- **Transition points:** I could only see Record summaries and frontmatter. I couldn't open the Record bodies, because the files aren't in the repo and Bash was denied. The glossary body may define the cart → order and order → fulfillment boundaries, but I haven't seen it. The summaries don't state them. The most the memory suggests is that checkout is where a cart becomes an order, and I'd treat that as an inference.\n- **Identifiers:** Orders get service-generated ULIDs (uL5eX1pJd8). That supersedes the older per-region counters (sQ9dW3nHc6).",
+      "answer": "According to the org memory:\n\n- **System of record:** Order-service is the system of record for **carts and orders**. It is not the system of record for fulfillments. Billing and fulfillment consume its events. Order-service publishes order lifecycle events to the shared message queue instead of calling downstream services directly.\n- **Cart to order:** A cart becomes an order at **checkout**.\n- **Order to fulfillment:** An order becomes a fulfillment when **the warehouse accepts it**.\n\nI did not cite the message-queue decision (hT5cY8dUa6) because it only supports the events point.",
       "cited": [
         "gN5yD9sMe2",
-        "hT5cY8dUa6",
-        "xO4bV1cPi0",
-        "uL5eX1pJd8"
+        "xO4bV1cPi0"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0295861,
+      "cost_usd": 0.034976900000000005,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
@@ -353,94 +370,109 @@
       "id": "tm-redis-2027-01-10",
       "style": "temporal",
       "correct": true,
-      "answer": "Yes. On 2027-01-10, order-service may read stock levels directly from inventory-service's Redis, but only under a time-limited exception.\n\n- **The rule:** The PolicyRule \"No cross-service DB reads\" (`cA9wE6uJr3`) says commerce services must not read another service's database directly. They should use that service's API or events instead.\n- **The exception:** The accepted Exception \"order-service may use Redis until 2027-03\" (`wJ3nC7hTy4`) lets order-service read inventory-service's Redis directly for stock levels. It is effective until 2027-03-31, so 2027-01-10 falls inside the window.\n- **Review date:** The exception is due for review by 2027-02-15. That is after your date but before it expires, so it could be revisited or changed then.\n- **After expiry:** From 2027-03-31 the general rule applies again, and order-service would need to use inventory-service's API or events.\n\nI read the exception from its record summary and frontmatter and did not open its body text. The body may contain conditions I haven't seen.",
+      "answer": "Yes. On 2027-01-10, order-service may read stock levels directly from inventory-service's Redis.\n\n- The general rule is \"No cross-service DB reads\" (cA9wE6uJr3). It says commerce services must use another service's API or events, not its database.\n- An accepted Exception (wJ3nC7hTy4) overrides that rule for order-service. It allows direct reads of inventory-service's Redis for stock levels until 2027-03-31.\n- 2027-01-10 falls inside that window. The Exception's review date, 2027-02-15, hasn't passed either.\n- The Exception covers only order-service. Other services still have to go through inventory's API.\n- The Exception says it lasts until inventory publishes a stock-changed event stream. If that stream ships before 2027-03-31, the direct reads should move to it.",
       "cited": [
         "wJ3nC7hTy4",
         "cA9wE6uJr3"
       ],
-      "file_recall": 1,
-      "cost_usd": 0.018195000000000003,
+      "file_recall": 0.5,
+      "cost_usd": 0.0227782,
       "plugin_loaded": true,
       "files_read": [
-        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
-        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
       ]
     },
     {
       "id": "tm-redis-2027-04-15",
       "style": "temporal",
-      "correct": false,
-      "answer": "The frontmatter already answers the question, so I'm relying on that.\n\n**No.** As of 2027-04-15, order-service may not read stock levels directly from inventory-service's Redis, based on what the memory says.\n\n- Exception `wJ3nC7hTy4` (\"order-service may use Redis until 2027-03\") allowed this direct read. It was an exception to the no-cross-service-DB-reads PolicyRule, `cA9wE6uJr3`.\n- The exception's `effective_to` is 2027-03-31, so it lapsed about two weeks before 2027-04-15.\n- Its `review_by` date was 2027-02-15. The memory has no renewal, extension, or superseding Record.\n- With the exception expired, the underlying PolicyRule applies again. I didn't read the rule's text, so I'm relying on the exception's summary for what it says.\n\norder-service should get stock levels through inventory-service's own interface instead. If the team still needs the direct read, they would need a new or extended exception from team:commerce-architecture.\n\nYour question is dated 2027-04-15, but the system date is 2026-10-28. I answered for 2027-04-15 as you asked. If you meant the current date, the exception is still in force until 2027-03-31.",
+      "correct": true,
+      "answer": "No, as of 2027-04-15 order-service may not read stock levels directly from inventory-service's Redis.\n\n- **The exception has lapsed.** The Exception \"order-service may use Redis until 2027-03\" allowed those direct reads, but only through 2027-03-31. That date was two weeks before 2027-04-15, so the exception no longer applies.\n- **The rule is back in force.** The PolicyRule \"No cross-service DB reads\" covers the commerce domain. It says a service must not read another service's database directly, including through a shared connection or a replica read. It requires going through the other service's API or published events. I found nothing in the memory that extends or replaces the exception.\n\nSo order-service should get stock levels from inventory-service's API or events.",
       "cited": [
-        "wJ3nC7hTy4",
         "cA9wE6uJr3"
       ],
-      "file_recall": 0,
-      "cost_usd": 0.0173595,
-      "plugin_loaded": true,
+      "file_recall": 1,
+      "cost_usd": 0.047021,
+      "plugin_loaded": false,
       "files_read": [
-        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+        "<tmp>/ltm-agent-answer-x3e8eg/repo/_working-memory/decisionLog.md",
+        "<tmp>/ltm-agent-answer-x3e8eg/repo/docs/adr/0003-use-ioredis.md",
+        "<tmp>/ltm-agent-answer-x3e8eg/repo/docs/adr/0004-retry-budget.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
       ]
     },
     {
       "id": "tm-redis-deadline-2027-03-20",
       "style": "temporal",
       "correct": true,
-      "answer": "Yes, it's allowed today (2027-03-20), through 2027-03-31.\n\n- The PolicyRule \"No cross-service DB reads\" (cA9wE6uJr3) says commerce services must not read another service's database directly. They must use that service's API or events.\n- The accepted Exception \"order-service may use Redis until 2027-03\" (wJ3nC7hTy4) carves out order-service. It may read inventory-service's Redis directly for stock levels until **2027-03-31**, and the rule is constrained by that exception.\n- The exception's `review_by` date is 2027-02-15, which has already passed. The Record is still `accepted`, so I treat the exception as valid. Commerce-architecture, which owns it, should confirm the review happened.\n- The exception has 11 days left, so the teammate should plan a move to the API or events before 2027-03-31.\n\nI didn't read the Exception's body text, because the file read failed. This answer comes from its frontmatter and summary.",
+      "answer": "Yes, it's allowed as of 2027-03-20, and the permission runs through **2027-03-31**.\n\n- The general rule, \"No cross-service DB reads,\" says commerce services must use another service's API or events. They must not read its database directly.\n- An accepted Exception carves out order-service. It may read stock levels straight from inventory-service's Redis until 2027-03-31, or until inventory publishes a stock-changed event stream.\n- 2027-03-20 is before that end date, so the exception is still in force. That leaves about 11 days.\n- The exception's review date is 2027-02-15, which has already passed. The record is still marked accepted and hasn't been retired, but the owners (team:commerce-architecture) may want to re-confirm it.\n- The exception covers only order-service. Other services still have to go through inventory's API.\n- The teammate should plan to move to the event stream or the API before 2027-03-31. Otherwise they'll need a renewed exception.",
       "cited": [
         "wJ3nC7hTy4",
         "cA9wE6uJr3"
       ],
-      "file_recall": 1,
-      "cost_usd": 0.0231146,
-      "plugin_loaded": true,
-      "files_read": [
-        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
-        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
-      ]
-    },
-    {
-      "id": "tm-stock-path-2027-06-01",
-      "style": "temporal",
-      "correct": false,
-      "answer": "As of 2027-06-01, order-service should get stock levels through inventory-service's API or its events. It should not read inventory-service's Redis directly.\n\n- **Policy:** The \"No cross-service DB reads\" PolicyRule (`cA9wE6uJr3`) applies to the commerce domain. It says a service never reads another service's database directly and goes through that service's API or events. The rule is accepted, and it was last confirmed on 2026-09-01.\n- **Exception has expired:** Exception `wJ3nC7hTy4` let order-service read inventory-service's Redis directly for stock levels. It ran only until 2027-03-31, so it no longer applies on 2027-06-01. That leaves the policy rule as the governing guidance.\n\nI found no Record saying whether to use the API or events, or naming a specific endpoint or topic. The memory doesn't settle that choice.",
-      "cited": [
-        "cA9wE6uJr3",
-        "wJ3nC7hTy4"
-      ],
-      "file_recall": 1,
-      "cost_usd": 0.017289400000000003,
-      "plugin_loaded": true,
-      "files_read": [
-        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
-        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
-      ]
-    },
-    {
-      "id": "tm-review-2027-02-10",
-      "style": "temporal",
-      "correct": true,
-      "answer": "No. As of 2027-02-10 the review date has not passed. The order-service Redis exception (`wJ3nC7hTy4`) has `review_by: 2027-02-15`, which is 5 days later.\n\nThe exception is accepted. It lets order-service read inventory-service's Redis directly for stock levels, despite the no-cross-service-DB-reads PolicyRule (`cA9wE6uJr3`). It stays in effect until `effective_to: 2027-03-31`, and `team:commerce-architecture` owns it.",
-      "cited": [
-        "wJ3nC7hTy4"
-      ],
-      "file_recall": 1,
-      "cost_usd": 0.0147963,
+      "file_recall": 0.5,
+      "cost_usd": 0.023288299999999998,
       "plugin_loaded": true,
       "files_read": [
         "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
       ]
     },
     {
+      "id": "tm-stock-path-2027-06-01",
+      "style": "temporal",
+      "correct": true,
+      "answer": "As of 2027-06-01, order-service should get inventory-service's stock levels through inventory-service's API or its published events. It should not read inventory-service's Redis or any other database directly.\n\n- **Rule in force:** the policy \"No cross-service DB reads\" (`cA9wE6uJr3`) says a commerce-domain service never reads another service's database directly. It must go through that service's API or events, \"never through a shared connection or a replica read.\"\n- **Exception no longer applies:** the exception `wJ3nC7hTy4` let order-service read inventory-service's Redis directly for stock levels. It ran only until 2027-03-31, so it had expired by 2027-06-01. Nothing in the memory extends or replaces it.\n- **Which one the memory prefers:** it doesn't say whether to use the API or events for stock levels. The only related Record, `hT5cY8dUa6`, covers order-service publishing its own order events. It doesn't cover consuming inventory data, so I haven't relied on it.",
+      "cited": [
+        "cA9wE6uJr3"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.056846799999999996,
+      "plugin_loaded": false,
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
+    },
+    {
+      "id": "tm-review-2027-02-10",
+      "style": "temporal",
+      "correct": true,
+      "answer": "No. As of 2027-02-10, the review date for order-service's Redis exception has not passed. The exception (\"order-service may use Redis until 2027-03\", id wJ3nC7hTy4) has `review_by: 2027-02-15`, which is 5 days after that date.\n\nThe exception is accepted and in force. It runs until `effective_to: 2027-03-31`. It lets order-service read inventory-service's Redis directly for stock levels, despite the \"No cross-service DB reads\" PolicyRule (cA9wE6uJr3). That rule is also accepted and in force. The commerce-architecture team owns the exception.\n\nThe review date is the only one at issue here. The exception's expiry is a later date, 2027-03-31.",
+      "cited": [
+        "wJ3nC7hTy4",
+        "cA9wE6uJr3"
+      ],
+      "file_recall": 1,
+      "cost_usd": 0.0432213,
+      "plugin_loaded": false,
+      "files_read": [
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md"
+      ]
+    },
+    {
       "id": "tm-review-2027-02-20",
       "style": "temporal",
       "correct": true,
-      "answer": "Yes. As of 2027-02-20, order-service's Redis exception is 5 days past its review date.\n\nThe Exception \"order-service may use Redis until 2027-03\" has `review_by: 2027-02-15`. It is still accepted and runs until `effective_to: 2027-03-31`. So the exception hasn't expired, but its review is overdue. It lets order-service read inventory-service's Redis directly, despite the no-cross-service-DB-reads PolicyRule.",
+      "answer": "Yes. On 2027-02-20, order-service's Redis exception is 5 days past its review date.\n\nThe exception is \"order-service may use Redis until 2027-03\". Its status is accepted and its `review_by` date is 2027-02-15. It stays in effect until 2027-03-31 (`effective_to`), so the exception is still valid but its review is overdue.\n\nThe exception is `constrained_by` the no-cross-service-DB-reads PolicyRule (`cA9wE6uJr3`). I didn't open that rule, so I'm not citing it.",
       "cited": [
         "wJ3nC7hTy4"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0110834,
+      "cost_usd": 0.018395,
       "plugin_loaded": true,
       "files_read": [
         "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
@@ -450,12 +482,12 @@
       "id": "tm-expiry-window-2026-08-01",
       "style": "temporal",
       "correct": true,
-      "answer": "No. The only accepted Exception that applies to order-service is \"order-service may use Redis until 2027-03\" (`wJ3nC7hTy4`). It lets order-service read inventory-service's Redis directly for stock levels, despite the no-cross-service-DB-reads PolicyRule. Its `effective_to` is 2027-03-31.\n\nSix months from 2026-08-01 ends on 2027-02-01. The expiry is about two months after that, so it falls outside the window. The Exception's `review_by` date, 2027-02-15, is also outside the window.\n\nI searched Exceptions tagged `service:order-service`, including retired ones, and this was the only result. An Exception that applies to order-service without that tag wouldn't have shown up.",
+      "answer": "No. As of 2026-08-01, the window runs to 2027-02-01, and no accepted Exception on order-service expires inside it.\n\nThe only Exception that applies to order-service is \"order-service may use Redis until 2027-03\" (`wJ3nC7hTy4`). It is accepted and lets order-service read inventory-service's Redis directly for stock levels, despite the no-cross-service-DB-reads PolicyRule.\n\n- **Expiry:** its `effective_to` is 2027-03-31, about two months after the window closes.\n- **Review date:** its `review_by` is 2027-02-15, also after the window closes. It would fall inside a seven-month window, but that isn't what you asked.",
       "cited": [
         "wJ3nC7hTy4"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0138558,
+      "cost_usd": 0.0141139,
       "plugin_loaded": true,
       "files_read": [
         "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
@@ -464,15 +496,14 @@
     {
       "id": "ku-mysql-default",
       "style": "knowledge-update",
-      "correct": false,
-      "answer": "No, MySQL is no longer the default for a new commerce service. PostgreSQL replaced it.\n\n- **The old decision:** \"MySQL for new services\" (2024-05-14) is marked `superseded`.\n- **What replaced it:** The \"Postgres everywhere\" decision (2026-02-10) is accepted and was last confirmed 2026-09-01. It says Acme services use PostgreSQL as their relational store. It supersedes the MySQL decision for all new and migrated services.\n- **Policy rule:** \"Relational stores use PostgreSQL\" is accepted. A commerce-domain service that needs a relational store must run PostgreSQL, not another engine.\n\nI found no exception to the Postgres rule. The only exception in memory is for order-service reading Redis, and it concerns a different policy.",
+      "correct": true,
+      "answer": "No, MySQL is no longer the default for a new commerce service. PostgreSQL replaced it.\n\n- **Old decision:** \"MySQL for new services\" (`mB3tR9wZe1`, May 2024) is marked superseded.\n- **Replacement decision:** \"Postgres everywhere\" (`kQ7vN2xLp4`, accepted 2026-02-10, last confirmed 2026-09-01) says Acme services use PostgreSQL as their relational store. It explicitly supersedes the MySQL decision for all new and migrated services.\n- **Policy rule:** \"Relational stores use PostgreSQL\" (`nR5hB2yTq8`) says a commerce-domain service that needs a relational store runs PostgreSQL, not another engine. That makes it a requirement for a new commerce service, not just a default.\n\nI found no exception to the Postgres rule in the memory.",
       "cited": [
         "kQ7vN2xLp4",
-        "nR5hB2yTq8",
-        "mB3tR9wZe1"
+        "nR5hB2yTq8"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0322862,
+      "cost_usd": 0.0326688,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
@@ -495,16 +526,14 @@
     {
       "id": "ku-mysql-migration",
       "style": "knowledge-update",
-      "correct": false,
-      "answer": "When order-service gets its major change, its database should move from MySQL to PostgreSQL.\n\n- **The MySQL decision is retired.** \"MySQL for new services\" (mB3tR9wZe1, 2024) was the default when order-service was built. It is now superseded.\n- **Postgres replaces it.** \"Postgres everywhere\" (kQ7vN2xLp4, accepted 2026-02-10 and last confirmed 2026-09-01) says Acme services use PostgreSQL as their relational store. It covers \"all new and migrated services\", so a service that gets a major change is a migration case.\n- **A policy rule backs this up.** \"Relational stores use PostgreSQL\" (nR5hB2yTq8) says a commerce-domain service that needs a relational store runs PostgreSQL, not another engine. Order-service is in the commerce domain, so the rule applies to it.\n- **Other rules still apply during the migration.** \"No cross-service DB reads\" (cA9wE6uJr3) says commerce services never read another service's database directly. They use that service's API or events.\n\nThe memory doesn't say when to migrate, how to do it, or whether an exception is allowed. The \"migrated services\" wording suggests the major change is the trigger, but that is my reading. I found no migration runbook or exception record for order-service.",
+      "correct": true,
+      "answer": "The order-service database moves from MySQL to PostgreSQL as part of that major change.\n\n- **Current rule:** The \"Postgres everywhere\" decision (accepted 2026-02-10, reconfirmed 2026-09-01) says every Acme service that needs a relational store uses PostgreSQL. It states that \"Existing MySQL services migrate on their next major change.\" So the major change is the trigger for the migration.\n- **Policy:** The PolicyRule \"Relational stores use PostgreSQL\" backs this up. A commerce-domain service that needs a relational store runs PostgreSQL, not another engine, and that covers new and migrated services. Order-service is in the commerce domain, so the rule applies to it. Planning the major change without a migration would conflict with this rule.\n- **History:** The earlier \"MySQL for new services\" decision (2024) is superseded, so it no longer protects the MySQL setup. The memory has no exception that lets order-service keep MySQL. The only order-service exception covers Redis reads of inventory-service stock levels, which is a different matter.\n\nThe memory doesn't say when the migration must finish within the change, or how to carry it out.",
       "cited": [
         "kQ7vN2xLp4",
-        "mB3tR9wZe1",
-        "nR5hB2yTq8",
-        "cA9wE6uJr3"
+        "nR5hB2yTq8"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0444849,
+      "cost_usd": 0.0457602,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
@@ -517,6 +546,7 @@
         "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
         "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
         "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
         "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
         "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
         "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
@@ -526,74 +556,93 @@
     {
       "id": "ku-page-size",
       "style": "knowledge-update",
-      "correct": false,
-      "answer": "No. Under the current decision, a client shouldn't fetch order-service's second page with `page` and `size` parameters.\n\n- **Current rule:** The accepted Decision \"Cursor pagination for list endpoints\" (2026-03-18) applies to order-service. It says list endpoints return an opaque next cursor instead of page numbers.\n- **Second page:** The client fetches the first page. It then sends the cursor from that response back to get the next page. It doesn't ask for \"page 2\" by number.\n- **Old rule:** The earlier Decision \"Offset pagination for list endpoints\" (2024-08-06) specified `page` and `size`. It is marked superseded by the cursor decision.\n\nI only read the Records' summaries and metadata, because I couldn't open the full Record bodies. So I can't tell you the exact cursor and limit parameter names or the response field name. Check the full Record or the API spec for those.",
+      "correct": true,
+      "answer": "No. Page and size parameters are the old approach. The org's current decision, \"Cursor pagination for list endpoints\", replaced offset pagination for order-service and the commerce domain.\n\nA client should get the second page like this:\n- Request the first page of the order list.\n- Read the opaque next cursor from that response.\n- Send that cursor back in the request for the next page.\n\nThe client shouldn't build page numbers or compute offsets itself. The memory doesn't give the cursor's query parameter name or the response field name, so check order-service's API spec for those.",
       "cited": [
-        "cR7mT2vKb5",
-        "oP4gN8zYa3"
+        "cR7mT2vKb5"
       ],
       "file_recall": 1,
-      "cost_usd": 0.019804099999999998,
+      "cost_usd": 0.0313082,
       "plugin_loaded": true,
       "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
         "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
-        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md"
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
       ]
     },
     {
       "id": "ku-page-numbers",
       "style": "knowledge-update",
-      "correct": false,
-      "answer": "No, the order-service list endpoint no longer uses page numbers.\n\n- **Current rule:** The accepted Decision \"Cursor pagination for list endpoints\" (2026-03-18) says list endpoints return an opaque next cursor instead of page numbers. It applies to `service:order-service` and `domain:commerce` and is owned by team:commerce-architecture.\n- **What it replaced:** An earlier Decision from 2024-08-06 had list endpoints paginate with `page` and `size` parameters. It is now marked superseded by the cursor Decision.\n\nI couldn't open the Decision's body, so I can't give the reasoning behind the change. The Bank files aren't readable from this repo, and the metadata only states what changed, not why. Any rationale you've heard, such as consistency under inserts or performance on deep pages, isn't confirmed by this memory.",
+      "correct": true,
+      "answer": "No. Order-service's list endpoint no longer uses page numbers. It returns an opaque cursor with each list response, and the client sends that cursor on the next call.\n\nThe org memory gives two reasons for the change. With offset pages, results drifted as new orders arrived. Offset pages also got slow on deep pages.\n\nCursor pagination was accepted on 2026-03-18. It replaced the earlier offset decision from 2024-08, which used `page` and `size` parameters. Page numbers are gone from the API, and existing clients move to cursors on their next release.",
       "cited": [
-        "cR7mT2vKb5",
-        "oP4gN8zYa3"
+        "cR7mT2vKb5"
       ],
       "file_recall": 1,
-      "cost_usd": 0.023272,
+      "cost_usd": 0.0392241,
       "plugin_loaded": true,
       "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
         "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
-        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md"
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
       ]
     },
     {
       "id": "ku-new-order-id",
       "style": "knowledge-update",
-      "correct": false,
-      "answer": "Order-service generates a ULID for each new order. The service creates it itself, so it doesn't come from a database sequence or another service. This comes from the accepted Decision \"ULID order identifiers\" (accepted 2026-05-27).\n\nThat Decision replaced an older one, \"Sequential order numbers\" (2024-09-12), which numbered orders with a per-region counter. The older Decision is now marked superseded, so the counter scheme no longer applies.\n\nThe records give only the summary-level claim. I read their summaries and didn't open the full bodies, so I can't say how or where in the code the ULID is generated.",
+      "correct": true,
+      "answer": "Order-service generates a ULID for each order at the moment the order is created. The service does this itself, so no outside coordination is needed. ULIDs sort by creation time, and support looks orders up by a short suffix of the ULID.\n\nEarlier, orders were numbered with a per-region counter. That approach is superseded. The counter needed a coordinated writer and leaked order volume, so the ULID decision replaced it (accepted 2026-05-27).",
       "cited": [
-        "uL5eX1pJd8",
-        "sQ9dW3nHc6"
+        "uL5eX1pJd8"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0200474,
+      "cost_usd": 0.0193094,
       "plugin_loaded": true,
       "files_read": [
-        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
-        "_memory/context/order-service-overview-gN5yD9sMe2.md",
-        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
         "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
-        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
-        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md"
       ]
     },
     {
       "id": "ku-ids-repeat",
       "style": "knowledge-update",
-      "correct": false,
-      "answer": "Going by the memory's summaries, probably not. I couldn't read the full body of the ULID Record (the shell was denied), so the memory doesn't state the uniqueness guarantee outright.\n\n- **Current rule:** Order-service gives each order a ULID that the service generates (accepted Decision, 2026-05-27). It replaced per-region counters. ULIDs aren't tied to a region, so they aren't numbered per region.\n- **Old scheme:** Under the earlier \"Sequential order numbers\" Decision (2024-09-12, now superseded), each region kept its own counter. Orders in different regions could then share a number, so that scheme could collide. It no longer applies.\n- **What's missing:** The summaries don't spell out the collision guarantee. The \"no collisions across regions\" conclusion rests on ULIDs being globally unique by design, which is general knowledge and not something the memory states. Orders created before the switch may still carry the old per-region numbers. The memory doesn't say whether they were migrated.",
+      "correct": true,
+      "answer": "Under the current memory, no: two orders in different regions should not end up with the same identifier.\n\nThe accepted Decision \"ULID order identifiers\" (2026-05-27) says the service generates a ULID for each order. It replaces the earlier scheme of per-region sequential counters. Per-region counters could collide across regions, because each region counted separately. ULIDs don't depend on a region-scoped counter.\n\nI only read the Decision's summary, because the full-record read failed. I'm taking collision resistance across regions from ULIDs being globally unique by design, not from anything the Decision states about regions. Orders created before the switch may still carry per-region numbers. The memory doesn't say whether those were migrated.",
       "cited": [
-        "uL5eX1pJd8",
-        "sQ9dW3nHc6"
+        "uL5eX1pJd8"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0254418,
+      "cost_usd": 0.0236252,
       "plugin_loaded": true,
       "files_read": [
-        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
         "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
         "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
         "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
@@ -602,32 +651,40 @@
     {
       "id": "ku-support-lookup",
       "style": "knowledge-update",
-      "correct": false,
-      "answer": "No. The per-region order number is out of date.\n\n- **Old scheme:** Orders were numbered with a per-region counter (sQ9dW3nHc6, decided 2024-09-12). That decision is now marked superseded.\n- **Current scheme:** Orders get ULIDs generated by order-service, which replaced the per-region counters (uL5eX1pJd8, accepted 2026-05-27).\n\nSupport staff should therefore expect to look orders up by ULID order identifier. The memory doesn't describe the support lookup workflow itself, such as which tool they use or whether older counter-based numbers are still searchable for existing orders. It only covers how orders are identified.",
+      "correct": true,
+      "answer": "No. Per-region order numbers are the old scheme. Org memory says orders now get ULIDs generated by order-service (\"ULID order identifiers\"). That decision supersedes \"Sequential order numbers\", the per-region counter decision. So support staff should look orders up by the ULID order identifier.\n\nThe memory doesn't say anything about the support tooling or lookup workflow. It only covers the identifier scheme.",
       "cited": [
-        "uL5eX1pJd8",
-        "sQ9dW3nHc6"
+        "uL5eX1pJd8"
       ],
       "file_recall": 1,
-      "cost_usd": 0.0201485,
+      "cost_usd": 0.029400999999999997,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
         "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
         "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
-        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
       ]
     },
     {
       "id": "ab-rate-limits",
       "style": "abstention",
       "correct": true,
-      "answer": "The org memory doesn't say what rate limits order-service applies to its public API. I searched for \"rate limit\" across all Records, including retired ones, and got no matches. I also listed every Record tagged `service:order-service`. None of them covers rate limiting, throttling, or quotas.\n\nThe order-service Records cover other topics:\n- **Service overview:** it owns carts, checkout, and order state.\n- **Order events:** it publishes them to the shared message queue.\n- **Pagination:** list endpoints use cursor pagination.\n- **Order identifiers:** orders get ULIDs.\n- **Redis exception:** it may read inventory-service's Redis directly until 2027-03-31.\n\nThe actual limits may be in the service's code, its API gateway config, or its docs. I didn't look there.",
+      "answer": "The org memory doesn't say what rate limits order-service applies to its public API. I searched for \"rate limit\" across all Records, including retired ones, and got no results. I also listed every Record tagged `service:order-service`. Those cover:\n\n- the service overview\n- the message queue for order events\n- cursor pagination for list endpoints\n- ULID order identifiers\n- a temporary Redis exception\n\nNone of them mention rate limiting or throttling.",
       "cited": [],
       "file_recall": null,
-      "cost_usd": 0.0235572,
+      "cost_usd": 0.022601700000000002,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
@@ -643,28 +700,48 @@
       "id": "ab-latency-slo",
       "style": "abstention",
       "correct": true,
-      "answer": "The org memory doesn't cover this. I searched for \"order-service checkout p99 latency SLO\" and for \"latency\" with retired Records included, and both returned no Records. The `facets` call also failed because there's no `memory-bank.yaml` in this repo or any parent directory. I don't have a p99 figure to give you, and I won't guess one.",
+      "answer": "The org memory doesn't say what order-service's p99 latency SLO for checkout is. I listed every Record in the bank, and none sets a latency target or any other SLO. The closest is the \"order-service overview\" Record, which only says order-service owns carts, checkout, and order state. I'd rather not guess a number, so you'd need to check the service's SLO docs or ask the owning team, `team:commerce-architecture`.",
       "cited": [],
       "file_recall": null,
-      "cost_usd": 0.011770699999999999,
+      "cost_usd": 0.031034600000000002,
       "plugin_loaded": true,
-      "files_read": []
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
     },
     {
       "id": "ab-order-retention",
       "style": "abstention",
       "correct": true,
-      "answer": "The org memory doesn't say how long order-service must keep completed order records for compliance. I searched for retention and compliance terms, then checked every order-service record and every PolicyRule, including retired ones. None of them sets a retention period.\n\nThe nearest records don't cover it:\n- The order-service overview says the service owns carts, checkout, and order state.\n- The accepted PolicyRules cover cross-service DB reads, PostgreSQL for relational stores, and JSON logging. None of them mentions retention.\n\nYou'd need to ask whoever owns compliance or legal, or the commerce-architecture team. If the answer turns up, it should be recorded as a PolicyRule.",
+      "answer": "The org memory doesn't say how long order-service must retain completed order records. I searched every Record in the bank, including retired ones. None sets a retention period, a compliance rule, or an archival requirement for order data.\n\nThe closest Records are the order-service overview and the ULID order identifiers decision. Both cover order state and identifiers, not retention. I'm not going to guess a period from outside the memory. To get an answer, ask the compliance or legal owners, or have a retention PolicyRule added to the bank.",
       "cited": [],
       "file_recall": null,
-      "cost_usd": 0.0335254,
+      "cost_usd": 0.031236,
       "plugin_loaded": true,
       "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
         "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
         "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
         "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
         "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
         "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
         "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
@@ -677,10 +754,10 @@
       "id": "ab-on-call",
       "style": "abstention",
       "correct": true,
-      "answer": "Org memory doesn't say who is on call for order-service or what the paging escalation path is.\n\nI searched the bank for \"order-service on call paging escalation\", \"order-service\" (including retired records) and \"on-call\". Only the last two found anything. The \"order-service\" search returned four records, none about on-call or paging:\n- **gN5yD9sMe2** is an overview of what order-service owns: carts, checkout, order state and order events.\n- **wJ3nC7hTy4** is an exception letting order-service read inventory-service's Redis until 2027-03-31.\n- **hT5cY8dUa6** is a decision to publish order events to the shared message queue.\n- **uL5eX1pJd8** is a decision to use ULID order identifiers.\n\nThe only ownership information is that `team:commerce-architecture` owns these records. That is record ownership, not an on-call rotation, and I wouldn't treat it as the paging contact.\n\nFor the current on-call and escalation path, check your paging tool (PagerDuty, Opsgenie or similar) or the team runbook. If you want this in org memory, someone could propose a Context record for it.",
+      "answer": "I couldn't answer this from the org memory. It has no Record on who is on call for order-service or on the paging escalation path. The \"on-call\" query returned nothing. The order-service Records cover other topics:\n\n- The service overview.\n- The decision to publish order events to a message queue.\n- The decision to use ULID order identifiers.\n- An exception allowing direct Redis reads until 2027-03-31.\n\nThe overview Record lists `team:commerce-architecture` as the owner. That's ownership of the Record, not an on-call rotation or an escalation path, so I haven't treated it as the answer. For the current on-call, check your paging tool (PagerDuty, Opsgenie or similar) or the team runbook.",
       "cited": [],
       "file_recall": null,
-      "cost_usd": 0.0209024,
+      "cost_usd": 0.0196929,
       "plugin_loaded": true,
       "files_read": [
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
@@ -693,46 +770,81 @@
       "id": "ab-service-auth",
       "style": "abstention",
       "correct": true,
-      "answer": "Org memory doesn't cover this. I searched the Acme bank for service-to-service authentication and for everything tagged `service:order-service`, retired Records included. Nothing mentions mTLS, JWTs, or any other way services authenticate to each other.\n\nThe order-service Records I found cover other topics:\n- Its overview.\n- Publishing order events through a message queue instead of calling downstream services directly.\n- Cursor pagination, which replaced offset pagination.\n- ULID order identifiers, which replaced per-region counters.\n- A temporary exception allowing direct reads of inventory-service's Redis until 2027-03-31.\n\nThe queue decision (hT5cY8dUa6) means order-service makes fewer direct service-to-service calls. It doesn't say how any remaining calls should authenticate.\n\nI'd treat this as an open decision rather than guess. If you want one, I can draft a Decision Record proposal once the team picks an approach.",
+      "answer": "The org memory doesn't say how order-service should authenticate its calls to other internal services. I searched every Record in the bank, and none covers mTLS, JWTs or any other service-to-service authentication scheme. Any recommendation I gave would come from general practice, not from your org's decisions.\n\nTwo Records are nearby but don't answer the question:\n- **Message queue for order events (`hT5cY8dUa6`):** order-service publishes order events to the shared queue instead of calling downstream services directly. This may limit how many direct calls need authenticating, but it says nothing about how.\n- **No cross-service DB reads (`cA9wE6uJr3`):** commerce services go through another service's API or events. That means authenticated API calls are expected, but the Record doesn't say which mechanism.\n\nIf you need a decision, it's worth raising with `team:commerce-architecture`, which owns these Records. I can also draft a Decision Record proposal once you've picked an approach.",
       "cited": [],
       "file_recall": null,
-      "cost_usd": 0.0242418,
+      "cost_usd": 0.0339217,
       "plugin_loaded": true,
       "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
         "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
         "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
         "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
         "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
-        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
       ]
     },
     {
       "id": "ab-currency-rounding",
       "style": "abstention",
       "correct": true,
-      "answer": "The org memory doesn't cover this. I searched it for \"rounding\" and for order-service total rounding in currencies with no minor unit. Neither search returned any Records, including retired ones. The repo also has no `memory-bank.yaml`, so I couldn't list facets to look elsewhere. I won't guess at a rule.",
+      "answer": "The org memory doesn't say. I checked every Record in the `acme` bank, including retired ones. None of them covers a rounding rule for order totals, and none mentions currencies with no minor unit. The nearest Record is the order-service overview. It says only that the service owns carts, checkout, and order state, and it says nothing about rounding.",
       "cited": [],
       "file_recall": null,
-      "cost_usd": 0.0116365,
+      "cost_usd": 0.0334754,
       "plugin_loaded": true,
-      "files_read": []
+      "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
+        "_memory/context/order-service-overview-gN5yD9sMe2.md",
+        "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
+        "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
+      ]
     },
     {
       "id": "ab-api-versioning",
       "style": "abstention",
       "correct": true,
-      "answer": "The org memory doesn't say how order-service versions its public HTTP API, whether in the URL path or in a header. I searched for versioning, API, URL path and header terms, and none of those searches returned a Record.\n\nThe Records that mention order-service cover other topics:\n- Its overview: it owns carts, checkout and order state.\n- Publishing order events to a message queue.\n- ULID order identifiers.\n- A temporary exception allowing direct reads of inventory-service's Redis.\n\nTo settle the question, check the service's code or its API docs.",
+      "answer": "The org memory doesn't say how order-service versions its public HTTP API, whether in the URL path or in a header. I searched all Records, including retired ones, and none covers API versioning.\n\nThe closest Records are about other API conventions, such as cursor pagination for list endpoints. None of them mentions versioning, so I won't guess from them.",
       "cited": [],
       "file_recall": null,
-      "cost_usd": 0.0219688,
+      "cost_usd": 0.0331072,
       "plugin_loaded": true,
       "files_read": [
+        "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
         "_memory/context/order-service-overview-gN5yD9sMe2.md",
         "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
+        "_memory/decisions/cursor-pagination-for-list-endpoints-cR7mT2vKb5.md",
+        "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md",
+        "_memory/decisions/offset-pagination-for-list-endpoints-oP4gN8zYa3.md",
+        "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+        "_memory/decisions/sequential-order-numbers-sQ9dW3nHc6.md",
+        "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md",
         "_memory/decisions/ulid-order-identifiers-uL5eX1pJd8.md",
-        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md"
+        "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md",
+        "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md",
+        "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+        "_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md",
+        "_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md"
       ]
     }
   ]
