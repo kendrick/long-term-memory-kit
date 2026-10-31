@@ -466,6 +466,53 @@ describe("ltm mcp, a refresh that moves an id mid-request", () => {
   );
 });
 
+describe("ltm mcp, an id request the Bank files fail", () => {
+  afterEach(() => mock.restore());
+
+  // The window a `git merge --ff-only` opens: worktree files change before the ref moves, so HEAD holds still over bytes that belong to the next commit.
+  for (const tool of ["head", "read"]) {
+    test(
+      `${tool} by id errors rather than return another Record's bytes while HEAD has not moved`,
+      () =>
+        withDemoGitBank((bank) =>
+          inProcess(bank, async (client) => {
+            const seed = head(bank);
+            // Every attempt sees the pre-overwrite list, as it would if the ref kept lagging the files for all 3 reads.
+            const real = query.listRecords;
+            let stale: ReturnType<typeof real> | undefined;
+            spyOn(query, "listRecords").mockImplementation((config, onSkip) => {
+              if (stale === undefined) {
+                stale = real(config, onSkip);
+                writeFileSync(join(bank, POSTGRES), readFileSync(join(bank, OVERVIEW)));
+              }
+              return stale;
+            });
+            const r = await call(client, tool, { id: "kQ7vN2xLp4" });
+            expect(head(bank)).toBe(seed);
+            expect(r.isError).toBe(true);
+            expect(textOf(r)).toContain("the Bank moved during each of 3 reads; try again");
+          }),
+        ),
+      MCP_TEST_TIMEOUT,
+    );
+
+    test(
+      `${tool} by id reports a broken memory-bank.yaml the way the CLI does`,
+      () =>
+        withDemoGitBank((bank) =>
+          inProcess(bank, async (client) => {
+            // Valid when the server picks the Bank at startup, broken by the time relOf loads it.
+            writeFileSync(join(bank, "memory-bank.yaml"), "bank: [unclosed\n");
+            const r = await call(client, tool, { id: "kQ7vN2xLp4" });
+            expect(r.isError).toBe(true);
+            expect(textOf(r)).toStartWith(`ltm ${tool}: ${join(bank, "memory-bank.yaml")}`);
+          }),
+        ),
+      MCP_TEST_TIMEOUT,
+    );
+  }
+});
+
 describe("ltm mcp, id refusals", () => {
   for (const tool of ["head", "read"]) {
     test(

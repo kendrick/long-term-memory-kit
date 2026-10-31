@@ -3,11 +3,13 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
+import { parse } from "yaml";
 import { z } from "zod";
 import pkg from "../../package.json" with { type: "json" };
 import recordSchema from "../../schema/record.schema.json" with { type: "json" };
 import { ConfigError, findBank, isInside, loadConfig } from "../core/bank.ts";
 import { listRecords } from "../core/query.ts";
+import { splitFrontmatter } from "../core/record.ts";
 import { resolveBankFlag, resolveBanks, type Env } from "../core/resolve.ts";
 import { configErrorLine, noBankLine } from "../cli/bank.ts";
 import { run } from "../cli/run.ts";
@@ -53,12 +55,17 @@ export function createServer(env: Env, cwd: string): McpServer {
   const cli = (argv: string[], at: string) => run({ argv, cwd: at, env });
 
   // Another request's refresh can fast-forward the clone mid-read. A read counts only when HEAD held still across it, so bank_commits names the commit the data came from.
-  const pinned = async <R>(roots: () => Named[], read: () => Promise<R>): Promise<{ out: R; commits: Record<string, string | null> } | CallToolResult> => {
+  // `accept` also vets the output: `git merge --ff-only` rewrites worktree files before it moves the ref, so HEAD can hold still while the bytes are already the next commit's.
+  const pinned = async <R>(
+    roots: () => Named[],
+    read: () => Promise<R>,
+    accept: (out: R) => boolean = () => true,
+  ): Promise<{ out: R; commits: Record<string, string | null> } | CallToolResult> => {
     for (let tries = 0; tries < 3; tries++) {
       const before = bankCommits(roots());
       const out = await read();
       const commits = bankCommits(roots());
-      if (isDeepStrictEqual(before, commits)) return { out, commits };
+      if (isDeepStrictEqual(before, commits) && accept(out)) return { out, commits };
     }
     return fail("the Bank moved during each of 3 reads; try again");
   };
@@ -166,6 +173,16 @@ export function createServer(env: Env, cwd: string): McpServer {
     return held[0] as string;
   };
 
+  const frontmatterId = (text: string): unknown => {
+    const split = splitFrontmatter(text);
+    if (split === null) return undefined;
+    try {
+      return (parse(split.frontmatterLines.join("\n"), { logLevel: "error" }) as { id?: unknown } | null)?.id;
+    } catch {
+      return undefined;
+    }
+  };
+
   server.registerTool(
     "head",
     {
@@ -183,7 +200,7 @@ export function createServer(env: Env, cwd: string): McpServer {
       const read = await pinned(() => [namedRoot(root)], async () => {
         const rel = "id" in at ? relOf("head", root, at.id) : at.rel;
         return typeof rel === "string" ? { rel, r: await cli(["head", "--", rel], realRoot) } : rel;
-      });
+      }, (out) => !("id" in at) || "content" in out || out.r.stdout === "" || frontmatterId(out.r.stdout) === at.id);
       if ("content" in read) return read;
       if ("content" in read.out) return read.out;
       const { rel, r } = read.out;
@@ -251,7 +268,7 @@ export function createServer(env: Env, cwd: string): McpServer {
         } finally {
           closeSync(fd);
         }
-      });
+      }, (out) => !("id" in at) || "content" in out || frontmatterId(out.text) === at.id);
       if ("content" in read) return read;
       if ("content" in read.out) return read.out;
       const { rel, text } = read.out;
