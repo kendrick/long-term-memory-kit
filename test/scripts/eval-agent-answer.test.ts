@@ -256,7 +256,7 @@ describe("instruction and tool allowlist", () => {
       "Answer from this repo's org memory. End with a last line `CITED: <id>, <id>` listing only the Records in force that your answer relies on, or `CITED: NONE` if the memory doesn't cover it. Leave off a superseded or expired Record, even when your answer mentions it as history.",
     );
   });
-  test("ALLOWED_TOOLS is the exact read-only list", () => {
+  test("ALLOWED_TOOLS is the exact allowlist", () => {
     expect(ALLOWED_TOOLS).toBe("Read,Glob,Grep,Bash(ltm *),Bash(cat *),Bash(head *),Bash(cd *),mcp__plugin_ltm_ltm__*");
   });
   test("the spawn argv carries ALLOWED_TOOLS right after --allowedTools", () => {
