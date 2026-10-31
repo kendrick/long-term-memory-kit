@@ -145,7 +145,7 @@ export function scoreAnswer(q: Question, t: Transcript): Score {
 export const INSTRUCTION =
   "Answer from this repo's org memory. End with a last line `CITED: <id>, <id>` listing only the Records in force that your answer relies on, or `CITED: NONE` if the memory doesn't cover it. Leave off a superseded or expired Record, even when your answer mentions it as history.";
 
-// query-memory teaches `head -n 20 <path>` and `cd <bank-root> && ltm head <path>`, and Claude Code checks each `&&` segment against these rules on its own, so `cd` needs its own entry. Keep the list read-only, since dontAsk mode runs anything it matches without asking.
+// query-memory teaches `head -n 20 <path>` and `cd <bank-root> && ltm head <path>`, and Claude Code checks each `&&` segment against these rules on its own, so `cd` needs its own entry. Add nothing that writes, since dontAsk mode runs anything it matches without asking. `Bash(ltm *)` already reaches ltm's writers, but only against the staged Bank copy.
 export const ALLOWED_TOOLS = "Read,Glob,Grep,Bash(ltm *),Bash(cat *),Bash(head *),Bash(cd *),mcp__plugin_ltm_ltm__*";
 
 type Init = {
