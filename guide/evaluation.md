@@ -177,7 +177,7 @@ The runner doesn't pass `--strict-mcp-config` or `--bare`. Both drop a `--plugin
 
 ### Cost
 
-A full run is 35 headless runs plus the probe. The baseline cost $0.93 at list price: $0.89 for the questions and $0.04 for the probe. The runner caps each run at $0.50 and stops starting new questions once the total passes $15, marking the result `stopped_for_budget` and `partial`. A run that ends without a result event, because it crashed or was killed, never reports its cost. The runner counts it as the full $0.50 toward the $15 limit and prints a warning that names the question.
+A full run is 35 headless runs plus the probe. The baseline cost $1.17 at list price: $1.15 for the questions and $0.02 for the probe. The runner caps each run at $0.50 and stops starting new questions once the total passes $15, marking the result `stopped_for_budget` and `partial`. A run that ends without a result event, because it crashed or was killed, never reports its cost. The runner counts it as the full $0.50 toward the $15 limit and prints a warning that names the question.
 
 ### Read the Results
 
@@ -195,17 +195,17 @@ The runner writes `evals/results/<version>/agent-answer.json`. Unlike `bench.jso
 
 `answer` is the reply without its `CITED:` line. `cited` is `null` when the reply had no `CITED:` line and `[]` for `CITED: NONE`. `file_recall` is `null` for abstention questions, which have no gold files, and the aggregate averages only the questions that have gold files. `cost_usd` is `null` for a run that ended without a result event, because its cost is unknown. `total_cost_usd` leaves those runs out. `plugin_loaded` is false when a run's init event shows a plugin problem.
 
-The 0.0.0 baseline ran on `claude-sonnet-5-5` and CLI 2.1.311. It answered 22 of 35 questions correctly (63%), with 91% file recall.
+The 0.0.0 baseline ran on `claude-sonnet-5-5` and CLI 2.1.311. It answered 33 of 35 questions correctly (94%), with 88% file recall.
 
 | Style | Correct | File recall |
 | :- | :- | :- |
-| single-hop | 5/7 | 86% |
-| multi-session | 5/7 | 93% |
-| temporal | 5/7 | 86% |
-| knowledge-update | 0/7 | 100% |
+| single-hop | 5/7 | 71% |
+| multi-session | 7/7 | 93% |
+| temporal | 7/7 | 86% |
+| knowledge-update | 7/7 | 100% |
 | abstention | 7/7 | n/a |
 
-The knowledge-update score is the one to read closely. In all seven answers the agent found the current Record and cited the superseded one beside it, which the scorer counts as wrong. The two temporal questions dated after Exception `wJ3nC7hTy4` expired on 2027-03-31 scored wrong the same way. Both answers said the Exception had lapsed, then cited it beside the PolicyRule. Two single-hop answers cited nothing. In `sh-fulfillment-term` the right Record was in the query results, which counts toward file recall, but the answer said the agent saw only the Record's summary and not its body. In `sh-billing-db-read` the agent said all three of its queries returned no Records, so it read no files and scored 0 file recall. Model output varies between runs, so treat a single run as a rough reading.
+Both misses are single-hop questions where the agent cited nothing and scored 0 file recall. In `sh-event-subscribers` the agent said its query for order-service events and consumers returned nothing, and that the repo has no `memory-bank.yaml`, so it had no Records to read. It named no consumer. In `sh-billing-db-read` the agent ran three queries, said all three came back empty, and said it couldn't list the Bank's facets for the same missing `memory-bank.yaml`. It answered that no Record covers the question. Model output varies between runs, so treat a single run as a rough reading.
 
 ### In the Release Workflow
 
