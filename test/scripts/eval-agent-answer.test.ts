@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { aggregate, ALLOWED_TOOLS, authProblem, claudeArgs, extractAnswer, INSTRUCTION, parseCli, probeProblems, RUN_BUDGET_USD, runCost, scoreAnswer, spawnOutput, type Question, type Row } from "../../scripts/eval-agent-answer.ts";
+import { aggregate, ALLOWED_TOOLS, authProblem, claudeArgs, extractAnswer, INSTRUCTION, parseCli, probeProblems, RUN_BUDGET_USD, runClaude, runCost, scoreAnswer, spawnOutput, type Question, type Row } from "../../scripts/eval-agent-answer.ts";
 import { loadConfig } from "../../src/core/bank.ts";
 import { listRecords } from "../../src/core/query.ts";
 
@@ -263,5 +263,20 @@ describe("instruction and tool allowlist", () => {
     const args = claudeArgs("q?");
     expect(args[args.indexOf("--allowedTools") + 1]).toBe(ALLOWED_TOOLS);
     expect(args[args.indexOf("--disallowedTools") + 1]).toBe("Edit,Write,WebFetch,WebSearch");
+    expect(args[args.indexOf("-p") + 1]).toBe(`q?\n\n${INSTRUCTION}`);
+    expect(args[args.indexOf("--tools") + 1]).toBe("Read,Glob,Grep,Bash");
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("dontAsk");
+  });
+  test("runClaude spawns claude with claudeArgs in the staged repo", () => {
+    const calls: { cmd: string; args: string[]; cwd: string; existed: boolean }[] = [];
+    const stub = ((cmd: string, args: string[], opts: { cwd: string }) => {
+      calls.push({ cmd, args, cwd: opts.cwd, existed: statSync(opts.cwd).isDirectory() });
+      return { stdout: "", stderr: "", status: 0 };
+    }) as unknown as typeof import("node:child_process").spawnSync;
+    runClaude("q?", stub);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.cmd).toBe("claude");
+    expect(calls[0]!.args).toEqual(claudeArgs("q?"));
+    expect(calls[0]!.existed).toBe(true);
   });
 });

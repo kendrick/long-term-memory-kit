@@ -297,11 +297,12 @@ export function claudeArgs(question: string) {
   ];
 }
 
-function runClaude(question: string) {
+// spawn is a seam so a test can check the argv and cwd runClaude uses without a paid claude call.
+export function runClaude(question: string, spawn: typeof spawnSync = spawnSync) {
   const s = stage();
   try {
     const args = claudeArgs(question);
-    const r = spawnSync("claude", args, {
+    const r = spawn("claude", args, {
       cwd: s.repo,
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
