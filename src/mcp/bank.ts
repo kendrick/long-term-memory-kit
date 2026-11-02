@@ -137,7 +137,7 @@ export class BankLocator {
       const done = Promise.withResolvers<void>();
       this.merging.set(root, done.promise);
       try {
-        // shortcut: polls every 10ms for the last reader to leave; switch to a wake-up callback if that latency ever shows.
+        // shortcut: polls every 10ms with no timeout, so one hung read wedges this refresh and every read queued behind it. Reads are in-process file reads, and a timeout would reopen the race. Switch to a wake-up callback if the polling latency shows, and rethink the wait if a read ever goes over the network.
         while ((this.readers.get(root) ?? 0) > 0) await new Promise((r) => setTimeout(r, 10));
         await run("git", ["-C", root, "merge", "--ff-only", "--quiet", "@{u}"], { env });
       } finally {

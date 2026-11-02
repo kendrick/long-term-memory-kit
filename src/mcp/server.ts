@@ -59,9 +59,9 @@ export function createServer(env: Env, cwd: string): McpServer {
   // Records are read only through run(), so the MCP and CLI routes can't drift. Two exceptions: relOf's id lookup, because `ltm head` takes only a path, and read, which reads the file itself so the pinned retry can tie its bytes to one commit.
   const cli = (argv: string[], at: string) => run({ argv, cwd: at, env });
 
-  // Another request's refresh can fast-forward the clone mid-read. A read counts only when HEAD held still across it, so bank_commits names the commit the data came from.
-  // `accept` also vets the output: `git merge --ff-only` rewrites worktree files before it moves the ref, so HEAD can hold still while the bytes are already the next commit's.
-  // Under LTM_BANK_URL the locator's guard keeps the server's own merge out of each attempt, so there the HEAD check and `accept` catch only a writer outside the server.
+  // A read counts only when HEAD held still across it, so bank_commits names the commit the data came from.
+  // `accept` also vets the output. A writer such as `git merge --ff-only` rewrites worktree files before it moves the ref, so HEAD can hold still while the bytes already belong to the next commit.
+  // The locator's guard keeps the server's own refresh out of every attempt, so both checks catch only a writer outside the server, like a person running `git pull` in the Bank.
   const pinned = async <R>(
     roots: () => Named[],
     read: () => Promise<R>,
@@ -69,9 +69,11 @@ export function createServer(env: Env, cwd: string): McpServer {
   ): Promise<{ out: R; commits: Record<string, string | null> } | CallToolResult> => {
     for (let tries = 0; tries < 3; tries++) {
       // Guarded per attempt, not per call, so a merge waiting on this read gets in before the retry.
+      // One list per attempt, so the guard holds every root the commit check reads. query's roots() re-runs resolveBanks, which can answer differently between calls.
+      const named = roots();
       const { before, out, commits } = await locator.reading(
-        roots().map((r) => r.root),
-        async () => ({ before: bankCommits(roots()), out: await read(), commits: bankCommits(roots()) }),
+        named.map((r) => r.root),
+        async () => ({ before: bankCommits(named), out: await read(), commits: bankCommits(named) }),
       );
       if (isDeepStrictEqual(before, commits) && accept(out)) return { out, commits };
     }
