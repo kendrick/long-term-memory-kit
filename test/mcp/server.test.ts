@@ -75,7 +75,7 @@ describe("ltm mcp, read-only tools", () => {
     "query matches `ltm query --bank <bank> --json` for each input set",
     () =>
       withServer(async ({ client, bank, consumer, env }) => {
-        // The third set matches only the demo Bank's org-wide PolicyRule, since an org-wide Record matches every Facet.
+        // The third set matches only the demo Bank's org-wide PolicyRule, since an org-wide Record matches every Facet. The fourth is the only set passing `status` as an array, checked against repeated --status flags.
         const cases: [Record<string, unknown>, string[], boolean][] = [
           [{}, [], true],
           [{ filters: { status: "accepted" } }, ["status=accepted"], true],

@@ -23,6 +23,12 @@ Records for one Facet. The `applies_to` list is on a single line, so a substring
 grep -rlE '^applies_to: .*service:order-service' _memory
 ```
 
+Records with no `applies_to` key, which are org-wide. The grep misses org-wide Records written as `applies_to: null` or `applies_to: []`, and it keeps retired ones:
+
+```sh
+grep -rc '^applies_to:' _memory | grep ':0$'
+```
+
 Accepted PolicyRules, which are the standards an agent has to follow:
 
 ```sh
@@ -70,12 +76,6 @@ That code sits in two layers.
 - It leaves retired Records out. Name a retired status with `--status`, or pass `--all`, to see them. `--status accepted` never lets a retired Record through.
 - It filters Facets by overlap. A Record matches `--facet service:order-service` when its `applies_to` holds that Facet. An org-wide Record matches every Facet, because it applies everywhere. A Record with no `applies_to` is org-wide.
 - It ranks `--text` on the header. It searches `title` and `summary`, not the body, so a passing mention in a body doesn't outrank a Record about the topic.
-
-To list the Records with no `applies_to` key, count the key in each file and keep the zeros:
-
-```sh
-grep -rc '^applies_to:' _memory | grep ':0$'
-```
 
 `ltm query` adds three behaviors of its own around `selectRecords`.
 
