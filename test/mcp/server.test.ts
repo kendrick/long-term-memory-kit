@@ -75,11 +75,11 @@ describe("ltm mcp, read-only tools", () => {
     "query matches `ltm query --bank <bank> --json` for each input set",
     () =>
       withServer(async ({ client, bank, consumer, env }) => {
-        // The third set matches no Record in the demo Bank (an explicit --facet drops the org-wide fallback), so the fourth adds a Facet set that does.
+        // The third set matches only the demo Bank's org-wide PolicyRule, since an org-wide Record matches every Facet.
         const cases: [Record<string, unknown>, string[], boolean][] = [
           [{}, [], true],
           [{ filters: { status: "accepted" } }, ["status=accepted"], true],
-          [{ type: "PolicyRule", facets: ["service:order-service"] }, ["--type", "PolicyRule", "--facet", "service:order-service"], false],
+          [{ type: "PolicyRule", facets: ["service:order-service"] }, ["--type", "PolicyRule", "--facet", "service:order-service"], true],
           [{ facets: ["domain:commerce"], status: ["accepted", "superseded"] }, ["--facet", "domain:commerce", "--status", "accepted", "--status", "superseded"], true],
           [{ text: "postgres", all: true }, ["--text", "postgres", "--all"], true],
         ];

@@ -89,7 +89,7 @@ describe("ltm fmt", () => {
       const mine = ids.find((x) => x.file === PG)!.id;
       expect(mine).toMatch(/^[A-Za-z0-9_-]{10}$/);
       const others = ids.filter((x) => x.file !== PG).map((x) => x.id);
-      expect(others).toHaveLength(19);
+      expect(others).toHaveLength(20);
       expect(others).not.toContain(mine);
     });
   });

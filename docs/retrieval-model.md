@@ -71,6 +71,12 @@ That code sits in two layers.
 - It filters Facets by overlap. A Record matches `--facet service:order-service` when its `applies_to` holds that Facet. An org-wide Record matches every Facet, because it applies everywhere. A Record with no `applies_to` is org-wide.
 - It ranks `--text` on the header. It searches `title` and `summary`, not the body, so a passing mention in a body doesn't outrank a Record about the topic.
 
+To list the Records with no `applies_to` key, count the key in each file and keep the zeros:
+
+```sh
+grep -rc '^applies_to:' _memory | grep ':0$'
+```
+
 `ltm query` adds three behaviors of its own around `selectRecords`.
 
 - It labels Proposals. The text output marks them `(proposal)`, and the JSON output sets `is_proposal`. A reader can show one as context without presenting it as a rule.

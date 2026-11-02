@@ -389,7 +389,7 @@ describe("ltm query never reads outside the Bank", () => {
         expect(r.stdout).not.toContain(SECRET);
         expect(r.exitCode).toBe(0);
         expect(r.stderr).toBe(skipLine("_memory/decisions"));
-        expect((JSON.parse(r.stdout) as unknown[]).length).toBe(11);
+        expect((JSON.parse(r.stdout) as unknown[]).length).toBe(12);
       });
     });
   });
@@ -555,12 +555,12 @@ describe("ltm query options", () => {
       const pg = join(dir, PG);
       writeFileSync(pg, readFileSync(pg, "utf8").replace(/\n---\n/, "\na: &y 1\nb: *y\n---\n"));
       expect(readFileSync(pg, "utf8")).toContain("b: *y");
-      // --all: 20 Records minus the skipped one, with the four retired ones counted.
+      // --all: 21 Records minus the skipped one, with the four retired ones counted.
       const r = await ltm(dir, "query", "--json", "--all");
       expect(r.exitCode).toBe(0);
       expect(r.stderr).toContain(`ltm query: skipped ${MQ}:`);
       const rows = JSON.parse(r.stdout) as { path: string }[];
-      expect(rows).toHaveLength(19);
+      expect(rows).toHaveLength(20);
       expect(rows.map((x) => x.path)).toContain(PG);
     });
   });
@@ -625,7 +625,7 @@ describe("ltm query options", () => {
 
         const r = await ltm(dir, "query", "--json", "--all");
         expect(r.exitCode).toBe(0);
-        expect(JSON.parse(r.stdout)).toHaveLength(20);
+        expect(JSON.parse(r.stdout)).toHaveLength(21);
       });
     });
   });

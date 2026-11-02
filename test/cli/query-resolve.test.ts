@@ -11,6 +11,7 @@ const demo = fileURLToPath(new URL("../../fixtures/demo-bank", import.meta.url))
 const REDIS = "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md";
 const ORG_EXC = "_memory/exceptions/org-wide-exception-oW1dE2xCp3.md";
 const ORG_CTX = "_memory/context/org-wide-context-oW4cT5xTq6.md";
+const ORG_RULE = "_memory/policy-rules/services-have-codeowners-aW7kC3oRf2.md";
 
 const exampleConfig = `banks:
   acme:     { path: ~/banks/acme, url: git@github.com:acme/memory-bank.git }
@@ -64,7 +65,8 @@ beforeEach(() => {
   env = { LTM_CONFIG: configPath, HOME: home };
   const acme = makeBank("acme");
   makeBank("personal");
-  // The demo Bank has no org-wide Record, so the fallback would pass on an empty set.
+  // The demo Bank's one org-wide Record is a PolicyRule with no applies_to key. These copies add
+  // an org-wide Exception (applies_to: []) so a --type Exception fallback has a row to show.
   orgWideCopy(acme, REDIS, ORG_EXC, "oW1dE2xCp3", "[]");
   orgWideCopy(acme, "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md", ORG_CTX, "oW4cT5xTq6", null);
   repo = join(tmp, "order-service");
@@ -96,10 +98,19 @@ describe("ltm query from a Consumer repo", () => {
     const json = await ltm(repo, "query", "--json");
     const out = JSON.parse(json.stdout);
     expect(out.results.map((r: { bank: string; path: string }) => `${r.bank}:${r.path}`).sort()).toEqual(
-      [`acme:${ORG_CTX}`, `acme:${ORG_EXC}`].sort(),
+      [`acme:${ORG_CTX}`, `acme:${ORG_EXC}`, `acme:${ORG_RULE}`, `personal:${ORG_RULE}`].sort(),
     );
     expect(out.notes).toHaveLength(2);
     expect(json.stderr).toBe("");
+  });
+
+  test("an unmapped repo gets the demo Bank's own org-wide Record, with the not-mapped note", async () => {
+    setOrigin("https://github.com/acme/billing");
+    const r = await ltm(repo, "query", "--json");
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout);
+    expect(out.results.map((x: { bank: string; path: string }) => `${x.bank}:${x.path}`)).toContain(`acme:${ORG_RULE}`);
+    expect(out.notes).toContain('acme/billing is not mapped in Bank "acme"; showing org-wide Records only');
   });
 
   test("a two-Bank run labels every human line and every JSON result with its Bank", async () => {
@@ -193,7 +204,7 @@ describe("ltm query from a Consumer repo", () => {
     expect(r.exitCode).toBe(0);
     const out = JSON.parse(r.stdout);
     const acmePaths = out.results.filter((x: { bank: string }) => x.bank === "acme").map((x: { path: string }) => x.path);
-    expect(acmePaths.sort()).toEqual([ORG_CTX, ORG_EXC].sort());
+    expect(acmePaths.sort()).toEqual([ORG_CTX, ORG_EXC, ORG_RULE].sort());
     // Mapped (to nothing) is not unmapped, so no "not mapped" note for acme.
     expect(out.notes.join("\n")).not.toContain('Bank "acme"');
     expect(r.stderr).toBe("");
@@ -216,7 +227,7 @@ describe("ltm query from a Consumer repo", () => {
     const out = JSON.parse(r.stdout);
     // No origin skips the rules, so default (personal) is the one Bank.
     expect(out.resolved_by).toBe("default");
-    expect(out.results).toEqual([]);
+    expect(out.results.map((x: { bank: string; path: string }) => `${x.bank}:${x.path}`)).toEqual([`personal:${ORG_RULE}`]);
     expect(out.notes).toEqual(['no git origin here; showing org-wide Records only from Bank "personal"']);
   });
 

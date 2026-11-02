@@ -104,7 +104,7 @@ describe("matches", () => {
 });
 
 describe("listRecordFiles", () => {
-  test("lists the same 20 paths as listRecords, typed by folder, without parsing", async () => {
+  test("lists the same 21 paths as listRecords, typed by folder, without parsing", async () => {
     await withScratch(demoBank, async (dir) => {
       const config: BankConfig = { root: dir, folders: defaultFolders, raw: {} };
       // A file whose frontmatter won't parse is still a Record file; only parsing skips it.
@@ -112,7 +112,7 @@ describe("listRecordFiles", () => {
       const skipped: string[] = [];
       const files = listRecordFiles(config, (p) => skipped.push(p));
       expect(skipped).toEqual([]);
-      expect(files).toHaveLength(21);
+      expect(files).toHaveLength(22);
       expect(files[3]).toEqual({
         abs: join(dir, "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md"),
         rel: "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md",
@@ -124,7 +124,7 @@ describe("listRecordFiles", () => {
 });
 
 describe("listRecords", () => {
-  test("demo bank: 20 Records sorted by path, typed by folder", async () => {
+  test("demo bank: 21 Records sorted by path, typed by folder", async () => {
     await withScratch(demoBank, async (dir) => {
       const config: BankConfig = { root: dir, folders: defaultFolders, raw: {} };
       const skipped: string[] = [];
@@ -150,6 +150,7 @@ describe("listRecords", () => {
         ["_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md", "PolicyRule"],
         ["_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md", "PolicyRule"],
         ["_memory/policy-rules/services-expose-health-endpoint-eM1xS5gBo8.md", "PolicyRule"],
+        ["_memory/policy-rules/services-have-codeowners-aW7kC3oRf2.md", "PolicyRule"],
         ["_memory/policy-rules/shared-sftp-for-partner-files-yF4kP7tNs2.md", "PolicyRule"],
         ["_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md", "PolicyRule"],
       ]);
@@ -173,7 +174,7 @@ describe("listRecords", () => {
       const records = listRecords(config, () => {});
       const nested = records.filter((r) => r.path === "_memory/decisions/ctx/nested-zZ0fF0lD02.md");
       expect(nested.map((r) => r.memoryType)).toEqual(["Context"]);
-      expect(records.length).toBe(18);
+      expect(records.length).toBe(19);
     });
   });
 
@@ -186,7 +187,7 @@ describe("listRecords", () => {
         (p, reason) => skipped.push([p, reason]),
       );
       expect(skipped).toEqual([["_memory/decisions/broken.md", "no frontmatter"]]);
-      expect(records.length).toBe(20);
+      expect(records.length).toBe(21);
     });
   });
 });
@@ -207,7 +208,7 @@ describe("listRecords folder safety", () => {
         );
         expect(skipped).toEqual([["_memory/decisions", "symlink, not followed"]]);
         expect(records.some((r) => r.memoryType === "Decision")).toBe(false);
-        expect(records.length).toBe(11);
+        expect(records.length).toBe(12);
       });
     } finally {
       await rm(outside, { recursive: true, force: true });
@@ -242,7 +243,7 @@ describe("listRecords folder safety", () => {
         skipped.push([p, r]),
       );
       expect(skipped).toEqual([["_memory/decisions/a\\b.md", "name contains a backslash"]]);
-      expect(records.length).toBe(20);
+      expect(records.length).toBe(21);
     });
   });
 
