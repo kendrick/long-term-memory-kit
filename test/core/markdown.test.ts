@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { fenceTracker, type FenceStep } from "../../src/core/markdown.ts";
 
-// The four copies below are the fence loops fmt, discover, validate, and promote carried at baf1929,
-// changed only to push a FenceStep per line. They are frozen: don't "fix" one to agree with a row.
-// If a row disagrees with a copy, the row or the tracker is the thing under question.
+// The four copies below are the fence loops fmt, discover, validate, and promote carried at baf1929, changed only to push a FenceStep per line. They are frozen: don't "fix" one to agree with a row. If a row disagrees with a copy, the row or the tracker is the thing under question.
 
 // fmt.ts liftStatus. "open" is pushed even inside the Status section, where the real loop returns.
 const FMT_FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
