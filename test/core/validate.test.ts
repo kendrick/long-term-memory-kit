@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkConfig, checkRecordText, checkUniqueIds, validateBank, validateBankReport, type Finding } from "../../src/core/validate.ts";
@@ -1152,5 +1153,139 @@ describe("checkRecordText: values JSON can't carry exactly", () => {
 
   test("the largest safe integer gives no finding", () => {
     expect(check(withKey("ok: 9007199254740991"))).toEqual([]);
+  });
+});
+
+describe("supersession-cycle", () => {
+  // A Bank built from nothing, so no fixture Record can shift these counts.
+  type Rec = { id: string; status?: string; by?: string; supersedes?: string[] };
+  const record = (r: Rec) =>
+    [
+      "---",
+      "schema: 1",
+      `id: ${r.id}`,
+      "memory_type: Decision",
+      `title: Rec ${r.id}`,
+      `status: ${r.status ?? (r.by ? "superseded" : "accepted")}`,
+      "date: 2026-01-01",
+      `summary: Rec ${r.id}.`,
+      ...(r.by ? [`superseded_by: ${r.by}`] : []),
+      ...(r.supersedes ? [`supersedes: [${r.supersedes.join(", ")}]`] : []),
+      "applies_to: [domain:commerce]",
+      "---",
+      "",
+      "## Context",
+      "c",
+      "",
+      "## Decision",
+      "d",
+      "",
+      "## Consequences",
+      "e",
+      "",
+    ].join("\n");
+  const fileOf = (id: string) => `_memory/decisions/rec-${id}.md`;
+  const bank = (recs: Rec[], then: (dir: string) => void) => {
+    const dir = mkdtempSync(join(tmpdir(), "ltm-cycle-"));
+    try {
+      writeFileSync(join(dir, "memory-bank.yaml"), "schema: 1\nname: t\nfacet_prefixes: [domain]\n");
+      mkdirSync(join(dir, "_memory/decisions"), { recursive: true });
+      for (const r of recs) writeFileSync(join(dir, fileOf(r.id)), record(r));
+      then(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  const cycles = (dir: string, paths: string[] | null = null) =>
+    validateBank(dir, paths, dir).filter((f) => f.rule === "supersession-cycle");
+
+  // A->B->C->A, written reciprocally.
+  const ring3: Rec[] = [
+    { id: "aaaaaaaaaa", by: "bbbbbbbbbb", supersedes: ["cccccccccc"] },
+    { id: "bbbbbbbbbb", by: "cccccccccc", supersedes: ["aaaaaaaaaa"] },
+    { id: "cccccccccc", by: "aaaaaaaaaa", supersedes: ["bbbbbbbbbb"] },
+  ];
+
+  test("a 3-Record cycle is one finding on the first path, and the only finding", () => {
+    bank(ring3, (dir) => {
+      const all = validateBank(dir, null, dir);
+      expect(all).toHaveLength(1);
+      expect(all[0]!).toMatchObject({
+        rule: "supersession-cycle",
+        severity: "error",
+        file: fileOf("aaaaaaaaaa"),
+        key: "superseded_by",
+        message: `closes a Supersession cycle with ${fileOf("bbbbbbbbbb")}, ${fileOf("cccccccccc")}`,
+      });
+    });
+  });
+
+  test("breaking the C->A edge on both sides removes the finding", () => {
+    const broken = ring3.map((r) =>
+      r.id === "cccccccccc" ? { id: r.id, supersedes: r.supersedes } : r.id === "aaaaaaaaaa" ? { id: r.id, by: r.by } : r,
+    );
+    bank(broken, (dir) => expect(validateBank(dir, null, dir)).toEqual([]));
+  });
+
+  test("a diamond is not a cycle", () => {
+    bank(
+      [
+        { id: "aaaaaaaaaa", by: "bbbbbbbbbb" },
+        { id: "bbbbbbbbbb", status: "superseded", by: "dddddddddd", supersedes: ["aaaaaaaaaa"] },
+        { id: "cccccccccc", status: "superseded", by: "dddddddddd" },
+        { id: "dddddddddd", supersedes: ["bbbbbbbbbb", "cccccccccc"] },
+      ],
+      (dir) => expect(cycles(dir)).toEqual([]),
+    );
+  });
+
+  test("a 4-Record straight chain is not a cycle", () => {
+    bank(
+      [
+        { id: "aaaaaaaaaa", by: "bbbbbbbbbb" },
+        { id: "bbbbbbbbbb", by: "cccccccccc", supersedes: ["aaaaaaaaaa"] },
+        { id: "cccccccccc", by: "dddddddddd", supersedes: ["bbbbbbbbbb"] },
+        { id: "dddddddddd", supersedes: ["cccccccccc"] },
+      ],
+      (dir) => expect(cycles(dir)).toEqual([]),
+    );
+  });
+
+  test("a Record feeding into an A<->B cycle is not named in the finding", () => {
+    bank(
+      [
+        { id: "aaaaaaaaaa", by: "bbbbbbbbbb", supersedes: ["bbbbbbbbbb"] },
+        { id: "bbbbbbbbbb", by: "aaaaaaaaaa", supersedes: ["aaaaaaaaaa"] },
+        { id: "eeeeeeeeee", status: "proposed", supersedes: ["aaaaaaaaaa"] },
+      ],
+      (dir) => {
+        const fs = cycles(dir);
+        expect(fs).toHaveLength(1);
+        expect(fs[0]!).toMatchObject({
+          file: fileOf("aaaaaaaaaa"),
+          message: `closes a Supersession cycle with ${fileOf("bbbbbbbbbb")}`,
+        });
+      },
+    );
+  });
+
+  test("a Record superseding itself is a cycle of one", () => {
+    bank([{ id: "aaaaaaaaaa", supersedes: ["aaaaaaaaaa"] }], (dir) => {
+      const fs = cycles(dir);
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!).toMatchObject({
+        file: fileOf("aaaaaaaaaa"),
+        key: "supersedes",
+        message: "closes a Supersession cycle with itself",
+      });
+    });
+  });
+
+  test("naming another Record of the cycle keeps the finding; naming an unrelated one doesn't", () => {
+    bank([...ring3, { id: "zzzzzzzzzz" }], (dir) => {
+      const hit = cycles(dir, [join(dir, fileOf("bbbbbbbbbb"))]);
+      expect(hit.map((f) => f.file)).toEqual([fileOf("aaaaaaaaaa")]);
+      expect(cycles(dir, [join(dir, fileOf("zzzzzzzzzz"))])).toEqual([]);
+    });
   });
 });

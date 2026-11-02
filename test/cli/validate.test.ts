@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -595,6 +596,52 @@ describe("ltm validate picks its Bank from the paths", () => {
       const r = await ltm(repoRoot, "validate", join(dir, "x.md"));
       expect(r.exitCode).toBe(1);
       expect(r.stderr).toBe(`ltm validate: no memory-bank.yaml in ${dir} or any parent directory\n`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("ltm validate: supersession cycle", () => {
+  const record = (id: string, by: string, from: string) =>
+    [
+      "---",
+      "schema: 1",
+      `id: ${id}`,
+      "memory_type: Decision",
+      `title: Rec ${id}`,
+      "status: superseded",
+      "date: 2026-01-01",
+      `summary: Rec ${id}.`,
+      `superseded_by: ${by}`,
+      `supersedes: [${from}]`,
+      "applies_to: [domain:commerce]",
+      "---",
+      "",
+      "## Context",
+      "c",
+      "",
+      "## Decision",
+      "d",
+      "",
+      "## Consequences",
+      "e",
+      "",
+    ].join("\n");
+
+  test("a closed cycle exits 1 with one supersession-cycle error on the first path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ltm-cycle-cli-"));
+    try {
+      writeFileSync(join(dir, "memory-bank.yaml"), "schema: 1\nname: t\nfacet_prefixes: [domain]\n");
+      mkdirSync(join(dir, "_memory/decisions"), { recursive: true });
+      writeFileSync(join(dir, "_memory/decisions/rec-aaaaaaaaaa.md"), record("aaaaaaaaaa", "bbbbbbbbbb", "bbbbbbbbbb"));
+      writeFileSync(join(dir, "_memory/decisions/rec-bbbbbbbbbb.md"), record("bbbbbbbbbb", "aaaaaaaaaa", "aaaaaaaaaa"));
+      const r = await ltm(dir, "validate");
+      expect(r.exitCode).toBe(1);
+      const out = lines(r.stdout);
+      expect(out).toHaveLength(1);
+      expect(out[0]!).toContain("_memory/decisions/rec-aaaaaaaaaa.md:");
+      expect(out[0]!).toContain("error supersession-cycle:");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

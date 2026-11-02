@@ -25,6 +25,7 @@ export type Rule =
   | "supersession-incomplete"
   | "supersession-status"
   | "supersession-facets"
+  | "supersession-cycle"
   | "body-sections"
   | "bright-line";
 
@@ -324,7 +325,7 @@ export function checkRecordText(
 type Node = { file: string; type: MemoryType; fm: Frontmatter };
 
 // A finding plus the other file its message names, so a paths filter can keep it when either end was named.
-type Pending = { finding: Finding; also: string };
+type Pending = { finding: Finding; also: string[] };
 
 const stringList = (v: unknown): string[] =>
   typeof v === "string" ? [v] : Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
@@ -369,7 +370,7 @@ function checkSupersession(nodes: Node[]): Pending[] {
   const missing = (n: Node, key: string, id: string) =>
     out.push({
       finding: finding(n.file, n.fm.lineOf(key), "supersession-missing-target", key, `${key} names '${id}', which no Record has`),
-      also: n.file,
+      also: [n.file],
     });
 
   for (const n of sorted) {
@@ -389,7 +390,7 @@ function checkSupersession(nodes: Node[]): Pending[] {
             "status",
             `status is '${String(data.status ?? "")}' but superseded_by is set; a superseded Record needs status 'superseded'`,
           ),
-          also: n.file,
+          also: [n.file],
         });
       }
     }
@@ -411,7 +412,7 @@ function checkSupersession(nodes: Node[]): Pending[] {
           "superseded_by",
           `superseded_by names ${e.new.file}, which doesn't list it back in supersedes`,
         ),
-        also: e.new.file,
+        also: [e.new.file],
       });
     } else if (resolvable && e.byNew && !e.byOld && !(e.new.fm.data.status === "proposed" && !hasSuccessor(e.old))) {
       // A Proposal names what it supersedes before Acceptance; `ltm accept` (#11) writes the old half at Acceptance. Only while the target is still unsuperseded: superseded_by is a scalar, so a target already pointing at another successor can't be reciprocal to both, and accepting would either overwrite that pair or leave this one half-written.
@@ -423,7 +424,7 @@ function checkSupersession(nodes: Node[]): Pending[] {
           "supersedes",
           `supersedes names ${e.old.file}, which doesn't list it back in superseded_by`,
         ),
-        also: e.old.file,
+        also: [e.old.file],
       });
     }
     if (!sharesScope(e.old.fm.data.applies_to, e.new.fm.data.applies_to)) {
@@ -435,10 +436,64 @@ function checkSupersession(nodes: Node[]): Pending[] {
           "applies_to",
           `${e.old.file} and ${e.new.file} are linked by supersession but share no applies_to entry`,
         ),
-        also: e.new.file,
+        also: [e.new.file],
       });
     }
   }
+
+  // A closed cycle has no newest Record, so nothing else notices it. One finding per strongly connected
+  // component (Tarjan), not per simple cycle; `reaches` in supersede.ts answers yes/no for one link, not components.
+  const next = new Map<Node, Node[]>();
+  for (const e of edges.values()) next.set(e.old, [...(next.get(e.old) ?? []), e.new]);
+  const index = new Map<Node, number>();
+  const low = new Map<Node, number>();
+  const stack: Node[] = [];
+  const onStack = new Set<Node>();
+  const visit = (v: Node) => {
+    index.set(v, index.size);
+    low.set(v, index.get(v)!);
+    stack.push(v);
+    onStack.add(v);
+    for (const w of next.get(v) ?? []) {
+      if (!index.has(w)) {
+        visit(w);
+        low.set(v, Math.min(low.get(v)!, low.get(w)!));
+      } else if (onStack.has(w)) low.set(v, Math.min(low.get(v)!, index.get(w)!));
+    }
+    if (low.get(v) !== index.get(v)) return;
+    const comp: Node[] = [];
+    let w: Node;
+    do {
+      w = stack.pop()!;
+      onStack.delete(w);
+      comp.push(w);
+    } while (w !== v);
+    if (comp.length === 1 && !next.get(v)?.includes(v)) return;
+    comp.sort((a, b) => cmp(a.file, b.file));
+    const first = comp[0]!;
+    // Walk order: step to the first unvisited in-component successor, else the first unvisited Record.
+    const walk = [first];
+    while (walk.length < comp.length) {
+      const here = walk[walk.length - 1]!;
+      const step =
+        (next.get(here) ?? []).filter((x) => comp.includes(x) && !walk.includes(x)).sort((a, b) => cmp(a.file, b.file))[0] ??
+        comp.find((x) => !walk.includes(x))!;
+      walk.push(step);
+    }
+    const others = walk.slice(1).map((n) => n.file);
+    const key = first.fm.keys.has("superseded_by") ? "superseded_by" : "supersedes";
+    out.push({
+      finding: finding(
+        first.file,
+        first.fm.lineOf(key),
+        "supersession-cycle",
+        key,
+        `closes a Supersession cycle with ${others.length ? others.join(", ") : "itself"}`,
+      ),
+      also: others,
+    });
+  };
+  for (const n of sorted) if (!index.has(n)) visit(n);
   return out;
 }
 
@@ -592,7 +647,7 @@ export function validateBankReport(root: string, paths: string[] | null, cwd: st
   }
   findings.push(...checkUniqueIds(ids, namedRels));
   for (const p of checkSupersession(nodes)) {
-    if (!namedRels || namedRels.has(p.finding.file) || namedRels.has(p.also)) findings.push(p.finding);
+    if (!namedRels || namedRels.has(p.finding.file) || p.also.some((f) => namedRels.has(f))) findings.push(p.finding);
   }
   for (const f of checkBrightLine(nodes)) {
     if (!namedRels || namedRels.has(f.file)) findings.push(f);

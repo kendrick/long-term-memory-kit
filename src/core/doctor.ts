@@ -211,8 +211,8 @@ function longChain(ctx: DoctorContext): DoctorFinding[] {
   const memo = new Map<ParsedRecord, readonly ParsedRecord[]>();
   const out: DoctorFinding[] = [];
   for (const head of olderOf.keys()) {
-    // A closed cycle has no newest Record, so it's never walked or reported. `ltm supersede` refuses to
-    // create one, but nothing reports a hand-written one. A chain that runs into a cycle still has a head.
+    // A closed cycle has no newest Record, so this check never walks it. `ltm validate` reports it as
+    // `supersession-cycle`. A chain that runs into a cycle still has a head.
     if (isOld.has(head)) continue;
     // A Record that supersedes several independent Records has branches, so only the longest one counts.
     const path = longestPath(head, olderOf, memo, new Set());

@@ -50,7 +50,7 @@ Every report line below came from `ltm doctor` run with `LTM_TODAY=2026-10-09` o
 
 **Fields:** `supersedes` and `superseded_by`, read from every Record, including retired ones. Either side of a link counts.
 
-**Threshold:** `doctor.max_chain_length`, default 3. The count is Records, not links, so A superseded by B superseded by C is 3. The count is the longest Supersession path from the newest Record, so a Record that supersedes several Records at once counts only its longest branch. The check fires when that path holds more Records than the threshold, and it reports once, on the newest Record. A chain with no newest Record, which is a closed cycle, isn't reported here. A chain that runs into a cycle still is.
+**Threshold:** `doctor.max_chain_length`, default 3. The count is Records, not links, so A superseded by B superseded by C is 3. The count is the longest Supersession path from the newest Record, so a Record that supersedes several Records at once counts only its longest branch. The check fires when that path holds more Records than the threshold, and it reports once, on the newest Record. A chain with no newest Record, which is a closed cycle, isn't reported here; `ltm validate` reports it as `supersession-cycle`. A chain that runs into a cycle still is.
 
 **Report line:** `_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md: long-chain: Supersession chain holds 4 Records (threshold 3)` (scratch edit: two more retired Records added, each superseded by the one before it, behind `mysql-for-new-services-mB3tR9wZe1.md`). The finding's `related_files` lists the older Records on that longest path.
 
