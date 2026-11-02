@@ -6,6 +6,7 @@ import { isAlias, isMap, isScalar, isSeq, parseDocument, type Document, type Pai
 import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type: "json" };
 import recordSchemaJson from "../../schema/record.schema.json" with { type: "json" };
 import { ConfigError, isInside, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
+import { fenceTracker } from "./markdown.ts";
 import { listRecordFiles } from "./query.ts";
 import { splitFrontmatter, unrepresentable, type Unrepresentable } from "./record.ts";
 import { SCHEMA_VERSIONS } from "./schema-versions.ts";
@@ -256,20 +257,10 @@ function headingAliases(raw: unknown): HeadingAliases {
 // Headings inside a fenced code block are sample text, not structure.
 function headingTexts(body: string): Set<string> {
   const out = new Set<string>();
-  // CommonMark: a closer repeats the opener's character at least as many times; an unclosed fence runs to EOF.
-  let fence: { char: string; len: number } | null = null;
+  const step = fenceTracker();
   for (const raw of body.split("\n")) {
     const line = raw.replace(/\r$/, "");
-    if (fence) {
-      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line)?.[1];
-      if (close && close[0] === fence.char && close.length >= fence.len) fence = null;
-      continue;
-    }
-    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-    if (open && !(open[1]![0] === "`" && open[2]!.includes("`"))) {
-      fence = { char: open[1]![0]!, len: open[1]!.length };
-      continue;
-    }
+    if (step(line) !== "text") continue;
     const h = /^ {0,3}#{1,6}(?:[ \t]+(.*))?$/.exec(line);
     // An ATX closing sequence is a run of # after a space or tab at the end of the line.
     if (h) out.add((h[1] ?? "").replace(/(^|[ \t]+)#+[ \t]*$/, "").trim().toLowerCase());

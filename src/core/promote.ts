@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { parse } from "yaml";
 import { isMapping, type MemoryType } from "./bank.ts";
 import { isCalendarDate } from "./clock.ts";
+import { fenceTracker } from "./markdown.ts";
 import { proposeRecord, type ProposalInput, type ProposeDeps, type ProposeDryRun, type ProposeRefusal, type Proposed } from "./propose.ts";
 import { splitFrontmatter } from "./record.ts";
 import { firstLine } from "./text.ts";
@@ -27,24 +28,11 @@ function scanLines(text: string): Line[] {
   return out;
 }
 
-const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-
-// CommonMark fences: only a closing line of the same character and at least the opener's length ends one, so a ```-example inside a ````-fence stays hidden. An unclosed fence runs to the end of the text.
 function outsideFences(lines: Line[]): Line[] {
   const out: Line[] = [];
-  let opener: { char: string; len: number } | null = null;
+  const step = fenceTracker();
   for (const line of lines) {
-    if (opener) {
-      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line.content);
-      if (close && close[1]![0] === opener.char && close[1]!.length >= opener.len) opener = null;
-      continue;
-    }
-    const open = FENCE_OPEN.exec(line.content);
-    // A backtick fence can't carry a backtick in its info string; that line is inline code, not a fence.
-    if (open && !(open[1]![0] === "`" && open[2]!.includes("`"))) {
-      opener = { char: open[1]![0]!, len: open[1]!.length };
-      continue;
-    }
+    if (step(line.content) !== "text") continue;
     out.push(line);
   }
   return out;

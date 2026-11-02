@@ -3,6 +3,7 @@ import recordSchema from "../../schema/record.schema.json" with { type: "json" }
 import { type Document, isNode, isPair, isScalar, parseDocument, visit } from "yaml";
 import { isMapping, type MemoryType } from "./bank.ts";
 import { canonicalFrontmatter, canonicalScalar, SCHEMA_KEY_ORDER, type Refusal } from "./canonical.ts";
+import { fenceTracker } from "./markdown.ts";
 import { splitFrontmatter } from "./record.ts";
 import { firstLine } from "./text.ts";
 
@@ -39,7 +40,6 @@ export function newId(taken: Set<string>): string {
   }
 }
 
-const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const ATX = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/;
 
 function headingText(line: string): string | null {
@@ -52,21 +52,12 @@ function headingText(line: string): string | null {
 export function liftStatus(body: string, aliases: string[]): { status: string | null; word: string | null } {
   const names = new Set(["status", ...aliases.map((a) => a.trim().toLowerCase())]);
   const lines = body.split("\n").map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
-  let fence: { char: string; len: number } | null = null;
+  const step = fenceTracker();
   let inStatus = false;
   for (const line of lines) {
-    if (fence) {
-      const close = new RegExp(`^ {0,3}${fence.char === "`" ? "`" : "~"}{${fence.len},}[ \\t]*$`);
-      if (close.test(line)) fence = null;
-      continue;
-    }
-    const open = FENCE_OPEN.exec(line);
-    // A backtick fence's info string can't hold a backtick (CommonMark 4.5).
-    if (open && !(open[1]!.startsWith("`") && open[2]!.includes("`"))) {
-      if (inStatus) return wordResult(line);
-      fence = { char: open[1]![0]!, len: open[1]!.length };
-      continue;
-    }
+    const s = step(line);
+    if (s === "open" && inStatus) return wordResult(line);
+    if (s !== "text") continue;
     const heading = headingText(line);
     if (inStatus) {
       // The section ended before any text, so there's no word to judge.

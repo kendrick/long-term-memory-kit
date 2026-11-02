@@ -2,6 +2,7 @@ import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { parse } from "yaml";
 import { isMapping, type BankConfig } from "./bank.ts";
+import { fenceTracker } from "./markdown.ts";
 import { listRecords } from "./query.ts";
 import { splitFrontmatter, type ParsedRecord } from "./record.ts";
 import { byCodeUnit, firstLine } from "./text.ts";
@@ -15,28 +16,15 @@ type SourceFile = { rel: string; ext: string; text: string; headings: Heading[] 
 const MAX_BYTES = 1_048_576;
 const HEADING = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
 const SPEAKER = /^[A-Z][\w .'-]{0,40}: /;
-// CommonMark fences: a closer must repeat the opener's character at least as long, so an inner
-// ``` line can't end a ```` block and ~~~ can't end a backtick block. An unclosed fence runs to EOF.
-const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-const CLOSE_FENCE = /^ {0,3}(`{3,}|~{3,})\s*$/;
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//;
 
 // Frontmatter is skipped so a `# comment` line in YAML can't pose as a heading.
 function headingsOf(text: string): Heading[] {
   const body = splitFrontmatter(text)?.body ?? text;
   const out: Heading[] = [];
-  let fence: { char: string; len: number } | null = null;
+  const step = fenceTracker();
   for (const line of body.split(/\r?\n/)) {
-    if (fence) {
-      const close = CLOSE_FENCE.exec(line);
-      if (close && close[1]![0] === fence.char && close[1]!.length >= fence.len) fence = null;
-      continue;
-    }
-    const open = OPEN_FENCE.exec(line);
-    if (open && !(open[1]![0] === "`" && open[2]!.includes("`"))) {
-      fence = { char: open[1]![0]!, len: open[1]!.length };
-      continue;
-    }
+    if (step(line) !== "text") continue;
     const m = HEADING.exec(line);
     if (m) out.push({ level: m[1]!.length, text: m[2]! });
   }
