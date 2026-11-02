@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import * as runModule from "../../src/cli/run.ts";
 import { run } from "../../src/cli/run.ts";
 import * as query from "../../src/core/query.ts";
 import { createServer } from "../../src/mcp/server.ts";
@@ -386,7 +387,11 @@ function refresh(bank: string): void {
 
 // In-process rather than withMcp, because a spy in this process can't reach a stdio subprocess.
 async function inProcess<T>(bank: string, fn: (client: Client) => Promise<T>): Promise<T> {
-  const server = createServer({ ...process.env, LTM_BANK_PATH: bank, LTM_BANK_URL: undefined }, bank);
+  return serve({ ...process.env, LTM_BANK_PATH: bank, LTM_BANK_URL: undefined }, bank, fn);
+}
+
+async function serve<T>(env: Record<string, string | undefined>, cwd: string, fn: (client: Client) => Promise<T>): Promise<T> {
+  const server = createServer(env, cwd);
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   const client = new Client({ name: "ltm-test", version: "0.0.0" });
@@ -633,4 +638,114 @@ describe("ltm mcp outside a Bank", () => {
       }),
     MCP_TEST_TIMEOUT,
   );
+});
+
+// On a merge with something to fast-forward, this `git` checks out the upstream files, touches `marker`, and sleeps 2s before HEAD moves. That holds open the window issue #124 names, so a read can land in it. It then runs the real `merge --ff-only`, which accepts a worktree and index that already match the target, so it needs no `reset --hard` stand-in.
+function pausingGit(dir: string): { path: string; marker: string } {
+  const binDir = join(dir, "bin");
+  const marker = join(dir, "files-rewritten");
+  execFileSync("mkdir", ["-p", binDir]);
+  writeFileSync(
+    join(binDir, "git"),
+    `#!/bin/sh
+g='${realGit}'
+if [ "$3" = merge ] && [ "$("$g" -C "$2" rev-parse HEAD)" != "$("$g" -C "$2" rev-parse '@{u}')" ]; then
+  "$g" -C "$2" checkout -q '@{u}' -- .
+  touch '${marker}'
+  sleep 2
+fi
+exec "$g" "$@"
+`,
+  );
+  chmodSync(join(binDir, "git"), 0o755);
+  return { path: `${binDir}:${process.env.PATH}`, marker };
+}
+
+function retitle(bare: string): string {
+  const work = mkdtempSync(join(tmpdir(), "ltm-mcp-adv-"));
+  try {
+    git(work, "clone", "--quiet", bare, ".");
+    const file = join(work, POSTGRES);
+    writeFileSync(file, readFileSync(file, "utf8").replace(/^title: .*$/m, "title: Postgres everywhere, revised"));
+    git(work, ...IDENTITY, "commit", "--quiet", "-am", "retitle");
+    git(work, "push", "--quiet", "origin", "main");
+    return git(bare, "rev-parse", "main").trim();
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+const titleOf = (text: string): string | undefined => text.match(/^title: (.*)$/m)?.[1];
+const titleAt = (bare: string, commit: unknown): string | undefined => titleOf(git(bare, "show", `${String(commit)}:${POSTGRES}`));
+const COMMERCE = { facets: ["domain:commerce"] };
+
+// POSTGRES's title in a query or head result: the bytes the falsifier ties to bank_commits.
+function titleIn(tool: string, sc: Record<string, unknown>): string | undefined {
+  if (tool === "head") return titleOf(String(sc.head));
+  return (sc.results as { id: string; title: string }[]).find((r) => r.id === "kQ7vN2xLp4")?.title;
+}
+
+// The spy holds request 1 inside its read, after its own refresh, while `change` advances the remote and request 2 (a query) refreshes the clone. The hold waits up to 3s for the merge to rewrite the files, then reads.
+type Raced = { bare: string; seed: string; fresh: string; first: Record<string, unknown>; second: Record<string, unknown> };
+
+async function readUnderRefresh(tool: string, change: (bare: string) => string, check: (r: Raced) => void): Promise<void> {
+  return withGitBank(({ bare }) =>
+    withConsumerRepo(async (consumer) => {
+      const dir = mkdtempSync(join(tmpdir(), "ltm-mcp-pause-"));
+      try {
+        const { path, marker } = pausingGit(dir);
+        const env = { ...process.env, PATH: path, LTM_BANK_URL: bare, LTM_DATA_DIR: join(dir, "data"), LTM_BANK_TTL: "0", LTM_BANK_PATH: undefined };
+        const seed = git(bare, "rev-parse", "main").trim();
+        return await serve(env, consumer, async (client) => {
+          const real = runModule.run;
+          let fresh = "";
+          let second: Promise<Called> | undefined;
+          spyOn(runModule, "run").mockImplementation(async (input) => {
+            if (second === undefined) {
+              fresh = change(bare);
+              second = call(client, "query", COMMERCE);
+              for (const until = Date.now() + 3000; !existsSync(marker) && Date.now() < until; ) await new Promise((r) => setTimeout(r, 50));
+            }
+            return real(input);
+          });
+          const first = ok(await call(client, tool, tool === "head" ? { path: POSTGRES } : COMMERCE));
+          check({ bare, seed, fresh, first, second: ok(await second!) });
+        });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }),
+  );
+}
+
+describe("ltm mcp, a read that lands mid fast-forward of the clone", () => {
+  afterEach(() => mock.restore());
+
+  for (const tool of ["query", "head"]) {
+    test(
+      `${tool} returns bytes from the commit bank_commits names when the refresh rewrites the Record`,
+      async () => {
+        await readUnderRefresh(tool, retitle, ({ bare, seed, fresh, first, second }) => {
+          const commit = (sc: Record<string, unknown>) => (sc.bank_commits as Record<string, string>).acme;
+          expect(titleAt(bare, seed)).not.toBe(titleAt(bare, fresh));
+          expect({ tool, title: titleIn(tool, first) }).toEqual({ tool, title: titleAt(bare, commit(first)) });
+          expect({ title: titleIn("query", second), commit: commit(second) }).toEqual({ title: titleAt(bare, fresh), commit: fresh });
+        });
+      },
+      MCP_TEST_TIMEOUT,
+    );
+
+    test(
+      `${tool} under a refresh that leaves every Record alone returns bytes that match both commits`,
+      async () => {
+        await readUnderRefresh(tool, advance, ({ bare, seed, fresh, first }) => {
+          expect(fresh).not.toBe(seed);
+          const title = titleIn(tool, first);
+          expect(title).toBe("Postgres everywhere");
+          expect({ seed: titleAt(bare, seed), fresh: titleAt(bare, fresh) }).toEqual({ seed: title, fresh: title });
+        });
+      },
+      MCP_TEST_TIMEOUT,
+    );
+  }
 });

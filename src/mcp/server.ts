@@ -61,15 +61,18 @@ export function createServer(env: Env, cwd: string): McpServer {
 
   // Another request's refresh can fast-forward the clone mid-read. A read counts only when HEAD held still across it, so bank_commits names the commit the data came from.
   // `accept` also vets the output: `git merge --ff-only` rewrites worktree files before it moves the ref, so HEAD can hold still while the bytes are already the next commit's.
+  // Under LTM_BANK_URL the locator's guard keeps the server's own merge out of each attempt, so there the HEAD check and `accept` catch only a writer outside the server.
   const pinned = async <R>(
     roots: () => Named[],
     read: () => Promise<R>,
     accept: (out: R) => boolean = () => true,
   ): Promise<{ out: R; commits: Record<string, string | null> } | CallToolResult> => {
     for (let tries = 0; tries < 3; tries++) {
-      const before = bankCommits(roots());
-      const out = await read();
-      const commits = bankCommits(roots());
+      // Guarded per attempt, not per call, so a merge waiting on this read gets in before the retry.
+      const { before, out, commits } = await locator.reading(
+        roots().map((r) => r.root),
+        async () => ({ before: bankCommits(roots()), out: await read(), commits: bankCommits(roots()) }),
+      );
       if (isDeepStrictEqual(before, commits) && accept(out)) return { out, commits };
     }
     return fail("the Bank moved during each of 3 reads; try again");

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -11,7 +11,7 @@ import { git, IDENTITY, withGitBank } from "../helpers/git-bank.ts";
 const GIT_TEST_TIMEOUT = 30_000;
 const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
 
-type Rig = { env: Record<string, string | undefined>; dataDir: string; fetches: () => number; gitCalls: () => number };
+type Rig = { env: Record<string, string | undefined>; dataDir: string; log: string; lines: () => string[]; fetches: () => number; gitCalls: () => number };
 
 // A `git` first on PATH that logs its argv, so a test can count fetches the locator really ran.
 async function withRig<T>(extra: Record<string, string>, fn: (rig: Rig) => Promise<T>): Promise<T> {
@@ -26,7 +26,7 @@ async function withRig<T>(extra: Record<string, string>, fn: (rig: Rig) => Promi
   const lines = () => readFileSync(log, "utf8").split("\n").filter((l) => l !== "");
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, LTM_DATA_DIR: dataDir, ...extra };
   try {
-    return await fn({ env, dataDir, fetches: () => lines().filter((l) => / fetch( |$)/.test(` ${l}`)).length, gitCalls: () => lines().length });
+    return await fn({ env, dataDir, log, lines, fetches: () => lines().filter((l) => / fetch( |$)/.test(` ${l}`)).length, gitCalls: () => lines().length });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -285,6 +285,96 @@ describe("bankCommits", () => {
         } finally {
           rmSync(plain, { recursive: true, force: true });
         }
+      });
+    },
+    GIT_TEST_TIMEOUT,
+  );
+});
+
+describe("BankLocator.reading", () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // With no writer, reading runs fn before its first await, so a probe that hasn't run on return is queued behind a pending merge.
+  // Boxed, since an async function returning the bare promise would wait for it.
+  async function untilQueued(loc: BankLocator, root: string, fn: () => Promise<void>): Promise<{ done: Promise<void> }> {
+    for (let i = 0; i < 300; i++) {
+      let ran = false;
+      const p = loc.reading([root], async () => {
+        ran = true;
+        await fn();
+      });
+      if (!ran) return { done: p };
+      await p;
+      await sleep(10);
+    }
+    throw new Error("no merge ever went pending");
+  }
+
+  test("a root with no writer runs fn at once", async () => {
+    let ran = false;
+    const p = new BankLocator().reading(["/no/writer"], async () => {
+      ran = true;
+      return 7;
+    });
+    expect(ran).toBe(true);
+    expect(await p).toBe(7);
+  });
+
+  test(
+    "a read started before a refresh holds the merge until it returns",
+    async () => {
+      await withGitBank(async ({ bare }) => {
+        await withRig({ LTM_BANK_URL: bare, LTM_BANK_TTL: "0" }, async ({ env, log, lines }) => {
+          const loc = new BankLocator();
+          const root = picked(await loc.pickBank({}, env, "/work")).root!;
+          const fresh = advance(bare);
+          let release!: () => void;
+          const held = new Promise<void>((r) => (release = r));
+          const reader = loc.reading([root], async () => {
+            await held;
+            appendFileSync(log, "reader done\n");
+          });
+          const refresh = loc.pickBank({}, env, "/work");
+          const probe = await untilQueued(loc, root, async () => {});
+          await sleep(300);
+          expect(lines().some((l) => / merge /.test(` ${l} `))).toBe(false);
+          release();
+          await reader;
+          picked(await refresh);
+          await probe.done;
+          const order = lines();
+          const merge = order.findIndex((l) => / merge /.test(` ${l} `));
+          expect({ readerFirst: order.indexOf("reader done") >= 0 && order.indexOf("reader done") < merge }).toEqual({ readerFirst: true });
+          expect(git(root, "rev-parse", "HEAD").trim()).toBe(fresh);
+        });
+      });
+    },
+    GIT_TEST_TIMEOUT,
+  );
+
+  test(
+    "a failed merge still releases the reads queued behind it",
+    async () => {
+      await withGitBank(async ({ bare }) => {
+        await withRig({ LTM_BANK_URL: bare, LTM_BANK_TTL: "0" }, async ({ env }) => {
+          const loc = new BankLocator();
+          const root = picked(await loc.pickBank({}, env, "/work")).root!;
+          // No upstream, so `merge --ff-only @{u}` fails after the fetch succeeds.
+          git(root, "branch", "--unset-upstream");
+          let release!: () => void;
+          const held = new Promise<void>((r) => (release = r));
+          const reader = loc.reading([root], () => held);
+          const refresh = loc.pickBank({}, env, "/work");
+          let queuedRan = false;
+          const queued = await untilQueued(loc, root, async () => {
+            queuedRan = true;
+          });
+          release();
+          await reader;
+          await queued.done;
+          expect(queuedRan).toBe(true);
+          expect(picked(await refresh).notes).toEqual([expect.stringMatching(/^can't refresh Bank from /)]);
+        });
       });
     },
     GIT_TEST_TIMEOUT,

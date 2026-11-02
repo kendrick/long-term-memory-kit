@@ -41,6 +41,33 @@ export class BankLocator {
   private readonly inFlight = new Map<string, Promise<void>>();
   // Kept until a refresh succeeds. A failed refresh holds off retries for the whole TTL, and every answer in that window is just as stale.
   private readonly staleNote = new Map<string, string>();
+  // Per-root readers-writer guard. `merge --ff-only` rewrites worktree files before it moves HEAD, so a read that overlaps it can pair new bytes with the old commit.
+  private readonly readers = new Map<string, number>();
+  private readonly merging = new Map<string, Promise<void>>();
+
+  // Runs one read of `roots` while no merge touches them. fn must never call pickBank, because a refresh it starts would wait on this read forever.
+  async reading<T>(roots: string[], fn: () => Promise<T>): Promise<T> {
+    // No await between the last check and the increments, so no merge can start in that gap.
+    for (let w = this.mergeOn(roots); w !== undefined; w = this.mergeOn(roots)) await w;
+    for (const r of roots) this.readers.set(r, (this.readers.get(r) ?? 0) + 1);
+    try {
+      return await fn();
+    } finally {
+      for (const r of roots) {
+        const n = (this.readers.get(r) ?? 1) - 1;
+        if (n === 0) this.readers.delete(r);
+        else this.readers.set(r, n);
+      }
+    }
+  }
+
+  private mergeOn(roots: string[]): Promise<void> | undefined {
+    for (const r of roots) {
+      const w = this.merging.get(r);
+      if (w !== undefined) return w;
+    }
+    return undefined;
+  }
 
   async pickBank(input: { bank?: string }, env: Env, cwd: string): Promise<Picked | { error: string }> {
     const path = env.LTM_BANK_PATH;
@@ -103,10 +130,20 @@ export class BankLocator {
       this.lastFetch.set(url, Date.now());
       return;
     }
-    // Fetch and merge run separately, never `git pull`: the tests count fetches through a PATH wrapper. The fast-forward is the only write the server makes to the clone.
+    // Fetch and merge run separately, never `git pull`: the tests count fetches through a PATH wrapper. The fast-forward is the server's only write to the worktree, so it alone takes the guard's write side. Fetch writes only under .git/, which no tool reads.
     try {
       await run("git", ["-C", root, "fetch", "--quiet", "origin"], { env });
-      await run("git", ["-C", root, "merge", "--ff-only", "--quiet", "@{u}"], { env });
+      // Set before the drain, so new reads queue behind the merge and a steady stream of them can't hold it off for good.
+      const done = Promise.withResolvers<void>();
+      this.merging.set(root, done.promise);
+      try {
+        // shortcut: polls every 10ms for the last reader to leave; switch to a wake-up callback if that latency ever shows.
+        while ((this.readers.get(root) ?? 0) > 0) await new Promise((r) => setTimeout(r, 10));
+        await run("git", ["-C", root, "merge", "--ff-only", "--quiet", "@{u}"], { env });
+      } finally {
+        this.merging.delete(root);
+        done.resolve();
+      }
     } catch (e) {
       const sha = spawnSync("git", ["-C", root, "rev-parse", "--short", "HEAD"], { encoding: "utf8", env }).stdout.trim();
       this.staleNote.set(url, `can't refresh Bank from ${redactRemote(url)}: ${redactRemote(stderrOf(e))}; answering from ${sha}, which may be stale`);
