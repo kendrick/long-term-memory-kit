@@ -179,6 +179,18 @@ describe("fenceTracker alone", () => {
     expect(track(["```", "```\f", "x"])).toEqual(["open", "inside", "inside"]);
   });
 
+  test("a closer followed by a vertical tab stays inside", () => {
+    expect(track(["```", "```\v", "x"])).toEqual(["open", "inside", "inside"]);
+  });
+
+  test("a closer followed by a lone carriage return stays inside", () => {
+    expect(track(["```", "```\r", "x"])).toEqual(["open", "inside", "inside"]);
+  });
+
+  test("a closer followed by a no-break space stays inside", () => {
+    expect(track(["```", "```\u00a0", "x"])).toEqual(["open", "inside", "inside"]);
+  });
+
   test("each tracker starts with no fence open", () => {
     track(["```"]);
     expect(track(["a"])).toEqual(["text"]);
