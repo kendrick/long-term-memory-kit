@@ -324,7 +324,7 @@ export function checkRecordText(
 
 type Node = { file: string; type: MemoryType; fm: Frontmatter };
 
-// A finding plus the other file its message names, so a paths filter can keep it when either end was named.
+// A finding plus the other files its message names, so a paths filter can keep it when any of them was named.
 type Pending = { finding: Finding; also: string[] };
 
 const stringList = (v: unknown): string[] =>
@@ -441,26 +441,32 @@ function checkSupersession(nodes: Node[]): Pending[] {
     }
   }
 
-  // A closed cycle has no newest Record, so nothing else notices it. One finding per strongly connected
-  // component (Tarjan), not per simple cycle; `reaches` in supersede.ts answers yes/no for one link, not components.
-  const next = new Map<Node, Node[]>();
-  for (const e of edges.values()) next.set(e.old, [...(next.get(e.old) ?? []), e.new]);
-  const index = new Map<Node, number>();
+  out.push(...supersessionCycles(edges.values(), sorted));
+  return out;
+}
+
+// A closed cycle has no newest Record, so nothing else notices it. One finding per strongly connected
+// component (Tarjan), not per simple cycle; `reaches` in supersede.ts answers yes/no for one link, not components.
+function supersessionCycles(edgeList: Iterable<{ old: Node; new: Node }>, nodesInOrder: Node[]): Pending[] {
+  const out: Pending[] = [];
+  const newerOf = new Map<Node, Node[]>();
+  for (const e of edgeList) newerOf.set(e.old, [...(newerOf.get(e.old) ?? []), e.new]);
+  const order = new Map<Node, number>();
   const low = new Map<Node, number>();
   const stack: Node[] = [];
   const onStack = new Set<Node>();
   const visit = (v: Node) => {
-    index.set(v, index.size);
-    low.set(v, index.get(v)!);
+    order.set(v, order.size);
+    low.set(v, order.get(v)!);
     stack.push(v);
     onStack.add(v);
-    for (const w of next.get(v) ?? []) {
-      if (!index.has(w)) {
+    for (const w of newerOf.get(v) ?? []) {
+      if (!order.has(w)) {
         visit(w);
         low.set(v, Math.min(low.get(v)!, low.get(w)!));
-      } else if (onStack.has(w)) low.set(v, Math.min(low.get(v)!, index.get(w)!));
+      } else if (onStack.has(w)) low.set(v, Math.min(low.get(v)!, order.get(w)!));
     }
-    if (low.get(v) !== index.get(v)) return;
+    if (low.get(v) !== order.get(v)) return;
     const comp: Node[] = [];
     let w: Node;
     do {
@@ -468,15 +474,15 @@ function checkSupersession(nodes: Node[]): Pending[] {
       onStack.delete(w);
       comp.push(w);
     } while (w !== v);
-    if (comp.length === 1 && !next.get(v)?.includes(v)) return;
+    if (comp.length === 1 && !newerOf.get(v)?.includes(v)) return;
     comp.sort((a, b) => cmp(a.file, b.file));
     const first = comp[0]!;
-    // Walk order: step to the first unvisited in-component successor, else the first unvisited Record.
+    // Deterministic, and reads as a cycle path for a simple cycle.
     const walk = [first];
     while (walk.length < comp.length) {
       const here = walk[walk.length - 1]!;
       const step =
-        (next.get(here) ?? []).filter((x) => comp.includes(x) && !walk.includes(x)).sort((a, b) => cmp(a.file, b.file))[0] ??
+        (newerOf.get(here) ?? []).filter((x) => comp.includes(x) && !walk.includes(x)).sort((a, b) => cmp(a.file, b.file))[0] ??
         comp.find((x) => !walk.includes(x))!;
       walk.push(step);
     }
@@ -493,7 +499,7 @@ function checkSupersession(nodes: Node[]): Pending[] {
       also: others,
     });
   };
-  for (const n of sorted) if (!index.has(n)) visit(n);
+  for (const n of nodesInOrder) if (!order.has(n)) visit(n);
   return out;
 }
 
