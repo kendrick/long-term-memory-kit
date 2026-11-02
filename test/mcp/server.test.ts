@@ -749,3 +749,49 @@ describe("ltm mcp, a read that lands mid fast-forward of the clone", () => {
     );
   }
 });
+
+describe("ltm mcp, a config-resolved query whose Bank changes mid-read", () => {
+  afterEach(() => mock.restore());
+
+  test(
+    "bank_commits names the Bank the rows came from after the user config switches its default",
+    () =>
+      withDemoGitBank((one) =>
+        withDemoGitBank((two) =>
+          withConsumerRepo(async (consumer) => {
+            const cfgDir = mkdtempSync(join(tmpdir(), "ltm-cfg-"));
+            try {
+              const cfg = join(cfgDir, "config.yaml");
+              const config = (pick: string) => `banks:\n  alpha: { path: ${one} }\n  beta: { path: ${two} }\ndefault: ${pick}\n`;
+              writeFileSync(cfg, config("alpha"));
+              const env = { ...process.env, LTM_BANK_PATH: undefined, LTM_BANK_URL: undefined, LTM_CONFIG: cfg };
+              await serve(env, consumer, async (client) => {
+                const real = runModule.run;
+                let switched = false;
+                // Lands after pinned resolved the roots and before the CLI resolves its own, so the rows come from beta.
+                spyOn(runModule, "run").mockImplementation(async (input) => {
+                  if (!switched) {
+                    switched = true;
+                    writeFileSync(cfg, config("beta"));
+                  }
+                  return real(input);
+                });
+                const r = await call(client, "query", {});
+                if (r.isError) {
+                  expect(textOf(r)).toContain("the Bank moved during each of 3 reads");
+                  return;
+                }
+                const sc = r.structuredContent as Record<string, unknown>;
+                const rows = sc.results as { bank: string }[];
+                expect(rows.length).toBeGreaterThan(0);
+                expect({ rowBanks: [...new Set(rows.map((x) => x.bank))], commitBanks: Object.keys(sc.bank_commits as object) }).toEqual({ rowBanks: ["beta"], commitBanks: ["beta"] });
+              });
+            } finally {
+              rmSync(cfgDir, { recursive: true, force: true });
+            }
+          }),
+        ),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+});

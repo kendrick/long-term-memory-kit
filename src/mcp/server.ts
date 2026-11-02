@@ -69,11 +69,11 @@ export function createServer(env: Env, cwd: string): McpServer {
   ): Promise<{ out: R; commits: Record<string, string | null> } | CallToolResult> => {
     for (let tries = 0; tries < 3; tries++) {
       // Guarded per attempt, not per call, so a merge waiting on this read gets in before the retry.
-      // One list per attempt, so the guard holds every root the commit check reads. query's roots() re-runs resolveBanks, which can answer differently between calls.
+      // `before` reads the same snapshot the guard keys on, so the guard holds every root it reads. The after check re-resolves, because query's CLI resolves its Banks on its own. A config switched mid-read then changes the keys and forces a retry.
       const named = roots();
       const { before, out, commits } = await locator.reading(
         named.map((r) => r.root),
-        async () => ({ before: bankCommits(named), out: await read(), commits: bankCommits(named) }),
+        async () => ({ before: bankCommits(named), out: await read(), commits: bankCommits(roots()) }),
       );
       if (isDeepStrictEqual(before, commits) && accept(out)) return { out, commits };
     }
