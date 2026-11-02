@@ -553,3 +553,84 @@ describe("ltm mcp, id refusals", () => {
     MCP_TEST_TIMEOUT,
   );
 });
+
+describe("ltm mcp outside a Bank", () => {
+  // A cwd in no Bank, whose origin no rule maps unless `rules` adds one, so only the user config can name a Bank.
+  async function withConfig<T>(config: (one: string, two: string) => string, fn: (o: { env: Record<string, string | undefined>; consumer: string; one: string }) => Promise<T>): Promise<T> {
+    return withDemoGitBank((one) =>
+      withDemoGitBank((two) =>
+        withConsumerRepo(async (consumer) => {
+          const cfgDir = mkdtempSync(join(tmpdir(), "ltm-cfg-"));
+          try {
+            writeFileSync(join(cfgDir, "config.yaml"), config(one, two));
+            const env = { ...process.env, LTM_BANK_PATH: undefined, LTM_BANK_URL: undefined, LTM_CONFIG: join(cfgDir, "config.yaml") };
+            return await fn({ env, consumer, one });
+          } finally {
+            rmSync(cfgDir, { recursive: true, force: true });
+          }
+        }),
+      ),
+    );
+  }
+  const oneBank = (one: string, two: string) => `banks:\n  alpha: { path: ${one} }\n  beta: { path: ${two} }\ndefault: alpha\n`;
+  const twoBanks = (one: string, two: string) => `${oneBank(one, two)}rules:\n  - { match: "github.com/acme/order-service", bank: alpha }\n  - { match: "github.com/acme/*", bank: beta }\n`;
+  const facetNames = (sc: Record<string, unknown>) => (sc.results as { facet: string }[]).map((r) => r.facet);
+
+  test(
+    "facets, head, and read answer from the user config's one Bank",
+    () =>
+      withConfig(oneBank, ({ env, consumer, one }) =>
+        withMcp(env, consumer, async (client) => {
+          expect(facetNames(ok(await call(client, "facets")))).toContain("service:order-service");
+          const sc = ok(await call(client, "head", { path: POSTGRES }));
+          expect(sc.head).toStartWith("---\n");
+          expect(sc.head).toContain("id: kQ7vN2xLp4\n");
+          expect(ok(await call(client, "read", { id: "kQ7vN2xLp4" })).text).toBe(readFileSync(join(one, POSTGRES), "utf8"));
+        }),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "facets, head, and read fail naming both Banks when the config resolves two",
+    () =>
+      withConfig(twoBanks, ({ env, consumer }) =>
+        withMcp(env, consumer, async (client) => {
+          for (const [tool, args] of [["facets", {}], ["head", { path: POSTGRES }], ["read", { id: "kQ7vN2xLp4" }]] as const) {
+            const r = await call(client, tool, args);
+            expect(r.isError).toBe(true);
+            expect(textOf(r)).toBe(`ltm ${tool}: 2 Banks resolve for ${consumer} (alpha, beta); pass bank to pick one`);
+          }
+        }),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "LTM_BANK_PATH still beats the user config's Bank",
+    () =>
+      withDemoGitBank(
+        (picked) =>
+          withConfig(oneBank, async ({ env, consumer }) => {
+            const facets = facetNames(ok(await withMcp({ ...env, LTM_BANK_PATH: picked }, consumer, (client) => call(client, "facets"))));
+            expect(facets).toContain("system:env-pick");
+          }),
+        (root) => {
+          const p = join(root, POSTGRES);
+          writeFileSync(p, readFileSync(p, "utf8").replace("system:data-platform", "system:env-pick"));
+        },
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "validate still wants a Bank around the cwd",
+    () =>
+      withConfig(oneBank, async ({ env, consumer }) => {
+        const r = await withMcp(env, consumer, (client) => call(client, "validate"));
+        expect(r.isError).toBe(true);
+        expect(textOf(r)).toBe(`ltm validate: no memory-bank.yaml in ${consumer} or any parent directory`);
+      }),
+    MCP_TEST_TIMEOUT,
+  );
+});

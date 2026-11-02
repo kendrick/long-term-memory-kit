@@ -38,12 +38,17 @@ export function createServer(env: Env, cwd: string): McpServer {
 
   const pick = (bank: string | undefined) => locator.pickBank({ bank }, env, cwd);
 
-  // Precedence is the env's pick, then `bank` read the way --bank reads it, then the Bank around the server's cwd.
-  const pickRoot = async (tool: string, bank: string | undefined): Promise<{ root: string; notes: string[] } | CallToolResult> => {
+  // Precedence is the env's pick, then `bank` read the way --bank reads it, then the Bank around the server's cwd, then (with `config`) the user config's Bank. validate and propose skip the config: they act on the Bank the agent is standing in.
+  const pickRoot = async (tool: string, bank: string | undefined, config: boolean): Promise<{ root: string; notes: string[] } | CallToolResult> => {
     const picked = await pick(bank);
     if ("error" in picked) return fail(picked.error);
     try {
-      const root = picked.root ?? (bank !== undefined && bank !== "" ? resolveBankFlag(bank, cwd, env).root : findBank(cwd));
+      let root = picked.root ?? (bank !== undefined && bank !== "" ? resolveBankFlag(bank, cwd, env).root : findBank(cwd));
+      if (root === null && config) {
+        const { banks } = resolveBanks(cwd, env);
+        if (banks.length > 1) return fail(`ltm ${tool}: ${banks.length} Banks resolve for ${cwd} (${banks.map((b) => b.name).join(", ")}); pass bank to pick one`);
+        root = banks[0]?.root ?? null;
+      }
       return root === null ? fail(noBankLine(tool, cwd).trimEnd()) : { root, notes: picked.notes };
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
@@ -147,7 +152,7 @@ export function createServer(env: Env, cwd: string): McpServer {
     input: { id?: string; path?: string; bank?: string },
   ): Promise<({ root: string; realRoot: string; notes: string[] } & ({ id: string } | { rel: string })) | CallToolResult> => {
     if ((input.id === undefined) === (input.path === undefined)) return fail("give exactly one of id or path");
-    const at = await pickRoot(tool, input.bank);
+    const at = await pickRoot(tool, input.bank, true);
     if ("content" in at) return at;
     const { root, notes } = at;
     const realRoot = realpathSync(root);
@@ -286,7 +291,7 @@ export function createServer(env: Env, cwd: string): McpServer {
       }),
     },
     async (input) => {
-      const at = await pickRoot("facets", input.bank);
+      const at = await pickRoot("facets", input.bank, true);
       if ("content" in at) return at;
       const { root, notes } = at;
       return jsonTool(["facets", ...(input.all === true ? ["--all"] : [])], root, () => [namedRoot(root)], notes);
@@ -306,7 +311,7 @@ export function createServer(env: Env, cwd: string): McpServer {
       }),
     },
     async (input) => {
-      const at = await pickRoot("validate", input.bank);
+      const at = await pickRoot("validate", input.bank, false);
       if ("content" in at) return at;
       const { root, notes } = at;
       return jsonTool(["validate", "--", ...(input.paths ?? [])], root, () => [namedRoot(root)], notes);
@@ -347,7 +352,7 @@ export function createServer(env: Env, cwd: string): McpServer {
       } else if (input.title === undefined) {
         return fail("title is required unless from is set");
       }
-      const at = await pickRoot("propose", input.bank);
+      const at = await pickRoot("propose", input.bank, false);
       if ("content" in at) return at;
       const { root, notes } = at;
 
