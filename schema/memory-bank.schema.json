@@ -77,6 +77,13 @@
           "type": "integer",
           "minimum": 1,
           "default": 30
+        },
+        "near_duplicate_threshold": {
+          "description": "Report two accepted Records as near-duplicates when a ranked recall backend scores them above this.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "default": 0.85
         }
       }
     },

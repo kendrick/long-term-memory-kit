@@ -13,11 +13,15 @@ import {
   type Thresholds,
 } from "../../src/core/doctor.ts";
 import { listRecords } from "../../src/core/query.ts";
+import { tokenize, type RecallBackend } from "../../src/core/recall.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const demoBank = fileURLToPath(new URL("../../fixtures/demo-bank", import.meta.url));
 const TODAY = "2026-10-09";
-const DEFAULTS: Thresholds = { stale_confirmed_days: 90, proposal_age_days: 30, max_chain_length: 3, orphan_days: 30 };
+const DEFAULTS: Thresholds = { stale_confirmed_days: 90, proposal_age_days: 30, max_chain_length: 3,
+  orphan_days: 30,
+  near_duplicate_threshold: 0.85,
+};
 
 const F = {
   glossary: "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
@@ -116,6 +120,19 @@ describe("loadThresholds", () => {
     expect(loadThresholds(config({ doctor: null }))).toEqual({ error: "doctor is not a mapping" });
   });
 
+  test("near_duplicate_threshold takes a number strictly between 0 and 1", () => {
+    expect(loadThresholds(config({}))).toMatchObject({ near_duplicate_threshold: 0.85 });
+    expect(loadThresholds(config({ doctor: { near_duplicate_threshold: 0.5 } }))).toEqual({
+      ...DEFAULTS,
+      near_duplicate_threshold: 0.5,
+    });
+    for (const bad of [0, 1, 1.5, "0.8"]) {
+      expect(loadThresholds(config({ doctor: { near_duplicate_threshold: bad } }))).toEqual({
+        error: "doctor.near_duplicate_threshold must be a number between 0 and 1, exclusive",
+      });
+    }
+  });
+
   test("reads the doctor mapping out of memory-bank.yaml", async () => {
     await scratch(async (dir) => {
       const path = join(dir, "memory-bank.yaml");
@@ -128,7 +145,7 @@ describe("loadThresholds", () => {
 });
 
 describe("CHECKS", () => {
-  test("lists the seven checks in report order", () => {
+  test("lists the eight checks in report order", () => {
     expect(CHECKS.map((c) => c.name)).toEqual([
       "stale-confirmed",
       "review-due",
@@ -137,6 +154,7 @@ describe("CHECKS", () => {
       "orphan",
       "broken-related",
       "supersession-no-shared-facet",
+      "near-duplicate",
     ]);
   });
 });
@@ -533,6 +551,110 @@ describe("runDoctor ordering", () => {
         "related entry 'constrained_by::YYYYYYYYYY' names id 'YYYYYYYYYY', which no Record has",
         "related entry 'constrained_by::ZZZZZZZZZZ' names id 'ZZZZZZZZZZ', which no Record has",
       ]);
+    });
+  });
+});
+
+const MQ = "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md";
+const PUB = "_memory/decisions/publish-order-events-to-the-queue-aB3cD4eF5g.md";
+const PUB_FIELDS: Record<string, string> = {
+  schema: "1",
+  id: "aB3cD4eF5g",
+  memory_type: "Decision",
+  title: "Publish order events to the message queue",
+  status: "accepted",
+  date: "2026-04-22",
+  summary: "Order-service publishes order lifecycle events to the shared message queue instead of calling downstream services.",
+  applies_to: "[service:order-service, domain:commerce]",
+};
+
+// Scores each candidate by the Jaccard index of its token set against the query's.
+const jaccard: RecallBackend = {
+  search(records, text) {
+    const q = new Set(tokenize(text));
+    return records.map((record) => {
+      const { summary, title } = record.frontmatter;
+      const c = new Set(tokenize(typeof summary === "string" && summary !== "" ? summary : String(title)));
+      const shared = [...q].filter((t) => c.has(t)).length;
+      return { record, score: shared / (q.size + c.size - shared) };
+    });
+  },
+};
+
+const nearDup = (fs: DoctorFinding[]) => fs.filter((f) => f.check === "near-duplicate");
+const withBackend = (dir: string, t: number = 0.85) =>
+  nearDup(
+    runDoctor(listRecords(loadConfig(dir), () => {}), TODAY, { ...DEFAULTS, near_duplicate_threshold: t }, jaccard),
+  );
+
+describe("near-duplicate", () => {
+  test("reports the one pair, on the path that sorts first", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, PUB_FIELDS);
+      expect(withBackend(dir)).toEqual([
+        {
+          file: MQ,
+          check: "near-duplicate",
+          message: `scores 0.94 against ${PUB} (threshold 0.85)`,
+          related_files: [PUB],
+        },
+      ]);
+    });
+  });
+
+  test("a dissimilar summary reports nothing", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, { ...PUB_FIELDS, summary: "Order-service writes audit rows.", title: "Audit rows" });
+      expect(withBackend(dir)).toEqual([]);
+    });
+  });
+
+  test("a different memory_type never pairs, however alike", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, "_memory/policy-rules/copy-of-mq-zZ9yY8xX7w.md", {
+        ...PUB_FIELDS,
+        id: "zZ9yY8xX7w",
+        memory_type: "PolicyRule",
+        title: "Adopt a message queue for order events",
+        summary:
+          "Order-service publishes order lifecycle events to the shared message queue instead of calling downstream services directly.",
+      });
+      expect(withBackend(dir)).toEqual([]);
+    });
+  });
+
+  test("needs a literal shared applies_to Facet", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, { ...PUB_FIELDS, applies_to: "[service:billing-service]" });
+      expect(withBackend(dir)).toEqual([]);
+      const { applies_to: _, ...bare } = PUB_FIELDS;
+      await writeRecord(dir, PUB, bare);
+      expect(withBackend(dir)).toEqual([]);
+    });
+  });
+
+  test("a proposed Record is not compared", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, { ...PUB_FIELDS, status: "proposed" });
+      expect(withBackend(dir)).toEqual([]);
+    });
+  });
+
+  test("the threshold is strict and echoed in the message", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, PUB_FIELDS);
+      expect(withBackend(dir, 0.95)).toEqual([]);
+      expect(withBackend(dir, 0.9).map((f) => f.message)).toEqual([`scores 0.94 against ${PUB} (threshold 0.9)`]);
+      // The score is exactly 15/16, so equal is not above.
+      expect(withBackend(dir, 0.9375)).toEqual([]);
+    });
+  });
+
+  test("two runs agree, and no backend means no finding", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, PUB_FIELDS);
+      expect(withBackend(dir)).toEqual(withBackend(dir));
+      expect(nearDup(doctor(dir))).toEqual([]);
     });
   });
 });

@@ -2,6 +2,7 @@ import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type:
 import { isMapping, type BankConfig } from "./bank.ts";
 import { isCalendarDate } from "./clock.ts";
 import { RETIRED_STATUSES } from "./query.ts";
+import type { RecallBackend } from "./recall.ts";
 import type { ParsedRecord } from "./record.ts";
 import { byCodeUnit } from "./text.ts";
 import { sharesScope } from "./validate.ts";
@@ -13,7 +14,8 @@ export type CheckName =
   | "long-chain"
   | "orphan"
   | "broken-related"
-  | "supersession-no-shared-facet";
+  | "supersession-no-shared-facet"
+  | "near-duplicate";
 
 export type DoctorFinding = { file: string; check: CheckName; message: string; related_files: string[] };
 
@@ -22,6 +24,7 @@ export type Thresholds = {
   proposal_age_days: number;
   max_chain_length: number;
   orphan_days: number;
+  near_duplicate_threshold: number;
 };
 
 const THRESHOLD_KEYS: readonly (keyof Thresholds)[] = [
@@ -29,6 +32,7 @@ const THRESHOLD_KEYS: readonly (keyof Thresholds)[] = [
   "proposal_age_days",
   "max_chain_length",
   "orphan_days",
+  "near_duplicate_threshold",
 ];
 
 // Read from the config schema rather than copied in, so the defaults `ltm doctor` applies and the ones the
@@ -38,7 +42,7 @@ const DEFAULT_THRESHOLDS: Readonly<Thresholds> = (() => {
   const out = {} as Thresholds;
   for (const key of THRESHOLD_KEYS) {
     const v = props[key]?.default;
-    if (!isThreshold(v)) throw new Error(`schema/memory-bank.schema.json: doctor.${key} has no usable default`);
+    if (!isValidThreshold(key, v)) throw new Error(`schema/memory-bank.schema.json: doctor.${key} has no usable default`);
     out[key] = v;
   }
   if (Object.keys(props).some((k) => !(THRESHOLD_KEYS as readonly string[]).includes(k))) {
@@ -51,6 +55,14 @@ function isThreshold(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v >= 1;
 }
 
+function isScoreThreshold(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 && v < 1;
+}
+
+function isValidThreshold(key: keyof Thresholds, v: unknown): v is number {
+  return key === "near_duplicate_threshold" ? isScoreThreshold(v) : isThreshold(v);
+}
+
 export function loadThresholds(config: BankConfig): Thresholds | { error: string } {
   const out: Thresholds = { ...DEFAULT_THRESHOLDS };
   const raw = config.raw.doctor;
@@ -59,7 +71,14 @@ export function loadThresholds(config: BankConfig): Thresholds | { error: string
   if (!isMapping(raw)) return { error: "doctor is not a mapping" };
   for (const [key, v] of Object.entries(raw)) {
     if (!(THRESHOLD_KEYS as readonly string[]).includes(key)) return { error: `doctor.${key}: unknown key` };
-    if (!isThreshold(v)) return { error: `doctor.${key} must be an integer of 1 or more` };
+    if (!isValidThreshold(key as keyof Thresholds, v)) {
+      return {
+        error:
+          key === "near_duplicate_threshold"
+            ? `doctor.${key} must be a number between 0 and 1, exclusive`
+            : `doctor.${key} must be an integer of 1 or more`,
+      };
+    }
     out[key as keyof Thresholds] = v;
   }
   return out;
@@ -90,6 +109,7 @@ type DoctorContext = {
   heldIds: ReadonlySet<string>;
   edges: readonly Edge[];
   inbound: ReadonlyMap<ParsedRecord, number>;
+  backend?: RecallBackend;
 };
 
 const isLive = (r: ParsedRecord): boolean =>
@@ -285,6 +305,38 @@ function supersessionNoSharedFacet(ctx: DoctorContext): DoctorFinding[] {
   return out;
 }
 
+function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
+  const backend = ctx.backend;
+  if (!backend) return [];
+  const t = ctx.thresholds.near_duplicate_threshold;
+  const accepted = ctx.records.filter((r) => r.frontmatter.status === "accepted");
+  const pairs = new Map<string, { first: string; other: string; score: number }>();
+  for (const r of accepted) {
+    const { summary, title } = r.frontmatter;
+    const text = typeof summary === "string" && summary !== "" ? summary : title;
+    // A Record with neither is `ltm validate`'s to report; it can still be a hit for another query.
+    if (typeof text !== "string" || text === "") continue;
+    const mine = stringListField(r, "applies_to");
+    if (mine === null) continue;
+    const candidates = accepted.filter((c) => c !== r && c.frontmatter.memory_type === r.frontmatter.memory_type);
+    const allowed = new Set(candidates);
+    for (const hit of backend.search(candidates, text)) {
+      if (!allowed.has(hit.record) || !(hit.score > t)) continue;
+      const theirs = stringListField(hit.record, "applies_to");
+      // Literal intersection, not sharesScope: an empty list there matches everything, which would pair unscoped Records.
+      if (theirs === null || !theirs.some((x) => mine.includes(x))) continue;
+      const [first, other] = [r.path, hit.record.path].sort(byCodeUnit) as [string, string];
+      const key = `${first}\0${other}`;
+      const seen = pairs.get(key);
+      // Backends needn't be symmetric, so the pair keeps the higher of its two scores.
+      if (!seen || hit.score > seen.score) pairs.set(key, { first, other, score: hit.score });
+    }
+  }
+  return [...pairs.values()].map(({ first, other, score }) =>
+    finding(first, "near-duplicate", `scores ${score.toFixed(2)} against ${other} (threshold ${t})`, [other]),
+  );
+}
+
 export const CHECKS: readonly { name: CheckName; run(ctx: DoctorContext): DoctorFinding[] }[] = [
   { name: "stale-confirmed", run: staleConfirmed },
   { name: "review-due", run: reviewDue },
@@ -293,9 +345,10 @@ export const CHECKS: readonly { name: CheckName; run(ctx: DoctorContext): Doctor
   { name: "orphan", run: orphan },
   { name: "broken-related", run: brokenRelated },
   { name: "supersession-no-shared-facet", run: supersessionNoSharedFacet },
+  { name: "near-duplicate", run: nearDuplicate },
 ];
 
-function buildContext(records: ParsedRecord[], today: string, thresholds: Thresholds): DoctorContext {
+function buildContext(records: ParsedRecord[], today: string, thresholds: Thresholds, backend?: RecallBackend): DoctorContext {
   const byId = new Map<string, ParsedRecord[]>();
   for (const r of records) {
     const id = r.frontmatter.id;
@@ -343,11 +396,18 @@ function buildContext(records: ParsedRecord[], today: string, thresholds: Thresh
     heldIds: new Set(byId.keys()),
     edges: [...edges.values()],
     inbound,
+    backend,
   };
 }
 
-export function runDoctor(records: ParsedRecord[], today: string, thresholds: Thresholds): DoctorFinding[] {
-  const ctx = buildContext(records, today, thresholds);
+// The near-duplicate check reads backend scores as 0 to 1, so don't pass `lexical`, whose scores are occurrence counts.
+export function runDoctor(
+  records: ParsedRecord[],
+  today: string,
+  thresholds: Thresholds,
+  backend?: RecallBackend,
+): DoctorFinding[] {
+  const ctx = buildContext(records, today, thresholds, backend);
   const rank = new Map(CHECKS.map((c, i) => [c.name, i]));
   return CHECKS.flatMap((c) => c.run(ctx)).sort(
     (a, b) =>

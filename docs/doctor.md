@@ -6,9 +6,9 @@ Each finding prints as `<file>: <check>: <message>`, sorted by file and then by 
 
 Retired Records (`status` of `superseded`, `deprecated`, or `rejected`) are skipped by `stale-confirmed`, `review-due`, and `orphan`. A malformed field is `ltm validate`'s to report, so a check that needs it skips that Record without a finding.
 
-There is no suppression list. To clear a finding, edit the Record, or change a threshold under `doctor:` in `memory-bank.yaml`. The four thresholds are `stale_confirmed_days`, `proposal_age_days`, `max_chain_length`, and `orphan_days`. Each must be an integer of 1 or more, and each default is read from `schema/memory-bank.schema.json`.
+There is no suppression list. To clear a finding, edit the Record, or change a threshold under `doctor:` in `memory-bank.yaml`. The five thresholds are `stale_confirmed_days`, `proposal_age_days`, `max_chain_length`, `orphan_days`, and `near_duplicate_threshold`. The first four must be integers of 1 or more, and `near_duplicate_threshold` must be a number between 0 and 1, exclusive. Each default is read from `schema/memory-bank.schema.json`.
 
-Every report line below came from `ltm doctor` run with `LTM_TODAY=2026-10-09` on a scratch copy of `fixtures/demo-bank`. Where the demo Bank doesn't fire a check, the copy had a frontmatter edit that the section names.
+Every report line below except `near-duplicate`'s came from `ltm doctor` run with `LTM_TODAY=2026-10-09` on a scratch copy of `fixtures/demo-bank`. Where the demo Bank doesn't fire a check, the copy had a frontmatter edit that the section names.
 
 ## stale-confirmed
 
@@ -93,3 +93,15 @@ Every report line below came from `ltm doctor` run with `LTM_TODAY=2026-10-09` o
 **False positives:** A new Record that deliberately replaces an org-wide one, so the older Record has no Facets to share.
 
 **Dismissal:** Give both Records at least one common Facet in `applies_to`. If the link itself is wrong, fix the `supersedes` or `superseded_by` field.
+
+## near-duplicate
+
+**Fields:** `status`, `memory_type`, `summary`, `title`, and `applies_to`. Only Records with `status: accepted` are checked. Each Record is searched with its `summary`, or its `title` when it has no non-empty `summary`. A Record with neither isn't searched, though it can still turn up as a match. Two Records pair only when they have the same `memory_type` and share at least one literal `applies_to` Facet. An empty or malformed `applies_to` never pairs.
+
+**Threshold:** `doctor.near_duplicate_threshold`, default 0.85, a number strictly between 0 and 1. The check fires when a ranked recall backend scores a pair above that, on a 0-to-1 scale. A score equal to the threshold doesn't fire. The check runs only when a backend is passed to `runDoctor`. `ltm doctor` passes none until #132, so it never reports this check today, and its output is unchanged. Why a ranked lookup doesn't break the rule that `ltm` never calls a model is in [ADR 0002](adr/0002-a-ranked-lookup-is-not-a-model-call.md).
+
+**Report line:** `_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md: near-duplicate: scores 0.94 against _memory/decisions/publish-order-events-to-the-queue-aB3cD4eF5g.md (threshold 0.85)`. This one came from the test's stub backend, with a second Decision added to a scratch copy of `fixtures/demo-bank`, because `ltm doctor` passes no backend yet. A pair prints once, on the file that sorts first, with the other file in `related_files`. The score shown is the larger of the two directions.
+
+**False positives:** Two Records that cover the same ground on purpose, such as a Decision and a narrower Decision for one service that share a Facet.
+
+**Dismissal:** Merge the two Records, or retire one. Edit a Record's `summary` until the pair scores below the threshold. To loosen the check, raise `doctor.near_duplicate_threshold`.
