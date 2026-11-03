@@ -3,8 +3,7 @@ import { byCodeUnit } from "./text.ts";
 
 export type Hit = { record: ParsedRecord; score: number };
 
-// Ranked backends such as qmd plug in here later. Nothing reads the `recall:` key in
-// `memory-bank.yaml` yet, so setting it can't change output.
+// `ltm doctor` reads `recall:` and plugs qmd in through `src/core/qmd.ts`; `ltm query` still uses `lexical` only.
 export interface RecallBackend {
   search(records: ParsedRecord[], text: string): Hit[];
 }

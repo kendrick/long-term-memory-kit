@@ -663,4 +663,57 @@ describe("near-duplicate", () => {
       expect(withBackend(dir)).toEqual([]);
     });
   });
+
+  const MQ_SUMMARY =
+    "Order-service publishes order lifecycle events to the shared message queue instead of calling downstream services directly.";
+  // The demo Bank holds other Decisions; only the MQ/PUB pair should score.
+  const pairOnly = (record: { path: string }, text: string, score: number) =>
+    (record.path === MQ || record.path === PUB) && (text === MQ_SUMMARY || text === PUB_FIELDS.summary) ? score : 0;
+  const run = (dir: string, backend: RecallBackend) =>
+    nearDup(
+      runDoctor(listRecords(loadConfig(dir), () => {}), TODAY, DEFAULTS, backend),
+    );
+
+  test("a backend that scores a pair differently each way reports the higher score", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, PUB_FIELDS);
+      const asymmetric: RecallBackend = {
+        search: (records, text) => records.map((record) => ({ record, score: pairOnly(record, text, text === MQ_SUMMARY ? 0.9 : 0.95) })),
+      };
+      expect(run(dir, asymmetric).map((f) => f.message)).toEqual([`scores 0.95 against ${PUB} (threshold 0.85)`]);
+    });
+  });
+
+  test("a hit outside the candidate set never pairs", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, PUB_FIELDS);
+      await writeRecord(dir, "_memory/policy-rules/stray-zZ9yY8xX7w.md", {
+        ...PUB_FIELDS,
+        id: "zZ9yY8xX7w",
+        memory_type: "PolicyRule",
+        title: "Stray rule",
+        summary: "Unrelated.",
+        applies_to: "[service:order-service, domain:commerce]",
+      });
+      const all = listRecords(loadConfig(dir), () => {});
+      const stray = all.find((r) => r.path.includes("stray-zZ9yY8xX7w"))!;
+      const leaky: RecallBackend = {
+        search: (records) => [...records.map((record) => ({ record, score: 0 })), { record: stray, score: 0.99 }],
+      };
+      const found = run(dir, leaky);
+      expect(found).toEqual([]);
+      expect(JSON.stringify(found)).not.toContain("stray-zZ9yY8xX7w");
+    });
+  });
+
+  test.each([
+    [0.854, "0.854"],
+    [0.9999, "0.9999"],
+  ])("a score of %p prints as %s, above the threshold it sits beside", async (score, shown) => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, PUB_FIELDS);
+      const fixed: RecallBackend = { search: (records, text) => records.map((record) => ({ record, score: pairOnly(record, text, score) })) };
+      expect(run(dir, fixed).map((f) => f.message)).toEqual([`scores ${shown} against ${PUB} (threshold 0.85)`]);
+    });
+  });
 });

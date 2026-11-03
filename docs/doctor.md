@@ -98,7 +98,21 @@ Every report line below except `near-duplicate`'s came from `ltm doctor` run wit
 
 **Fields:** `status`, `memory_type`, `summary`, `title`, and `applies_to`. The check compares only Records with `status: accepted`. It searches with each Record's `summary`, or with its `title` when the `summary` is missing or empty. The check doesn't search with a Record that has neither, but that Record can still turn up as a match. Two Records pair only when they have the same `memory_type` and share at least one `applies_to` Facet, letter for letter. A Record with a missing or malformed `memory_type`, or an empty or malformed `applies_to`, never pairs.
 
-**Threshold:** `doctor.near_duplicate_threshold`, default 0.85, a number strictly between 0 and 1. The check fires when a ranked recall backend scores a pair above the threshold on a 0-to-1 scale, so a score equal to it doesn't fire. `runDoctor` runs the check only when its caller passes a backend, and `ltm doctor` passes none until #132, so `ltm doctor` doesn't report this check yet. [ADR 0002](adr/0002-a-ranked-lookup-is-not-a-model-call.md) explains why a ranked lookup keeps the rule that `ltm` never calls a model.
+**Threshold:** `doctor.near_duplicate_threshold`, default 0.85, a number strictly between 0 and 1. The check fires when a ranked recall backend scores a pair above the threshold on a 0-to-1 scale, so a score equal to it doesn't fire. `runDoctor` runs the check only when its caller passes a backend, and `ltm doctor` passes one when `memory-bank.yaml` sets `recall:`. Without `recall:`, `ltm doctor` doesn't run this check and its output doesn't change. [ADR 0002](adr/0002-a-ranked-lookup-is-not-a-model-call.md) explains why a ranked lookup keeps the rule that `ltm` never calls a model, and [ADR 0003](adr/0003-qmd-search-and-vsearch-qualify.md) says which qmd modes qualify.
+
+**Recall:** `recall:` in `memory-bank.yaml` names qmd, a mode, and one qmd collection per `memory_type`. All three keys are required.
+
+```yaml
+recall:
+  backend: qmd
+  mode: search
+  collections:
+    Decision: decisions
+```
+
+`backend` is `qmd`. `mode` is `search` (BM25) or `vsearch` (a local embedding lookup). `ltm doctor` exits 1 and names the value when `mode` is `query` or anything else, because `qmd query` expands and reranks with generative models. `collections` maps one or more of `Decision`, `PolicyRule`, `Exception`, and `Context` to a collection name. Make the collection above with `qmd collection add <bank>/_memory/decisions --name decisions`. A `memory_type` with no collection is never searched, so its Records get no `near-duplicate` findings. `ltm doctor` exits 1 when qmd isn't on `PATH` or a named collection doesn't exist.
+
+qmd searches its index, not the files. Run `qmd update` after you edit Records, and `qmd embed` too in `vsearch` mode. A re-index or re-embed can add or drop `near-duplicate` findings, and `ltm doctor` doesn't detect a stale index. Two `ltm doctor` runs on one Bank and one unchanged index give the same output.
 
 **Report line:** `_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md: near-duplicate: scores 0.94 against _memory/decisions/publish-order-events-to-the-queue-aB3cD4eF5g.md (threshold 0.85)`. This line came from the stub backend in `test/core/doctor.test.ts`, run on a scratch copy of `fixtures/demo-bank` with a second Decision added. A pair prints once, on the file that sorts first, with the other file in `related_files`. The score is the higher of the two Records' searches for each other.
 

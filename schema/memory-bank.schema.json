@@ -88,7 +88,20 @@
       }
     },
     "recall": {
-      "description": "Reserved. Accepted with any value, and v1 ignores it."
+      "description": "The ranked backend ltm doctor's near-duplicate check searches through. See docs/doctor.md.",
+      "type": "object",
+      "properties": {
+        "backend": { "const": "qmd" },
+        "mode": { "enum": ["search", "vsearch"] },
+        "collections": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "enum": ["Decision", "PolicyRule", "Exception", "Context"] },
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        }
+      },
+      "required": ["backend", "mode", "collections"],
+      "additionalProperties": false
     },
     "subject": {
       "description": "Reserved. Accepted with any value, and v1 ignores it."

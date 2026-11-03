@@ -305,6 +305,15 @@ function supersessionNoSharedFacet(ctx: DoctorContext): DoctorFinding[] {
   return out;
 }
 
+// Fewest decimals (2 to 6) whose rounded text still reads above the threshold, and below 1 unless the score reached it, so the message never contradicts the check.
+function scoreText(score: number, t: number): string {
+  for (let d = 2; d <= 6; d++) {
+    const s = score.toFixed(d);
+    if (Number(s) > t && (Number(s) < 1 || score >= 1)) return s;
+  }
+  return String(score);
+}
+
 function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
   const backend = ctx.backend;
   if (!backend) return [];
@@ -335,7 +344,7 @@ function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
     }
   }
   return [...pairs.values()].map(({ first, other, score }) =>
-    finding(first, "near-duplicate", `scores ${score.toFixed(2)} against ${other} (threshold ${t})`, [other]),
+    finding(first, "near-duplicate", `scores ${scoreText(score, t)} against ${other} (threshold ${t})`, [other]),
   );
 }
 

@@ -89,7 +89,7 @@ A repo can read from several Banks. `ltm query` resolves them, queries each on i
 
 ## Stage 0 Is Reserved
 
-Semantic recall would run before stage 1, as a ranked search over meaning. It's planned for v1.1. A ranked backend can plug in through the `RecallBackend` interface in `src/core/recall.ts`. Today only a plain lexical match is wired in, and the `recall:` key in `memory-bank.yaml` changes nothing. `ltm doctor`'s `near-duplicate` check waits on the same backend. Precise questions don't need it, because the funnel is exact when the headers are canonical.
+Semantic recall would run before stage 1, as a ranked search over meaning. It's planned for v1.1. A ranked backend can plug in through the `RecallBackend` interface in `src/core/recall.ts`. Today only a plain lexical match is wired in, and `recall:` in `memory-bank.yaml` turns on qmd for `ltm doctor`'s `near-duplicate` check only. `ltm query` ignores it. Precise questions don't need it, because the funnel is exact when the headers are canonical.
 
 ## Related Pages
 
