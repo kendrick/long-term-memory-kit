@@ -18,10 +18,7 @@ import { withScratch } from "../helpers/scratch.ts";
 
 const demoBank = fileURLToPath(new URL("../../fixtures/demo-bank", import.meta.url));
 const TODAY = "2026-10-09";
-const DEFAULTS: Thresholds = { stale_confirmed_days: 90, proposal_age_days: 30, max_chain_length: 3,
-  orphan_days: 30,
-  near_duplicate_threshold: 0.85,
-};
+const DEFAULTS: Thresholds = { stale_confirmed_days: 90, proposal_age_days: 30, max_chain_length: 3, orphan_days: 30, near_duplicate_threshold: 0.85 };
 
 const F = {
   glossary: "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
@@ -655,6 +652,15 @@ describe("near-duplicate", () => {
       await writeRecord(dir, PUB, PUB_FIELDS);
       expect(withBackend(dir)).toEqual(withBackend(dir));
       expect(nearDup(doctor(dir))).toEqual([]);
+    });
+  });
+
+  test("a missing memory_type never pairs", async () => {
+    await scratch(async (dir) => {
+      const { memory_type: _m, ...untyped } = PUB_FIELDS;
+      await writeRecord(dir, PUB, untyped);
+      await writeRecord(dir, "_memory/decisions/untyped-copy-qQ1wW2eE3r.md", { ...untyped, id: "qQ1wW2eE3r" });
+      expect(withBackend(dir)).toEqual([]);
     });
   });
 });

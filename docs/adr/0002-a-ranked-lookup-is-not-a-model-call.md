@@ -1,5 +1,5 @@
 # A Ranked Lookup Is Not a Model Call
 
-`ltm` may read scores from a ranked index that a Bank opts into. A lookup generates nothing, and the same Bank and the same index give the same output, so it keeps what ADR 0001 protects. Checks that use a ranked backend, such as `near-duplicate` in `ltm doctor`, stay off unless a backend is passed in.
+`ltm` may read scores from a ranked index that a Bank opts into. A lookup generates nothing, and the same Bank and index give the same output, so reading one keeps the determinism ADR 0001 protects. A check that uses a ranked backend, such as `near-duplicate` in `ltm doctor`, stays off unless its caller passes a backend.
 
-Which backends qualify, embeddings included, is not settled here. That call belongs to #132.
+Which backends qualify, embedding models included, is #132's call.

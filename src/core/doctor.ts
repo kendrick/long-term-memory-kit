@@ -312,6 +312,7 @@ function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
   const accepted = ctx.records.filter((r) => r.frontmatter.status === "accepted");
   const pairs = new Map<string, { first: string; other: string; score: number }>();
   for (const r of accepted) {
+    if (typeof r.frontmatter.memory_type !== "string") continue;
     const { summary, title } = r.frontmatter;
     const text = typeof summary === "string" && summary !== "" ? summary : title;
     // A Record with neither is `ltm validate`'s to report; it can still be a hit for another query.
@@ -319,6 +320,7 @@ function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
     const mine = stringListField(r, "applies_to");
     if (mine === null) continue;
     const candidates = accepted.filter((c) => c !== r && c.frontmatter.memory_type === r.frontmatter.memory_type);
+    // A backend may return Records it wasn't handed, such as an index hit outside this Bank, so hits are checked against the candidates.
     const allowed = new Set(candidates);
     for (const hit of backend.search(candidates, text)) {
       if (!allowed.has(hit.record) || !(hit.score > t)) continue;
