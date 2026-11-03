@@ -528,8 +528,8 @@ describe("ltm query options", () => {
     await withScratch(demo, async (dir) => {
       const before = await ltm(dir, "query", "--text", "postgres");
       const cfg = join(dir, "memory-bank.yaml");
-      writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\nrecall: { backend: qmd }\n`);
-      expect(readFileSync(cfg, "utf8")).toContain("recall: { backend: qmd }");
+      writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\nrecall: { backend: qmd, mode: search, collections: { Decision: decisions } }\n`);
+      expect(readFileSync(cfg, "utf8")).toContain("recall: { backend: qmd, mode: search, collections: { Decision: decisions } }");
       const after = await ltm(dir, "query", "--text", "postgres");
       expect(after).toEqual(before);
       expect(before.stdout).not.toBe("");

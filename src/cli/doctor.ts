@@ -1,5 +1,6 @@
 import { runDoctor, loadThresholds } from "../core/doctor.ts";
 import { today } from "../core/clock.ts";
+import { loadRecall, qmdBackend, RecallError } from "../core/qmd.ts";
 import { listRecords } from "../core/query.ts";
 import { firstLine } from "../core/text.ts";
 import { ConfigError } from "../core/bank.ts";
@@ -43,10 +44,28 @@ export const doctor: Command = {
       ctx.err(`ltm doctor: memory-bank.yaml: ${thresholds.error}\n`);
       return 1;
     }
+    const recall = loadRecall(config);
+    if (recall !== null && "error" in recall) {
+      ctx.err(`ltm doctor: memory-bank.yaml: ${recall.error}\n`);
+      return 1;
+    }
+    const backend = recall === null ? undefined : qmdBackend(recall, ctx.env, (line) => ctx.err(`ltm doctor: qmd: ${line}\n`));
+    const problem = backend?.preflight();
+    if (problem) {
+      ctx.err(`ltm doctor: ${problem}\n`);
+      return 1;
+    }
     const records = listRecords(config, (path, reason) => {
       ctx.err(`ltm doctor: skipped ${path}: ${reason}\n`);
     });
-    const findings = runDoctor(records, date, thresholds);
+    let findings;
+    try {
+      findings = runDoctor(records, date, thresholds, backend);
+    } catch (e) {
+      if (!(e instanceof RecallError)) throw e;
+      ctx.err(`ltm doctor: ${e.message}\n`);
+      return 1;
+    }
     if (ctx.values.json === true) {
       ctx.out(`${JSON.stringify(findings, null, 2)}\n`);
       return 0;
