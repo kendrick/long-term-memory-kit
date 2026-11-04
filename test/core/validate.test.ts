@@ -950,7 +950,9 @@ describe("warnings, Ajv collapse, and the folder-type path", () => {
       await withScratch(demoBank, async (dir) => {
         const text = edit(dir, exceptionRel, (t) => t.replace("constrained_by::cA9wE6uJr3", "related::cA9wE6uJr3"));
         expect(text).toContain("related: [related::cA9wE6uJr3]");
-        expect(only(validateBankReport(dir, null, dir).findings, "exception-link")).toHaveLength(1);
+        expect(only(validateBankReport(dir, null, dir).findings, "exception-link")).toEqual([
+          { file: exceptionRel, line: lineOf(text, "related:"), rule: "exception-link", severity: "error", key: "related", message: MESSAGE },
+        ]);
       });
     });
 

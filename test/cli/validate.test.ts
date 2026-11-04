@@ -399,7 +399,7 @@ describe("ltm validate", () => {
     const REDIS = "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md";
     const MYSQL = "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md";
 
-    // One schema error on PG, and one bright-line warning from pointing the Exception's link at an id no Record holds, which cuts it loose from its PolicyRule while still naming one.
+    // One schema error on PG, and one bright-line warning; the Exception keeps a dangling constrained_by:: link so exception-link doesn't add a third finding.
     const oneOfEach = async (dir: string) => {
       edit(join(dir, PG), (t) => replaceLine(t, "status:", null));
       edit(join(dir, REDIS), (t) => replaceLine(t, "related:", "related: [constrained_by::zZ9zZ9zZ9z]"));
