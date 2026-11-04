@@ -904,6 +904,69 @@ describe("warnings, Ajv collapse, and the folder-type path", () => {
     });
   });
 
+  describe("exception-link", () => {
+    const MESSAGE = "Exception names no PolicyRule; add a related entry constrained_by::<PolicyRule id>";
+    const withStatus = (t: string, status: string) => replaceLine(t, "status:", `status: ${status}`);
+
+    test("an accepted Exception with related: [] errors on the related line", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const text = edit(dir, exceptionRel, (t) => replaceLine(t, "related:", "related: []"));
+        expect(text).toMatch(/^status: accepted$/m);
+        expect(only(validateBankReport(dir, null, dir).findings, "exception-link")).toEqual([
+          { file: exceptionRel, line: lineOf(text, "related:"), rule: "exception-link", severity: "error", key: "related", message: MESSAGE },
+        ]);
+      });
+    });
+
+    test("with no related key the error sits on line 1 with a null key", async () => {
+      await withScratch(demoBank, async (dir) => {
+        edit(dir, exceptionRel, (t) => replaceLine(t, "related:", null));
+        expect(only(validateBankReport(dir, null, dir).findings, "exception-link")).toEqual([
+          { file: exceptionRel, line: 1, rule: "exception-link", severity: "error", key: null, message: MESSAGE },
+        ]);
+      });
+    });
+
+    test("the same Exception at proposed warns instead", async () => {
+      await withScratch(demoBank, async (dir) => {
+        edit(dir, exceptionRel, (t) => withStatus(replaceLine(t, "related:", "related: []"), "proposed"));
+        const fs = only(validateBankReport(dir, null, dir).findings, "exception-link");
+        expect(fs).toHaveLength(1);
+        expect(fs[0]!.severity).toBe("warning");
+      });
+    });
+
+    test("superseded, deprecated, and rejected draw nothing", async () => {
+      for (const status of ["superseded", "deprecated", "rejected"]) {
+        await withScratch(demoBank, async (dir) => {
+          edit(dir, exceptionRel, (t) => withStatus(replaceLine(t, "related:", "related: []"), status));
+          expect(only(validateBankReport(dir, null, dir).findings, "exception-link")).toEqual([]);
+        });
+      }
+    });
+
+    // Falsifier: keep the target, change the relation.
+    test("related::<PolicyRule id> still errors", async () => {
+      await withScratch(demoBank, async (dir) => {
+        const text = edit(dir, exceptionRel, (t) => t.replace("constrained_by::cA9wE6uJr3", "related::cA9wE6uJr3"));
+        expect(text).toContain("related: [related::cA9wE6uJr3]");
+        expect(only(validateBankReport(dir, null, dir).findings, "exception-link")).toHaveLength(1);
+      });
+    });
+
+    // Falsifier: keep the relation, point it at nothing. Resolving the target is doctor's broken-related.
+    test("constrained_by::<id no Record holds> is silent", async () => {
+      await withScratch(demoBank, async (dir) => {
+        edit(dir, exceptionRel, (t) => t.replace("constrained_by::cA9wE6uJr3", "constrained_by::zZ9zZ9zZ9z"));
+        expect(only(validateBankReport(dir, null, dir).findings, "exception-link")).toEqual([]);
+      });
+    });
+
+    test("the demo Bank draws no exception-link finding", () => {
+      expect(only(validateBankReport(demoBank, null, demoBank).findings, "exception-link")).toEqual([]);
+    });
+  });
+
   describe("body-sections", () => {
     test("'context' in a paragraph without a Context heading warns, naming Context only", async () => {
       await withScratch(demoBank, async (dir) => {
@@ -990,7 +1053,7 @@ describe("warnings, Ajv collapse, and the folder-type path", () => {
   describe("through the CLI", () => {
     test("one bright-line warning and no errors exits 0 and prints 'warning bright-line'", async () => {
       await withScratch(demoBank, async (dir) => {
-        edit(dir, exceptionRel, (t) => replaceLine(t, "related:", null));
+        edit(dir, exceptionRel, (t) => replaceLine(t, "related:", "related: [constrained_by::zZ9zZ9zZ9z]"));
         const r = await run({ argv: ["validate"], cwd: dir, env: {} });
         expect(r.exitCode).toBe(0);
         expect(r.stderr).toBe("");

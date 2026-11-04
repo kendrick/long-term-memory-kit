@@ -31,7 +31,7 @@ grep -rh '^effective_to:' _memory/exceptions
 ## Common Mistakes
 
 - Leaving out `effective_to` and `review_by`. Without an end date, readers and agents can't tell when the departure should stop. Without a review date, `ltm doctor` has nothing to report when someone should recheck it.
-- Leaving out the `related` link to its PolicyRule. The Exception then reads as a free-standing note. A query for the PolicyRule can't find it, and an agent could follow the PolicyRule and miss the pass.
+- Leaving out the `related` link to its PolicyRule. The Exception then reads as a free-standing note. A query for the PolicyRule can't find it, and an agent could follow the PolicyRule and miss the pass. `ltm validate` reports it as `exception-link`: an error on an accepted Exception, a warning on a proposed one.
 - Linking the wrong PolicyRule. Check that the id in `constrained_by::` is the PolicyRule the Exception departs from. A mistyped id passes a glance and fails a lookup.
 - Writing one Exception for several services. Each Exception applies to its own `applies_to` Facets, so give each service its own end date and review date.
 - Treating a proposed Exception as granted. [search-service plaintext logs](../../fixtures/demo-bank/_memory/exceptions/search-service-plaintext-logs-bU2pR8aXf7.md) (`bU2pR8aXf7`) is still `proposed`. Agents surface it and never treat it as a constraint until someone accepts it.

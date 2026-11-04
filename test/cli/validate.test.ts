@@ -399,10 +399,10 @@ describe("ltm validate", () => {
     const REDIS = "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md";
     const MYSQL = "_memory/decisions/mysql-for-new-services-mB3tR9wZe1.md";
 
-    // One schema error on PG, and one bright-line warning from cutting the Exception loose from its PolicyRule.
+    // One schema error on PG, and one bright-line warning from pointing the Exception's link at an id no Record holds, which cuts it loose from its PolicyRule while still naming one.
     const oneOfEach = async (dir: string) => {
       edit(join(dir, PG), (t) => replaceLine(t, "status:", null));
-      edit(join(dir, REDIS), (t) => replaceLine(t, "related:", null));
+      edit(join(dir, REDIS), (t) => replaceLine(t, "related:", "related: [constrained_by::zZ9zZ9zZ9z]"));
       const human = lines((await ltm(dir, "validate")).stdout);
       expect(human).toHaveLength(2);
       expect(human.some((l) => l.startsWith(`${PG}:`) && l.includes(" error schema: "))).toBe(true);
@@ -645,5 +645,35 @@ describe("ltm validate: supersession cycle", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("exception-link through the CLI", () => {
+  const REDIS = "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md";
+
+  test("an accepted Exception with related: [] exits 1 with an error on that file", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(join(dir, REDIS), (t) => replaceLine(t, "related:", "related: []"));
+      const r = await ltm(dir, "validate");
+      expect(r.exitCode).toBe(1);
+      expect(lines(r.stdout).filter((l) => l.startsWith(`${REDIS}:`) && l.includes(" error exception-link: "))).toHaveLength(1);
+    });
+  });
+
+  test("the same Exception at proposed warns and exits 0", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(join(dir, REDIS), (t) => replaceLine(replaceLine(t, "related:", "related: []"), "status:", "status: proposed"));
+      const r = await ltm(dir, "validate");
+      expect(r.exitCode).toBe(0);
+      const out = lines(r.stdout);
+      expect(out.filter((l) => l.includes(" warning exception-link: "))).toHaveLength(1);
+      expect(out.some((l) => l.includes(" error "))).toBe(false);
+    });
+  });
+
+  test("the unmodified demo Bank prints no exception-link finding", async () => {
+    await withScratch(demo, async (dir) => {
+      expect(lines((await ltm(dir, "validate")).stdout).some((l) => l.includes("exception-link"))).toBe(false);
+    });
   });
 });

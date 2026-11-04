@@ -28,7 +28,8 @@ export type Rule =
   | "supersession-facets"
   | "supersession-cycle"
   | "body-sections"
-  | "bright-line";
+  | "bright-line"
+  | "exception-link";
 
 export type Severity = "error" | "warning";
 
@@ -277,6 +278,14 @@ function checkBodySections({ rel, body }: Frontmatter, aliases: HeadingAliases):
   return [finding(rel, 1, "body-sections", null, `Decision body has no ${missing.join(", ")} heading`, "warning")];
 }
 
+// The link is how a query for the PolicyRule finds its Exceptions, and a proposal may not know its rule yet.
+function checkExceptionLink({ rel, data, keys, lineOf }: Frontmatter): Finding[] {
+  const severity: Severity | null = data.status === "accepted" ? "error" : data.status === "proposed" ? "warning" : null;
+  if (!severity || stringList(data.related).some((r) => r.startsWith("constrained_by::"))) return [];
+  const key = keys.has("related") ? "related" : null;
+  return [finding(rel, lineOf(key), "exception-link", key, "Exception names no PolicyRule; add a related entry constrained_by::<PolicyRule id>", severity)];
+}
+
 type RecordResult = { findings: Finding[]; id: string | null; idLine: number; fm: Frontmatter | null };
 
 function analyzeRecord(
@@ -298,6 +307,7 @@ function analyzeRecord(
     ...checkFacetPrefixes(fm, facetPrefixes),
   );
   if (folderType === "Decision") findings.push(...checkBodySections(fm, opts.aliases ?? {}));
+  if (folderType === "Exception") findings.push(...checkExceptionLink(fm));
   const id = typeof fm.data.id === "string" ? fm.data.id : null;
   return { findings, id, idLine: fm.lineOf("id"), fm };
 }
