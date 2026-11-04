@@ -52,7 +52,8 @@ export function qmdBackend(
 ): RecallBackend & { preflight(): string | null } {
   const { mode, collections } = recall;
   // The caller's env, not process.env: it decides which qmd runs and which index (XDG dirs) it reads.
-  const qmd = (args: string[]) => spawnSync("qmd", args, { encoding: "utf8", env });
+  // `--all` can print more than Bun's ~1 MiB default maxBuffer, which would fail the run with ENOBUFS.
+  const qmd = (args: string[]) => spawnSync("qmd", args, { encoding: "utf8", env, maxBuffer: Infinity });
   const warned = new Set<string>();
   // realpath on both sides, since qmd stores a resolved path (macOS /tmp is /private/tmp).
   let bankRoot: string | undefined;
@@ -64,7 +65,11 @@ export function qmdBackend(
     if (r.status !== 0) return `recall.collections.${type}: qmd has no collection '${name}'`;
     const path = /^\s*Path:\s+(.+?)\s*$/m.exec(r.stdout ?? "")?.[1];
     if (path === undefined) return `recall.collections.${type}: qmd collection show '${name}' printed no Path`;
-    collectionRoots.set(name, realpathSync(path));
+    try {
+      collectionRoots.set(name, realpathSync(path));
+    } catch {
+      return `recall.collections.${type}: qmd collection '${name}' points at ${path}, which does not exist`;
+    }
     return null;
   };
   return {
@@ -114,7 +119,8 @@ export function qmdBackend(
         if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1) {
           throw new RecallError(`qmd ${mode} returned score ${JSON.stringify(score)} for ${file}`);
         }
-        const uri = file.replace(/\?.*$/s, "");
+        // qmd 2.8.3 appends `?index=<name>` only for a non-default index; any other `?` belongs to the filename.
+        const uri = file.replace(/\?index=[\w.!~*'()%-]*$/, "");
         if (!uri.startsWith(prefix)) continue;
         const rel = uri.slice(prefix.length);
         // A suffix match would hand the queried Record's self-hit to a namesake in a subfolder, so paths must match exactly.

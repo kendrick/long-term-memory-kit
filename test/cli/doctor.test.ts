@@ -171,13 +171,20 @@ Publish order events to the queue.
 
 const hasQmd = spawnSync("qmd", ["--version"]).status === 0;
 
-// A stand-in qmd: `collection show` prints QMD_ROOT as the collection's Path and exits QMD_SHOW_STATUS; anything else prints QMD_OUT.
+// A stand-in qmd: `collection show` prints QMD_ROOT as the collection's Path and exits QMD_SHOW_STATUS; anything else prints QMD_OUT, then QMD_ERR to stderr, and exits QMD_STATUS.
+// With QMD_LOG set, each call appends its argv, one argument per line, then a `--` line.
 const FAKE_QMD = `#!/bin/sh
+if [ -n "$QMD_LOG" ]; then
+  for a in "$@"; do printf '%s\\n' "$a" >> "$QMD_LOG"; done
+  printf -- '--\\n' >> "$QMD_LOG"
+fi
 if [ "$1" = collection ]; then
   printf 'Collection: %s\\n  Path:     %s\\n' "$3" "$QMD_ROOT"
   exit "\${QMD_SHOW_STATUS:-0}"
 fi
 printf '%s' "$QMD_OUT"
+if [ -n "$QMD_ERR" ]; then printf '%s\\n' "$QMD_ERR" >&2; fi
+exit "\${QMD_STATUS:-0}"
 `;
 
 describe("ltm doctor with recall:", () => {
@@ -218,6 +225,60 @@ describe("ltm doctor with recall:", () => {
         const r = await run({ argv: ["doctor"], cwd: dir, env: { ...env, PATH: bin, QMD_OUT: out, QMD_ROOT: join(dir, "_memory/decisions") } });
         expect(r.exitCode).toBe(0);
         expect(r.stdout).toContain(`${MQ}: near-duplicate: scores 0.97 against ${PUB} (threshold 0.85)\n`);
+      });
+    });
+  });
+
+  const fakeRun = (dir: string, bin: string, vars: Record<string, string>, ...argv: string[]) =>
+    run({ argv: ["doctor", ...argv], cwd: dir, env: { ...env, PATH: bin, QMD_ROOT: join(dir, "_memory/decisions"), ...vars } });
+  const hit = JSON.stringify([{ file: "qmd://decisions/publish-order-events-to-the-queue-aB3cD4eF5g.md", score: 0.97 }]);
+
+  test("a qmd failure during search exits 1 with stderr and nothing on stdout", async () => {
+    await withScratch(demo, async (dir) => {
+      setup(dir);
+      await withFake(async (bin) => {
+        const r = await fakeRun(dir, bin, { QMD_STATUS: "1", QMD_ERR: "index is locked" });
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toBe("");
+        expect(r.stderr).toBe("ltm doctor: qmd search failed: index is locked\n");
+      });
+    });
+  });
+
+  test("a qmd stderr line on a good search goes to stderr, and --json stdout still parses", async () => {
+    await withScratch(demo, async (dir) => {
+      setup(dir);
+      await withFake(async (bin) => {
+        const r = await fakeRun(dir, bin, { QMD_OUT: hit, QMD_ERR: "9 documents need embeddings" }, "--json");
+        expect(r.exitCode).toBe(0);
+        expect(r.stderr).toBe("ltm doctor: qmd: 9 documents need embeddings\n");
+        expect((JSON.parse(r.stdout) as { check: string }[]).some((f) => f.check === "near-duplicate")).toBe(true);
+      });
+    });
+  });
+
+  test("qmd is asked to search the title's tokens, with --json --all, in the type's collection", async () => {
+    await withScratch(demo, async (dir) => {
+      setup(dir);
+      await withFake(async (bin) => {
+        const log = join(bin, "argv.log");
+        await fakeRun(dir, bin, { QMD_OUT: "[]", QMD_LOG: log });
+        const calls = readFileSync(log, "utf8");
+        expect(calls).toContain("collection\nshow\ndecisions\n--\n");
+        expect(calls).toContain("search\nadopt a message queue for order events\n--json\n--all\n-c\ndecisions\n--\n");
+      });
+    });
+  });
+
+  test("a collection whose Path is gone exits 1 naming it", async () => {
+    await withScratch(demo, async (dir) => {
+      setup(dir);
+      await withFake(async (bin) => {
+        const gone = join(dir, "no-such-dir");
+        const r = await fakeRun(dir, bin, { QMD_ROOT: gone });
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toBe("");
+        expect(r.stderr).toBe(`ltm doctor: recall.collections.Decision: qmd collection 'decisions' points at ${gone}, which does not exist\n`);
       });
     });
   });

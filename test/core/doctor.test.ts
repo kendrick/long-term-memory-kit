@@ -706,6 +706,36 @@ describe("near-duplicate", () => {
     });
   });
 
+  // Hits only when the query is PUB's summary, so a finding proves the summary was what got sent.
+  const summaryOnly: RecallBackend = {
+    search: (records, text) =>
+      text === PUB_FIELDS.summary ? records.filter((r) => r.path === MQ).map((record) => ({ record, score: 0.95 })) : [],
+  };
+  test.each([
+    ["an empty title", { title: '""' }],
+    ["a missing title", { title: null }],
+    ["a whitespace-only title", { title: '"   "' }],
+    ["a punctuation-only title", { title: '"???"' }],
+  ])("%s queries on the summary", async (_, change) => {
+    await scratch(async (dir) => {
+      const { title: _t, ...noTitle } = PUB_FIELDS;
+      await writeRecord(dir, PUB, change.title === null ? noTitle : { ...noTitle, ...change });
+      expect(run(dir, summaryOnly).map((f) => f.message)).toEqual([`scores 0.95 against ${PUB} (threshold 0.85)`]);
+    });
+  });
+
+  test("a Record with neither a usable title nor a summary pairs with nothing and doesn't throw", async () => {
+    await scratch(async (dir) => {
+      const { summary: _s, ...bare } = PUB_FIELDS;
+      await writeRecord(dir, PUB, { ...bare, title: '"???"' });
+      const queries: string[] = [];
+      const spy: RecallBackend = { search: (_r, text) => (queries.push(text), []) };
+      expect(run(dir, spy)).toEqual([]);
+      expect(queries).not.toContain("???");
+      expect(queries).not.toContain(undefined as unknown as string);
+    });
+  });
+
   test.each([
     [0.854, "0.854"],
     [0.9999, "0.9999"],

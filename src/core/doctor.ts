@@ -2,7 +2,7 @@ import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type:
 import { isMapping, type BankConfig } from "./bank.ts";
 import { isCalendarDate } from "./clock.ts";
 import { RETIRED_STATUSES } from "./query.ts";
-import type { RecallBackend } from "./recall.ts";
+import { tokenize, type RecallBackend } from "./recall.ts";
 import type { ParsedRecord } from "./record.ts";
 import { byCodeUnit } from "./text.ts";
 import { sharesScope } from "./validate.ts";
@@ -324,7 +324,8 @@ function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
     if (typeof r.frontmatter.memory_type !== "string") continue;
     const { summary, title } = r.frontmatter;
     // qmd search ANDs every query word, and a whole summary rarely fits inside another Record, so the title goes first.
-    const text = typeof title === "string" && title !== "" ? title : summary;
+    // A title with no tokens ("???", spaces) would query nothing, so it falls through to the summary.
+    const text = typeof title === "string" && tokenize(title).length > 0 ? title : summary;
     // A Record with neither is `ltm validate`'s to report; it can still be a hit for another query.
     if (typeof text !== "string" || text === "") continue;
     const mine = stringListField(r, "applies_to");

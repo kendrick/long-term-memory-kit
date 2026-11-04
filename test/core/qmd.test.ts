@@ -14,7 +14,7 @@ if [ "$1" = collection ]; then
   if [ -n "$QMD_ROOT" ]; then printf 'Collection: %s\\n  Path:     %s\\n' "$3" "$QMD_ROOT"; fi
   exit "\${QMD_SHOW_STATUS:-0}"
 fi
-printf '%s' "$QMD_OUT"
+if [ -n "$QMD_OUT_FILE" ]; then /bin/cat "$QMD_OUT_FILE"; else printf '%s' "$QMD_OUT"; fi
 if [ -n "$QMD_ERR" ]; then printf '%s\\n' "$QMD_ERR" >&2; fi
 exit "\${QMD_STATUS:-0}"
 `;
@@ -122,6 +122,30 @@ describe("qmdBackend.search", () => {
     expect(hits).toEqual([{ record: target, score: 0.93 }]);
   });
 
+  test("a filename containing ? still maps, with and without qmd's ?index= suffix", () => {
+    const why = rec("_memory/decisions/why?not.md");
+    const out = JSON.stringify([
+      { score: 0.93, file: "qmd://decisions/why?not.md" },
+      { score: 0.92, file: "qmd://decisions/why?not.md?index=t%20x" },
+    ]);
+    const { env } = fake({ QMD_OUT: out });
+    expect(qmdBackend(RECALL, bank, env, noWarn).search([why], "why")).toEqual([
+      { record: why, score: 0.93 },
+      { record: why, score: 0.92 },
+    ]);
+  });
+
+  test("output past Bun's default 1 MiB maxBuffer still maps", () => {
+    const target = rec("_memory/decisions/x-aB3cD4eF5g.md");
+    const hits = Array.from({ length: 12000 }, (_, i) => ({ score: 0.5, file: `qmd://decisions/crowding-record-${i}-${"p".repeat(60)}.md` }));
+    hits.push({ score: 0.93, file: "qmd://decisions/x-aB3cD4eF5g.md" });
+    const outFile = join(root, "big.json");
+    writeFileSync(outFile, JSON.stringify(hits));
+    expect(readFileSync(outFile).length).toBeGreaterThan(1024 * 1024);
+    const { env } = fake({ QMD_OUT_FILE: outFile });
+    expect(qmdBackend(RECALL, bank, env, noWarn).search([target], "orders")).toEqual([{ record: target, score: 0.93 }]);
+  });
+
   // While _memory/decisions/topic.md is the query, nearDuplicate leaves it out of the candidates, so its self-hit must not land on nested/topic.md.
   const nested = rec("_memory/decisions/nested/topic.md");
   test("a self-hit for topic.md never maps to nested/topic.md", () => {
@@ -195,6 +219,16 @@ describe("qmdBackend.preflight", () => {
     const run = () => qmdBackend(RECALL, bank, env, noWarn).search([rec("_memory/decisions/a.md")], "orders");
     expect(run).toThrow(RecallError);
     expect(run).toThrow("recall.collections.Decision: qmd collection show 'decisions' printed no Path");
+  });
+
+  test("a collection whose Path no longer exists names it instead of crashing", () => {
+    const gone = join(root, "gone");
+    const { env } = fake({ QMD_ROOT: gone });
+    const message = `recall.collections.Decision: qmd collection 'decisions' points at ${gone}, which does not exist`;
+    expect(qmdBackend(RECALL, bank, env, noWarn).preflight()).toBe(message);
+    const run = () => qmdBackend(RECALL, bank, env, noWarn).search([rec("_memory/decisions/a.md")], "orders");
+    expect(run).toThrow(RecallError);
+    expect(run).toThrow(message);
   });
 
   test("search without preflight throws the missing-collection message", () => {
