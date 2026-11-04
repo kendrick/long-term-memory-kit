@@ -10,7 +10,10 @@ import type { ParsedRecord } from "../../src/core/record.ts";
 const FAKE_QMD = `#!/bin/sh
 for a in "$@"; do printf '%s\\n' "$a" >> "$QMD_LOG"; done
 printf -- '--\\n' >> "$QMD_LOG"
-if [ "$1" = collection ]; then exit "\${QMD_SHOW_STATUS:-0}"; fi
+if [ "$1" = collection ]; then
+  if [ -n "$QMD_ROOT" ]; then printf 'Collection: %s\\n  Path:     %s\\n' "$3" "$QMD_ROOT"; fi
+  exit "\${QMD_SHOW_STATUS:-0}"
+fi
 printf '%s' "$QMD_OUT"
 if [ -n "$QMD_ERR" ]; then printf '%s\\n' "$QMD_ERR" >&2; fi
 exit "\${QMD_STATUS:-0}"
@@ -19,8 +22,12 @@ exit "\${QMD_STATUS:-0}"
 const root = mkdtempSync(join(tmpdir(), "ltm-qmd-"));
 const bin = join(root, "bin");
 const emptyBin = join(root, "empty");
+// The Bank root qmdBackend gets, and the collection root the fake reports for "decisions".
+const bank = join(root, "bank");
+const decisions = join(bank, "_memory/decisions");
 mkdirSync(bin);
 mkdirSync(emptyBin);
+mkdirSync(decisions, { recursive: true });
 writeFileSync(join(bin, "qmd"), FAKE_QMD);
 chmodSync(join(bin, "qmd"), 0o755);
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -28,7 +35,7 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 let logN = 0;
 function fake(vars: Record<string, string> = {}) {
   const log = join(root, `log-${logN++}`);
-  const env = { PATH: bin, QMD_LOG: log, QMD_OUT: "[]", ...vars };
+  const env = { PATH: bin, QMD_LOG: log, QMD_OUT: "[]", QMD_ROOT: decisions, ...vars };
   const argv = () => (existsSync(log) ? readFileSync(log, "utf8") : "");
   return { env, argv };
 }
@@ -52,10 +59,10 @@ describe("loadRecall", () => {
   });
 
   test("the valid shape round-trips", () => {
-    const recall = { backend: "qmd", mode: "vsearch", collections: { Decision: "decisions", Context: "ctx" } };
+    const recall = { backend: "qmd", mode: "search", collections: { Decision: "decisions", Context: "ctx" } };
     expect(loadRecall(config({ recall }))).toEqual({
       backend: "qmd",
-      mode: "vsearch",
+      mode: "search",
       collections: { Decision: "decisions", Context: "ctx" },
     });
   });
@@ -67,8 +74,9 @@ describe("loadRecall", () => {
     ["an unknown key", { backend: "qmd", index: "x", mode: "search", collections: { Decision: "d" } }, "recall.index: unknown key"],
     ["another backend", { backend: "lexical", mode: "search", collections: { Decision: "d" } }, "recall.backend must be qmd"],
     ["no backend", { mode: "search", collections: { Decision: "d" } }, "recall.backend must be qmd"],
-    ["mode query", { backend: "qmd", mode: "query", collections: { Decision: "d" } }, 'recall.mode must be search or vsearch, not "query"'],
-    ["no mode", { backend: "qmd", collections: { Decision: "d" } }, "recall.mode must be search or vsearch, not undefined"],
+    ["mode query", { backend: "qmd", mode: "query", collections: { Decision: "d" } }, 'recall.mode must be search, not "query"'],
+    ["mode vsearch", { backend: "qmd", mode: "vsearch", collections: { Decision: "d" } }, 'recall.mode must be search, not "vsearch"'],
+    ["no mode", { backend: "qmd", collections: { Decision: "d" } }, "recall.mode must be search, not undefined"],
     ["empty collections", { backend: "qmd", mode: "search", collections: {} }, "recall.collections must map a memory_type to a qmd collection"],
     ["list collections", { backend: "qmd", mode: "search", collections: ["d"] }, "recall.collections must map a memory_type to a qmd collection"],
     ["no collections", { backend: "qmd", mode: "search" }, "recall.collections must map a memory_type to a qmd collection"],
@@ -84,16 +92,22 @@ describe("loadRecall", () => {
 });
 
 describe("qmdBackend.search", () => {
-  test("sends the tokenized text to qmd search in the type's collection", () => {
+  test("sends the tokenized text to qmd search in the type's collection, after reading its root once", () => {
     const { env, argv } = fake();
-    qmdBackend(RECALL, env, noWarn).search([rec("_memory/decisions/a.md")], 'Order-service "publishes');
-    expect(argv()).toBe("search\norder service publishes\n--json\n--all\n-c\ndecisions\n--\n");
+    const backend = qmdBackend(RECALL, bank, env, noWarn);
+    backend.search([rec("_memory/decisions/a.md")], 'Order-service "publishes');
+    backend.search([rec("_memory/decisions/a.md")], "billing");
+    expect(argv()).toBe(
+      "collection\nshow\ndecisions\n--\nsearch\norder service publishes\n--json\n--all\n-c\ndecisions\n--\nsearch\nbilling\n--json\n--all\n-c\ndecisions\n--\n",
+    );
   });
 
-  test("vsearch mode sends vsearch", () => {
+  test("after preflight, search reuses the root preflight read", () => {
     const { env, argv } = fake();
-    qmdBackend({ ...RECALL, mode: "vsearch" }, env, noWarn).search([rec("_memory/decisions/a.md")], "Order-service");
-    expect(argv()).toBe("vsearch\norder service\n--json\n--all\n-c\ndecisions\n--\n");
+    const backend = qmdBackend(RECALL, bank, env, noWarn);
+    expect(backend.preflight()).toBeNull();
+    backend.search([rec("_memory/decisions/a.md")], "orders");
+    expect(argv()).toBe("collection\nshow\ndecisions\n--\nsearch\norders\n--json\n--all\n-c\ndecisions\n--\n");
   });
 
   test("a hit maps to the candidate at its path, and a hit matching no candidate drops", () => {
@@ -104,13 +118,25 @@ describe("qmdBackend.search", () => {
       { score: 0.91, file: "qmd://decisions/nowhere-0000000000.md" },
     ]);
     const { env } = fake({ QMD_OUT: out });
-    const hits = qmdBackend(RECALL, env, noWarn).search([target, other], "orders");
+    const hits = qmdBackend(RECALL, bank, env, noWarn).search([target, other], "orders");
     expect(hits).toEqual([{ record: target, score: 0.93 }]);
+  });
+
+  // While _memory/decisions/topic.md is the query, nearDuplicate leaves it out of the candidates, so its self-hit must not land on nested/topic.md.
+  const nested = rec("_memory/decisions/nested/topic.md");
+  test("a self-hit for topic.md never maps to nested/topic.md", () => {
+    const { env } = fake({ QMD_OUT: JSON.stringify([{ score: 0.97, file: "qmd://decisions/topic.md" }]) });
+    expect(qmdBackend(RECALL, bank, env, noWarn).search([nested], "topic")).toEqual([]);
+  });
+
+  test("a hit for nested/topic.md maps to that candidate", () => {
+    const { env } = fake({ QMD_OUT: JSON.stringify([{ score: 0.97, file: "qmd://decisions/nested/topic.md" }]) });
+    expect(qmdBackend(RECALL, bank, env, noWarn).search([nested], "topic")).toEqual([{ record: nested, score: 0.97 }]);
   });
 
   test("no spawn for no records, a type with no collection, or text with no tokens", () => {
     const { env, argv } = fake();
-    const backend = qmdBackend(RECALL, env, noWarn);
+    const backend = qmdBackend(RECALL, bank, env, noWarn);
     expect(backend.search([], "orders")).toEqual([]);
     expect(backend.search([rec("_memory/context/c.md", "Context")], "orders")).toEqual([]);
     expect(backend.search([rec("_memory/decisions/a.md")], "")).toEqual([]);
@@ -119,7 +145,7 @@ describe("qmdBackend.search", () => {
 
   test("a nonzero exit throws RecallError with qmd's first stderr line", () => {
     const { env } = fake({ QMD_STATUS: "1", QMD_OUT: "", QMD_ERR: "Collection not found: decisions" });
-    const run = () => qmdBackend(RECALL, env, noWarn).search([rec("_memory/decisions/a.md")], "orders");
+    const run = () => qmdBackend(RECALL, bank, env, noWarn).search([rec("_memory/decisions/a.md")], "orders");
     expect(run).toThrow(RecallError);
     expect(run).toThrow("qmd search failed: Collection not found: decisions");
   });
@@ -128,7 +154,7 @@ describe("qmdBackend.search", () => {
     const warning = "Warning: 9 documents (100%) need embeddings. Run 'qmd embed' for better results.";
     const { env } = fake({ QMD_ERR: warning });
     const warned: string[] = [];
-    const backend = qmdBackend({ ...RECALL, mode: "vsearch" }, env, (line) => warned.push(line));
+    const backend = qmdBackend(RECALL, bank, env, (line) => warned.push(line));
     backend.search([rec("_memory/decisions/a.md")], "orders");
     backend.search([rec("_memory/decisions/b.md")], "billing");
     expect(warned).toEqual([warning]);
@@ -142,7 +168,7 @@ describe("qmdBackend.search", () => {
   for (const [name, out, message] of unreadable) {
     test(`${name} throws RecallError`, () => {
       const { env } = fake({ QMD_OUT: out });
-      const run = () => qmdBackend(RECALL, env, noWarn).search([rec("_memory/decisions/a.md")], "orders");
+      const run = () => qmdBackend(RECALL, bank, env, noWarn).search([rec("_memory/decisions/a.md")], "orders");
       expect(run).toThrow(RecallError);
       expect(run).toThrow(message);
     });
@@ -152,19 +178,36 @@ describe("qmdBackend.search", () => {
 describe("qmdBackend.preflight", () => {
   test("no qmd on PATH", () => {
     const { env } = fake();
-    expect(qmdBackend(RECALL, { ...env, PATH: emptyBin }, noWarn).preflight()).toBe("qmd not found on PATH");
+    expect(qmdBackend(RECALL, bank, { ...env, PATH: emptyBin }, noWarn).preflight()).toBe("qmd not found on PATH");
   });
 
   test("a missing collection names its memory_type and name", () => {
     const { env, argv } = fake({ QMD_SHOW_STATUS: "1" });
-    expect(qmdBackend(RECALL, env, noWarn).preflight()).toBe("recall.collections.Decision: qmd has no collection 'decisions'");
+    expect(qmdBackend(RECALL, bank, env, noWarn).preflight()).toBe("recall.collections.Decision: qmd has no collection 'decisions'");
     expect(argv()).toBe("collection\nshow\ndecisions\n--\n");
+  });
+
+  test("a collection show with no Path line names the collection", () => {
+    const { env } = fake({ QMD_ROOT: "" });
+    expect(qmdBackend(RECALL, bank, env, noWarn).preflight()).toBe(
+      "recall.collections.Decision: qmd collection show 'decisions' printed no Path",
+    );
+    const run = () => qmdBackend(RECALL, bank, env, noWarn).search([rec("_memory/decisions/a.md")], "orders");
+    expect(run).toThrow(RecallError);
+    expect(run).toThrow("recall.collections.Decision: qmd collection show 'decisions' printed no Path");
+  });
+
+  test("search without preflight throws the missing-collection message", () => {
+    const { env } = fake({ QMD_SHOW_STATUS: "1" });
+    const run = () => qmdBackend(RECALL, bank, env, noWarn).search([rec("_memory/decisions/a.md")], "orders");
+    expect(run).toThrow(RecallError);
+    expect(run).toThrow("recall.collections.Decision: qmd has no collection 'decisions'");
   });
 
   test("every collection present gives null, checked in memory_type order", () => {
     const { env, argv } = fake();
     const recall: Recall = { ...RECALL, collections: { PolicyRule: "rules", Context: "ctx", Decision: "decisions" } };
-    expect(qmdBackend(recall, env, noWarn).preflight()).toBeNull();
+    expect(qmdBackend(recall, bank, env, noWarn).preflight()).toBeNull();
     expect(argv()).toBe("collection\nshow\nctx\n--\ncollection\nshow\ndecisions\n--\ncollection\nshow\nrules\n--\n");
   });
 });

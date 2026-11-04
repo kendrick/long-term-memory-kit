@@ -171,9 +171,12 @@ Publish order events to the queue.
 
 const hasQmd = spawnSync("qmd", ["--version"]).status === 0;
 
-// A stand-in qmd: `collection show` exits QMD_SHOW_STATUS; anything else prints QMD_OUT.
+// A stand-in qmd: `collection show` prints QMD_ROOT as the collection's Path and exits QMD_SHOW_STATUS; anything else prints QMD_OUT.
 const FAKE_QMD = `#!/bin/sh
-if [ "$1" = collection ]; then exit "\${QMD_SHOW_STATUS:-0}"; fi
+if [ "$1" = collection ]; then
+  printf 'Collection: %s\\n  Path:     %s\\n' "$3" "$QMD_ROOT"
+  exit "\${QMD_SHOW_STATUS:-0}"
+fi
 printf '%s' "$QMD_OUT"
 `;
 
@@ -195,22 +198,24 @@ describe("ltm doctor with recall:", () => {
     }
   };
 
-  test("mode: query exits 1 naming the value, with nothing on stdout", async () => {
-    await withScratch(demo, async (dir) => {
-      setup(dir, "query");
-      const r = await ltm(dir, "doctor");
-      expect(r.exitCode).toBe(1);
-      expect(r.stdout).toBe("");
-      expect(r.stderr).toBe('ltm doctor: memory-bank.yaml: recall.mode must be search or vsearch, not "query"\n');
+  for (const mode of ["query", "vsearch"]) {
+    test(`mode: ${mode} exits 1 naming the value, with nothing on stdout`, async () => {
+      await withScratch(demo, async (dir) => {
+        setup(dir, mode);
+        const r = await ltm(dir, "doctor");
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toBe("");
+        expect(r.stderr).toBe(`ltm doctor: memory-bank.yaml: recall.mode must be search, not "${mode}"\n`);
+      });
     });
-  });
+  }
 
   test("a fake qmd's 0.97 hit surfaces as a near-duplicate", async () => {
     await withScratch(demo, async (dir) => {
       setup(dir);
       await withFake(async (bin) => {
         const out = JSON.stringify([{ file: "qmd://decisions/publish-order-events-to-the-queue-aB3cD4eF5g.md", score: 0.97 }]);
-        const r = await run({ argv: ["doctor"], cwd: dir, env: { ...env, PATH: bin, QMD_OUT: out } });
+        const r = await run({ argv: ["doctor"], cwd: dir, env: { ...env, PATH: bin, QMD_OUT: out, QMD_ROOT: join(dir, "_memory/decisions") } });
         expect(r.exitCode).toBe(0);
         expect(r.stdout).toContain(`${MQ}: near-duplicate: scores 0.97 against ${PUB} (threshold 0.85)\n`);
       });
@@ -221,7 +226,7 @@ describe("ltm doctor with recall:", () => {
     await withScratch(demo, async (dir) => {
       setup(dir);
       await withFake(async (bin) => {
-        const r = await run({ argv: ["doctor"], cwd: dir, env: { ...env, PATH: bin, QMD_SHOW_STATUS: "1" } });
+        const r = await run({ argv: ["doctor"], cwd: dir, env: { ...env, PATH: bin, QMD_SHOW_STATUS: "1", QMD_ROOT: join(dir, "_memory/decisions") } });
         expect(r.exitCode).toBe(1);
         expect(r.stdout).toBe("");
         expect(r.stderr).toBe("ltm doctor: recall.collections.Decision: qmd has no collection 'decisions'\n");
@@ -243,9 +248,10 @@ describe("ltm doctor with recall:", () => {
     });
   });
 
-  test.skipIf(!hasQmd)("real qmd (skipped when qmd is not installed): reports one near-duplicate, the same on a rerun", async () => {
+  const realQmd = async (pubText: string, check: (a: string, b: string) => void) => {
     await withScratch(demo, async (dir) => {
       setup(dir);
+      writeFileSync(join(dir, PUB), pubText);
       const xdg = mkdtempSync(join(tmpdir(), "ltm-xdg-"));
       try {
         // Own XDG dirs keep qmd off the user's real index.
@@ -263,14 +269,34 @@ describe("ltm doctor with recall:", () => {
         const a = await run({ argv: ["doctor"], cwd: dir, env: qenv });
         const b = await run({ argv: ["doctor"], cwd: dir, env: qenv });
         expect(a.exitCode).toBe(0);
-        const dupes = a.stdout.split("\n").filter((l) => l.includes(": near-duplicate: "));
-        expect(dupes).toHaveLength(1);
-        expect(dupes[0]).toStartWith(`${MQ}: near-duplicate: `);
-        expect(dupes[0]).toMatch(/scores 0\.\d+ against .* \(threshold 0\.85\)$/);
-        expect(b.stdout).toBe(a.stdout);
+        expect(b.exitCode).toBe(0);
+        check(a.stdout, b.stdout);
       } finally {
         rmSync(xdg, { recursive: true, force: true });
       }
+    });
+  };
+  const oneDupe = (stdout: string) => {
+    const dupes = stdout.split("\n").filter((l) => l.includes(": near-duplicate: "));
+    expect(dupes).toHaveLength(1);
+    expect(dupes[0]).toStartWith(`${MQ}: near-duplicate: `);
+    expect(dupes[0]).toMatch(/scores 0\.\d+ against .* \(threshold 0\.85\)$/);
+  };
+
+  test.skipIf(!hasQmd)("real qmd (skipped when qmd is not installed): reports one near-duplicate, the same on a rerun", async () => {
+    await realQmd(PUB_TEXT, (a, b) => {
+      oneDupe(a);
+      expect(b).toBe(a);
+    });
+  }, 60000);
+
+  // Because qmd search ANDs every query word, a summary query lost this pair once one summary word changed. A title query keeps it.
+  test.skipIf(!hasQmd)("real qmd (skipped when qmd is not installed): still pairs when PUB's summary says common, not shared", async () => {
+    const common = PUB_TEXT.replace("the shared message queue", "the common message queue");
+    expect(common).not.toBe(PUB_TEXT);
+    await realQmd(common, (a) => {
+      oneDupe(a);
+      expect(a).toContain(` against ${PUB} (threshold 0.85)\n`);
     });
   }, 60000);
 });

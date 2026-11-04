@@ -92,7 +92,7 @@
       "type": "object",
       "properties": {
         "backend": { "const": "qmd" },
-        "mode": { "enum": ["search", "vsearch"] },
+        "mode": { "enum": ["search"] },
         "collections": {
           "type": "object",
           "minProperties": 1,

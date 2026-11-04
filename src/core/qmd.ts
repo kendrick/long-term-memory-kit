@@ -1,12 +1,14 @@
 import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { join } from "node:path";
 import { isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
 import { tokenize, type Hit, type RecallBackend } from "./recall.ts";
 import { byCodeUnit, firstLine } from "./text.ts";
 
-// `query` isn't a mode: it reranks with a generative LLM, which ADR 0001 rules out (see ADR 0003).
+// `qmd vsearch` expands the query with a generative LLM and `qmd query` reranks with one, which ADR 0001 rules out (see ADR 0003).
 export type Recall = {
   backend: "qmd";
-  mode: "search" | "vsearch";
+  mode: "search";
   collections: Partial<Record<MemoryType, string>>;
 };
 
@@ -28,9 +30,7 @@ export function loadRecall(config: BankConfig): Recall | null | { error: string 
   }
   if (raw.backend !== "qmd") return { error: "recall.backend must be qmd" };
   const mode = raw.mode;
-  if (mode !== "search" && mode !== "vsearch") {
-    return { error: `recall.mode must be search or vsearch, not ${JSON.stringify(mode)}` };
-  }
+  if (mode !== "search") return { error: `recall.mode must be search, not ${JSON.stringify(mode)}` };
   const collections = raw.collections;
   if (!isMapping(collections) || Object.keys(collections).length === 0) {
     return { error: "recall.collections must map a memory_type to a qmd collection" };
@@ -46,6 +46,7 @@ export function loadRecall(config: BankConfig): Recall | null | { error: string 
 
 export function qmdBackend(
   recall: Recall,
+  root: string,
   env: Record<string, string | undefined>,
   warn: (line: string) => void,
 ): RecallBackend & { preflight(): string | null } {
@@ -53,14 +54,25 @@ export function qmdBackend(
   // The caller's env, not process.env: it decides which qmd runs and which index (XDG dirs) it reads.
   const qmd = (args: string[]) => spawnSync("qmd", args, { encoding: "utf8", env });
   const warned = new Set<string>();
+  // realpath on both sides, since qmd stores a resolved path (macOS /tmp is /private/tmp).
+  let bankRoot: string | undefined;
+  const collectionRoots = new Map<string, string>();
+  const show = (type: MemoryType): string | null => {
+    const name = collections[type]!;
+    const r = qmd(["collection", "show", name]);
+    if ((r.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return "qmd not found on PATH";
+    if (r.status !== 0) return `recall.collections.${type}: qmd has no collection '${name}'`;
+    const path = /^\s*Path:\s+(.+?)\s*$/m.exec(r.stdout ?? "")?.[1];
+    if (path === undefined) return `recall.collections.${type}: qmd collection show '${name}' printed no Path`;
+    collectionRoots.set(name, realpathSync(path));
+    return null;
+  };
   return {
     // Checks every collection up front, so a typo fails even when no type has two Records to compare.
     preflight() {
       for (const type of (Object.keys(collections) as MemoryType[]).sort(byCodeUnit)) {
-        const name = collections[type]!;
-        const r = qmd(["collection", "show", name]);
-        if ((r.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return "qmd not found on PATH";
-        if (r.status !== 0) return `recall.collections.${type}: qmd has no collection '${name}'`;
+        const problem = show(type);
+        if (problem) return problem;
       }
       return null;
     },
@@ -70,11 +82,17 @@ export function qmdBackend(
       // tokenize drops qmd's query syntax: a leading `-` negates a term, and an unbalanced `"` returns nothing.
       const tokens = tokenize(text);
       if (collection === undefined || tokens.length === 0) return [];
+      if (!collectionRoots.has(collection)) {
+        const problem = show(type as MemoryType);
+        if (problem) throw new RecallError(problem);
+      }
+      const collectionRoot = collectionRoots.get(collection)!;
+      bankRoot ??= realpathSync(root);
       const r = qmd([mode, tokens.join(" "), "--json", "--all", "-c", collection]);
       const stderr = (r.stderr ?? "").split("\n").map((l) => l.trim()).filter((l) => l !== "");
       if (r.error) throw new RecallError(`qmd ${mode} failed: ${firstLine(r.error.message)}`);
       if (r.status !== 0) throw new RecallError(`qmd ${mode} failed: ${stderr[0] ?? `exit ${r.status}`}`);
-      // An unembedded vsearch exits 0 with an empty result and says why only on stderr.
+      // qmd can exit 0 and still explain itself on stderr, so warn with each stderr line once.
       for (const line of stderr) {
         if (!warned.has(line)) {
           warned.add(line);
@@ -99,9 +117,10 @@ export function qmdBackend(
         const uri = file.replace(/\?.*$/s, "");
         if (!uri.startsWith(prefix)) continue;
         const rel = uri.slice(prefix.length);
-        // qmd's path is relative to the collection root, which may sit anywhere under the Bank.
-        const matches = records.filter((c) => c.path === rel || c.path.endsWith(`/${rel}`));
-        if (matches.length === 1) hits.push({ record: matches[0]!, score });
+        // A suffix match would hand the queried Record's self-hit to a namesake in a subfolder, so paths must match exactly.
+        const abs = join(collectionRoot, rel);
+        const match = records.find((c) => join(bankRoot!, c.path) === abs);
+        if (match) hits.push({ record: match, score });
       }
       return hits;
     },

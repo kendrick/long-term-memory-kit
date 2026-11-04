@@ -323,7 +323,8 @@ function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
   for (const r of accepted) {
     if (typeof r.frontmatter.memory_type !== "string") continue;
     const { summary, title } = r.frontmatter;
-    const text = typeof summary === "string" && summary !== "" ? summary : title;
+    // qmd search ANDs every query word, and a whole summary rarely fits inside another Record, so the title goes first.
+    const text = typeof title === "string" && title !== "" ? title : summary;
     // A Record with neither is `ltm validate`'s to report; it can still be a hit for another query.
     if (typeof text !== "string" || text === "") continue;
     const mine = stringListField(r, "applies_to");

@@ -49,7 +49,7 @@ export const doctor: Command = {
       ctx.err(`ltm doctor: memory-bank.yaml: ${recall.error}\n`);
       return 1;
     }
-    const backend = recall === null ? undefined : qmdBackend(recall, ctx.env, (line) => ctx.err(`ltm doctor: qmd: ${line}\n`));
+    const backend = recall === null ? undefined : qmdBackend(recall, config.root, ctx.env, (line) => ctx.err(`ltm doctor: qmd: ${line}\n`));
     const problem = backend?.preflight();
     if (problem) {
       ctx.err(`ltm doctor: ${problem}\n`);
