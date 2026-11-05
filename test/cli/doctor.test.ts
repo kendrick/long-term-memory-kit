@@ -395,6 +395,8 @@ exit 1
           FAKE_PKG: fakePkg,
           FAKE_ROOT: join(dir, "_memory/decisions"),
           FAKE_STATUS: JSON.stringify({ decisions: { active: 9, pending: 0 } }),
+          // Keeps the worker off the user's ~/.config/qmd, whose embed model would replace the fake's.
+          XDG_CONFIG_HOME: join(bin, "config"),
           ...vars,
         };
         fn(await run({ argv: ["doctor", ...argv], cwd: dir, env: venv }));
@@ -454,7 +456,7 @@ exit 1
         const decide = (id: string, title: string, summary: string) =>
           `---\nschema: 1\nid: ${id}\nmemory_type: Decision\ntitle: ${title}\nstatus: accepted\ndate: 2026-04-22\nsummary: ${summary}\napplies_to: [service:order-service]\n---\n\n## Decision Outcome\n\n${title}.\n`;
         writeFileSync(join(dir, "_memory/decisions/use-postgres-pGa1b2c3d4.md"), decide("pGa1b2c3d4", "Use Postgres", "Order data lives in Postgres for ACID guarantees."));
-        writeFileSync(join(dir, "_memory/decisions/relational-stores-rSq5e6f7g8.md"), decide("rSq5e6f7g8", "Relational stores use PostgreSQL", "Order data is kept in PostgreSQL for ACID guarantees."));
+        writeFileSync(join(dir, "_memory/decisions/relational-stores-rSq5e6f7g8.md"), decide("rSq5e6f7g8", "Relational stores run on PostgreSQL", "Order data is kept in PostgreSQL for ACID guarantees."));
         const xdg = mkdtempSync(join(tmpdir(), "ltm-xdg-"));
         try {
           mkdirSync(join(xdg, "cache/qmd"), { recursive: true });
@@ -475,7 +477,12 @@ exit 1
           const search = await run({ argv: ["doctor"], cwd: dir, env: qenv });
           expect(pair(search.stdout)).toBe(false);
           setMode("vector");
-          const other = await run({ argv: ["doctor"], cwd: dir, env: { ...qenv, QMD_EMBED_MODEL: "hf:example/other-model.gguf" } });
+          // qmd's CLI writes its model into its config, and the config outranks QMD_EMBED_MODEL, so change the model there.
+          const qmdCfg = join(xdg, "config/qmd/index.yml");
+          const yml = readFileSync(qmdCfg, "utf8");
+          expect(yml).toMatch(/^\s+embed: \S+$/m);
+          writeFileSync(qmdCfg, yml.replace(/^(\s+embed: )\S+$/m, "$1hf:example/other-model.gguf"));
+          const other = await run({ argv: ["doctor"], cwd: dir, env: qenv });
           expect(other.exitCode).toBe(1);
           expect(other.stderr).toContain("run qmd embed");
         } finally {

@@ -37,10 +37,17 @@ const rec = (path: string, fm: Record<string, unknown> = {}): ParsedRecord => ({
 });
 
 let n = 0;
-function setup(vars: { status?: object; vec?: object; pkg?: string; path?: string } = {}) {
+function setup(vars: { status?: object; vec?: object; pkg?: string; path?: string; qmdConfig?: string } = {}) {
   const pkg = vars.pkg ?? fakePkg;
-  const log = join(root, `log-${n++}`);
+  const log = join(root, `log-${n}`);
+  // Own config dir per run, so neither the fake nor the worker reads the user's ~/.config/qmd.
+  const config = join(root, `config-${n++}`);
+  if (vars.qmdConfig !== undefined) {
+    mkdirSync(join(config, "qmd"), { recursive: true });
+    writeFileSync(join(config, "qmd/index.yml"), vars.qmdConfig);
+  }
   const env = {
+    XDG_CONFIG_HOME: config,
     PATH: vars.path ?? `${bin}:${process.env.PATH}`,
     FAKE_PKG: pkg,
     FAKE_ROOT: decisions,
@@ -70,6 +77,18 @@ describe("qmdVectorBackend.preflight", () => {
     expect(qmdVectorBackend(RECALL, bank, env, noWarn).preflight()).toBe(
       "recall.collections.Decision: qmd collection 'decisions' has no embeddings for qmd's current embedding model; run qmd embed",
     );
+  });
+
+  test("two documents sharing one unembedded hash count as no embeddings, not 1 of 2", () => {
+    const { env } = setup({ status: { decisions: { active: 2, hashes: 1, pending: 1 } } });
+    expect(qmdVectorBackend(RECALL, bank, env, noWarn).preflight()).toContain("has no embeddings");
+  });
+
+  test("checks embeddings against the model in qmd's config, as qmd embed does", () => {
+    const status = { decisions: { active: 9, pending: 0, model: "hf:custom/embed.gguf" } };
+    expect(qmdVectorBackend(RECALL, bank, setup({ status }).env, noWarn).preflight()).toContain("has no embeddings");
+    const configured = setup({ status, qmdConfig: "models:\n  embed: hf:custom/embed.gguf\n" });
+    expect(qmdVectorBackend(RECALL, bank, configured.env, noWarn).preflight()).toBeNull();
   });
 
   test("an empty collection gets the same message", () => {

@@ -1,4 +1,4 @@
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
@@ -51,11 +51,13 @@ export function loadRecall(config: BankConfig): Recall | null | { error: string 
   return { backend: "qmd", mode, collections: { ...(collections as Partial<Record<MemoryType, string>>) } };
 }
 
-// Shared by the search and vector backends: both validate each collection through `qmd collection show`.
-export function collectionCheck(
-  collections: Partial<Record<MemoryType, string>>,
-  qmd: (args: string[]) => SpawnSyncReturns<string>,
-) {
+// `prefetch` lets the vector backend batch every lookup into one model load before runDoctor calls `search`.
+export type QmdBackend = RecallBackend & { preflight(): string | null; prefetch?(records: ParsedRecord[]): void };
+
+export function qmdCollections(collections: Partial<Record<MemoryType, string>>, env: Record<string, string | undefined>) {
+  // The caller's env, not process.env: it decides which qmd runs and which index (XDG dirs) it reads.
+  // `--all` can print more than Bun's ~1 MiB default maxBuffer, which would fail the run with ENOBUFS.
+  const qmd = (args: string[]) => spawnSync("qmd", args, { encoding: "utf8", env, maxBuffer: Infinity });
   // realpath on both sides, since qmd stores a resolved path (macOS /tmp is /private/tmp).
   const collectionRoots = new Map<string, string>();
   const show = (type: MemoryType): string | null => {
@@ -72,10 +74,21 @@ export function collectionCheck(
     }
     return null;
   };
-  return { collectionRoots, show };
+  // Checks every collection up front, so a typo fails even when no type has two Records to compare.
+  const checkAll = (): string | null => {
+    for (const type of (Object.keys(collections) as MemoryType[]).sort(byCodeUnit)) {
+      const problem = show(type);
+      if (problem) return problem;
+    }
+    return null;
+  };
+  const collectionOf = (record: ParsedRecord): string | undefined => {
+    const type = record.frontmatter.memory_type;
+    return typeof type === "string" && Object.hasOwn(collections, type) ? collections[type as MemoryType] : undefined;
+  };
+  return { qmd, collectionRoots, show, checkAll, collectionOf };
 }
 
-// Maps a qmd URI to the candidate Record it names, or undefined for a hit outside the collection.
 export function hitRecord(
   file: string,
   collection: string,
@@ -97,26 +110,16 @@ export function qmdBackend(
   root: string,
   env: Record<string, string | undefined>,
   warn: (line: string) => void,
-): RecallBackend & { preflight(): string | null } {
+): QmdBackend {
   const { mode, collections } = recall;
-  // The caller's env, not process.env: it decides which qmd runs and which index (XDG dirs) it reads.
-  // `--all` can print more than Bun's ~1 MiB default maxBuffer, which would fail the run with ENOBUFS.
-  const qmd = (args: string[]) => spawnSync("qmd", args, { encoding: "utf8", env, maxBuffer: Infinity });
   const warned = new Set<string>();
-  const { collectionRoots, show } = collectionCheck(collections, qmd);
+  const { qmd, collectionRoots, show, checkAll, collectionOf } = qmdCollections(collections, env);
   let bankRoot: string | undefined;
   return {
-    // Checks every collection up front, so a typo fails even when no type has two Records to compare.
-    preflight() {
-      for (const type of (Object.keys(collections) as MemoryType[]).sort(byCodeUnit)) {
-        const problem = show(type);
-        if (problem) return problem;
-      }
-      return null;
-    },
+    preflight: checkAll,
     search(records, text) {
       const type = records[0]?.frontmatter.memory_type;
-      const collection = typeof type === "string" && Object.hasOwn(collections, type) ? collections[type as MemoryType] : undefined;
+      const collection = records[0] && collectionOf(records[0]);
       // tokenize drops qmd's query syntax: a leading `-` negates a term, and an unbalanced `"` returns nothing.
       const tokens = tokenize(text);
       if (collection === undefined || tokens.length === 0) return [];

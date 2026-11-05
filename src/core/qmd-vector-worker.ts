@@ -1,32 +1,36 @@
-// Runs as a child of `ltm`, never in-process: qmd's library reads process.env (index, model dirs) directly,
-// and ltm runs on the caller's env. One request on stdin, one JSON response on stdout (see qmd-vector.ts).
+// Runs as a child of `ltm`, never in-process: qmd's library reads process.env (index, model dirs) directly, and ltm runs on the caller's env.
+// qmd-vector.ts passes this file's source to `bun -e`, so it runs on load and imports only node builtins. One request on stdin, one JSON response on stdout.
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-type Query = { collection: string; text: string };
-type Request =
-  | { op: "status"; pkg: string; collections: string[] }
-  | { op: "search"; pkg: string; queries: Query[] };
+export type Query = { collection: string; text: string };
+export type Op = { op: "status"; collections: string[] } | { op: "search"; queries: Query[] };
+export type Request = { pkg: string } & Op;
+// `hashes` and `pending` both count distinct content hashes, since that is the unit getHashesNeedingEmbedding reports in.
+export type Status = { collections: { name: string; hashes: number; pending: number }[] };
+export type Results = { results: { filepath: string; score: number }[][] };
 
-async function run(req: Request): Promise<unknown> {
+async function handle(req: Request): Promise<Status | Results> {
   const manifest = JSON.parse(readFileSync(join(req.pkg, "package.json"), "utf8"));
   const lib = await import(pathToFileURL(join(req.pkg, manifest.exports["."].import)).href);
   // The library's own getDefaultDbPath() throws outside qmd's CLI, so compute the path the way qmd does.
   const dbPath = process.env.INDEX_PATH || join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "qmd", "index.sqlite");
-  const store = lib.createStore({ dbPath });
+  // Without configPath the library ignores `models.embed` in qmd's YAML, which `qmd embed` honours, so the two would disagree on the model.
+  const { configExists, getConfigPath } = await import(pathToFileURL(join(req.pkg, "dist/collections.js")).href);
+  const store = await lib.createStore({ dbPath, configPath: configExists() ? getConfigPath() : undefined });
   try {
     if (req.op === "status") {
       // The public internal.getHashesNeedingEmbedding counts the whole index, never one collection.
       const { getHashesNeedingEmbedding } = await import(pathToFileURL(join(req.pkg, "dist/store.js")).href);
       const model = store.internal.llm.embedModelName;
-      const listed: { name: string; active_count: number }[] = await store.listCollections();
+      const distinct = store.internal.db.prepare("SELECT COUNT(DISTINCT hash) AS count FROM documents WHERE active = 1 AND collection = ?");
       return {
         collections: req.collections.map((name) => ({
           name,
-          active: listed.find((c) => c.name === name)?.active_count ?? 0,
-          pending: listed.some((c) => c.name === name) ? getHashesNeedingEmbedding(store.internal.db, name, model) : 0,
+          hashes: distinct.get(name).count,
+          pending: getHashesNeedingEmbedding(store.internal.db, name, model),
         })),
       };
     }
@@ -42,7 +46,7 @@ async function run(req: Request): Promise<unknown> {
 }
 
 try {
-  process.stdout.write(JSON.stringify(await run(JSON.parse(readFileSync(0, "utf8")))));
+  process.stdout.write(JSON.stringify(await handle(JSON.parse(readFileSync(0, "utf8")))));
 } catch (e) {
   process.stderr.write(`${(e instanceof Error ? e.message : String(e)).split("\n")[0]}\n`);
   process.exit(1);

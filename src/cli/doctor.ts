@@ -1,9 +1,7 @@
 import { runDoctor, loadThresholds } from "../core/doctor.ts";
 import { today } from "../core/clock.ts";
-import { loadRecall, qmdBackend, RecallError } from "../core/qmd.ts";
+import { loadRecall, qmdBackend, RecallError, type QmdBackend } from "../core/qmd.ts";
 import { qmdVectorBackend } from "../core/qmd-vector.ts";
-import type { ParsedRecord } from "../core/record.ts";
-import type { RecallBackend } from "../core/recall.ts";
 import { listRecords } from "../core/query.ts";
 import { firstLine } from "../core/text.ts";
 import { ConfigError } from "../core/bank.ts";
@@ -53,8 +51,7 @@ export const doctor: Command = {
       return 1;
     }
     const warn = (line: string) => ctx.err(`ltm doctor: qmd: ${line}\n`);
-    // Only the vector backend prefetches; the optional member lets both modes share one variable without a cast.
-    const backend: (RecallBackend & { preflight(): string | null; prefetch?(records: ParsedRecord[]): void }) | undefined =
+    const backend: QmdBackend | undefined =
       recall === null ? undefined : recall.mode === "vector" ? qmdVectorBackend(recall, config.root, ctx.env, warn) : qmdBackend(recall, config.root, ctx.env, warn);
     const problem = backend?.preflight();
     if (problem) {

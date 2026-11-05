@@ -1,3 +1,4 @@
 node_modules/
 __pycache__/
 dist/
+!test/fixtures/fake-qmd-package/dist/

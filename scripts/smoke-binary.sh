@@ -11,6 +11,7 @@ bin="$(cd "$(dirname "$bin")" && pwd)/$(basename "$bin")"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 cp -R "$root/fixtures/demo-bank" "$tmp/bank"
+cp -R "$root/test/fixtures/fake-qmd-package" "$tmp/fake-qmd-package"
 
 cat > "$tmp/steps.sh" <<'STEPS'
 #!/bin/sh
@@ -61,6 +62,28 @@ for tool in query head facets validate propose; do
   printf '%s' "$reply" | grep -q "\"$tool\"" || fail "mcp: tools/list lacks $tool"
 done
 echo "smoke: ok mcp (query head facets validate propose)"
+
+# recall.mode vector runs its qmd worker on the binary's embedded Bun (BUN_BE_BUN), so this proves the worker needs no installed bun either. The fake qmd package stands in for the real one.
+bank="$2"
+mkdir "$TMPDIR/qmdbin"
+cat > "$TMPDIR/qmdbin/qmd" <<'QMD'
+#!/bin/sh
+if [ "$1" = skills ]; then printf '%s/skills\n' "$FAKE_PKG"; exit 0; fi
+if [ "$1" = collection ]; then printf 'Collection: %s\n  Path:     %s\n' "$3" "$FAKE_ROOT"; exit 0; fi
+exit 1
+QMD
+chmod +x "$TMPDIR/qmdbin/qmd"
+printf '%s\n' 'doctor: { near_duplicate_threshold: 0.6 }' 'recall: { backend: qmd, mode: vector, collections: { Decision: decisions } }' >> memory-bank.yaml
+vector() {
+  PATH="$TMPDIR/qmdbin:$PATH" FAKE_PKG="$(dirname "$bank")/fake-qmd-package" FAKE_ROOT="$bank/_memory/decisions" \
+    XDG_CONFIG_HOME="$TMPDIR/xdg" FAKE_STATUS="{\"decisions\":{\"active\":9,\"pending\":$1}}" "$ltm" doctor
+}
+vector 0 > /dev/null || fail "doctor vector: embedded collection didn't exit 0"
+if out="$(vector 9 2>&1)"; then fail "doctor vector: unembedded collection exited 0"; fi
+case "$out" in
+  *"run qmd embed"*) echo "smoke: ok doctor vector (worker ran in the binary)" ;;
+  *) fail "doctor vector: no qmd embed message: $out" ;;
+esac
 echo "smoke: PASS"
 STEPS
 
