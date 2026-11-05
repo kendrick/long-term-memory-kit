@@ -1,7 +1,8 @@
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
+import type { ParsedRecord } from "./record.ts";
 import { tokenize, type Hit, type RecallBackend } from "./recall.ts";
 import { byCodeUnit, firstLine } from "./text.ts";
 
@@ -50,19 +51,12 @@ export function loadRecall(config: BankConfig): Recall | null | { error: string 
   return { backend: "qmd", mode, collections: { ...(collections as Partial<Record<MemoryType, string>>) } };
 }
 
-export function qmdBackend(
-  recall: Recall,
-  root: string,
-  env: Record<string, string | undefined>,
-  warn: (line: string) => void,
-): RecallBackend & { preflight(): string | null } {
-  const { mode, collections } = recall;
-  // The caller's env, not process.env: it decides which qmd runs and which index (XDG dirs) it reads.
-  // `--all` can print more than Bun's ~1 MiB default maxBuffer, which would fail the run with ENOBUFS.
-  const qmd = (args: string[]) => spawnSync("qmd", args, { encoding: "utf8", env, maxBuffer: Infinity });
-  const warned = new Set<string>();
+// Shared by the search and vector backends: both validate each collection through `qmd collection show`.
+export function collectionCheck(
+  collections: Partial<Record<MemoryType, string>>,
+  qmd: (args: string[]) => SpawnSyncReturns<string>,
+) {
   // realpath on both sides, since qmd stores a resolved path (macOS /tmp is /private/tmp).
-  let bankRoot: string | undefined;
   const collectionRoots = new Map<string, string>();
   const show = (type: MemoryType): string | null => {
     const name = collections[type]!;
@@ -78,6 +72,39 @@ export function qmdBackend(
     }
     return null;
   };
+  return { collectionRoots, show };
+}
+
+// Maps a qmd URI to the candidate Record it names, or undefined for a hit outside the collection.
+export function hitRecord(
+  file: string,
+  collection: string,
+  collectionRoot: string,
+  bankRoot: string,
+  records: ParsedRecord[],
+): ParsedRecord | undefined {
+  // qmd 2.8.3 appends `?index=<name>` only for a non-default index; any other `?` belongs to the filename.
+  const uri = file.replace(/\?index=[\w.!~*'()%-]*$/, "");
+  const prefix = `qmd://${collection}/`;
+  if (!uri.startsWith(prefix)) return undefined;
+  // A suffix match would hand the queried Record's self-hit to a namesake in a subfolder, so paths must match exactly.
+  const abs = join(collectionRoot, uri.slice(prefix.length));
+  return records.find((c) => join(bankRoot, c.path) === abs);
+}
+
+export function qmdBackend(
+  recall: Recall,
+  root: string,
+  env: Record<string, string | undefined>,
+  warn: (line: string) => void,
+): RecallBackend & { preflight(): string | null } {
+  const { mode, collections } = recall;
+  // The caller's env, not process.env: it decides which qmd runs and which index (XDG dirs) it reads.
+  // `--all` can print more than Bun's ~1 MiB default maxBuffer, which would fail the run with ENOBUFS.
+  const qmd = (args: string[]) => spawnSync("qmd", args, { encoding: "utf8", env, maxBuffer: Infinity });
+  const warned = new Set<string>();
+  const { collectionRoots, show } = collectionCheck(collections, qmd);
+  let bankRoot: string | undefined;
   return {
     // Checks every collection up front, so a typo fails even when no type has two Records to compare.
     preflight() {
@@ -117,7 +144,6 @@ export function qmdBackend(
         parsed = undefined;
       }
       if (!Array.isArray(parsed)) throw new RecallError(`qmd ${mode} returned an unreadable result`);
-      const prefix = `qmd://${collection}/`;
       const hits: Hit[] = [];
       for (const el of parsed) {
         if (!isMapping(el) || typeof el.file !== "string") throw new RecallError(`qmd ${mode} returned an unreadable result`);
@@ -125,13 +151,7 @@ export function qmdBackend(
         if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1) {
           throw new RecallError(`qmd ${mode} returned score ${JSON.stringify(score)} for ${file}`);
         }
-        // qmd 2.8.3 appends `?index=<name>` only for a non-default index; any other `?` belongs to the filename.
-        const uri = file.replace(/\?index=[\w.!~*'()%-]*$/, "");
-        if (!uri.startsWith(prefix)) continue;
-        const rel = uri.slice(prefix.length);
-        // A suffix match would hand the queried Record's self-hit to a namesake in a subfolder, so paths must match exactly.
-        const abs = join(collectionRoot, rel);
-        const match = records.find((c) => join(bankRoot!, c.path) === abs);
+        const match = hitRecord(file, collection, collectionRoot, bankRoot, records);
         if (match) hits.push({ record: match, score });
       }
       return hits;
