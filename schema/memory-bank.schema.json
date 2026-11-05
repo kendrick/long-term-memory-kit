@@ -108,6 +108,15 @@
     }
   },
   "additionalProperties": false,
+  "if": {
+    "properties": { "recall": { "type": "object", "properties": { "mode": { "const": "vector" } }, "required": ["mode"] } },
+    "required": ["recall"]
+  },
+  "then": {
+    "$comment": "Vector mode scores on a cosine scale, so near_duplicate_threshold's search default doesn't apply and the Bank must set one. loadRecall in src/core/qmd.ts enforces the same rule for ltm doctor.",
+    "properties": { "doctor": { "type": "object", "required": ["near_duplicate_threshold"] } },
+    "required": ["doctor"]
+  },
   "$defs": {
     "facet": {
       "description": "A Facet written as <prefix>:<value>, with a lowercase prefix.",

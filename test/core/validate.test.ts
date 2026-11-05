@@ -367,6 +367,24 @@ describe("checkConfig", () => {
     });
   });
 
+  test("recall.mode vector needs doctor.near_duplicate_threshold; search keeps its default", async () => {
+    const base = "schema: 1\nname: acme\nfacet_prefixes: [service]\n";
+    const recall = (mode: string) => `recall: { backend: qmd, mode: ${mode}, collections: { Decision: decisions } }\n`;
+    await withScratch(demoBank, async (dir) => {
+      const path = join(dir, "memory-bank.yaml");
+      writeFileSync(path, base + recall("vector"));
+      expect(checkConfig(dir).findings).toEqual([expect.objectContaining({ rule: "config-schema", key: "doctor" })]);
+      writeFileSync(path, `${base}doctor:\n  orphan_days: 10\n${recall("vector")}`);
+      expect(checkConfig(dir).findings).toEqual([
+        expect.objectContaining({ rule: "config-schema", key: "doctor", line: 4 }),
+      ]);
+      writeFileSync(path, `${base}doctor:\n  near_duplicate_threshold: 0.6\n${recall("vector")}`);
+      expect(checkConfig(dir).findings).toEqual([]);
+      writeFileSync(path, base + recall("search"));
+      expect(checkConfig(dir).findings).toEqual([]);
+    });
+  });
+
   test("unparseable YAML is one config-schema finding and no config", async () => {
     await withScratch(demoBank, async (dir) => {
       writeFileSync(join(dir, "memory-bank.yaml"), "name: [unclosed\n");
