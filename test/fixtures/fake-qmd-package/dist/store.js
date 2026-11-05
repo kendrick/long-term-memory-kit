@@ -1,3 +1,16 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+// qmd's getDefaultDbPath throws until the CLI (or the worker) turns production mode on; the fake keeps that trap.
+let production = false;
+export const enableProductionMode = () => {
+  production = true;
+};
+export function getDefaultDbPath() {
+  if (process.env.INDEX_PATH) return process.env.INDEX_PATH;
+  if (!production) throw new Error("Database path not set.");
+  return join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "qmd", "index.sqlite");
+}
 // A model with no vectors leaves every hash pending, as qmd keys each vector on its model.
 export function getHashesNeedingEmbedding(_db, collection, model) {
   const s = JSON.parse(process.env.FAKE_STATUS ?? "{}")[collection] ?? {};

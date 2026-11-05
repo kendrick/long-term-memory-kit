@@ -1,7 +1,6 @@
 // Runs as a child of `ltm`, never in-process: qmd's library reads process.env (index, model dirs) directly, and ltm runs on the caller's env.
 // qmd-vector.ts passes this file's source to `bun -e`, so it runs on load and imports only node builtins. One request on stdin, one JSON response on stdout.
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -15,15 +14,19 @@ export type Results = { results: { filepath: string; score: number }[][] };
 async function handle(req: Request): Promise<Status | Results> {
   const manifest = JSON.parse(readFileSync(join(req.pkg, "package.json"), "utf8"));
   const lib = await import(pathToFileURL(join(req.pkg, manifest.exports["."].import)).href);
-  // The library's own getDefaultDbPath() throws outside qmd's CLI, so compute the path the way qmd does.
-  const dbPath = process.env.INDEX_PATH || join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "qmd", "index.sqlite");
+  const qmdStore = await import(pathToFileURL(join(req.pkg, "dist/store.js")).href);
+  const { configExists, getConfigPath, findLocalConfigPath, getLocalDbPath } = await import(pathToFileURL(join(req.pkg, "dist/collections.js")).href);
+  // Pick the index and config as qmd's CLI does without --index, from the same cwd `qmd collection show` ran in: a project-local .qmd/ config brings its own index and outranks INDEX_PATH, else the global ones.
+  // getDefaultDbPath() throws until enableProductionMode(), which qmd's CLI calls on startup.
+  qmdStore.enableProductionMode();
+  const local: string | undefined = findLocalConfigPath();
+  const dbPath = local ? getLocalDbPath(local) : qmdStore.getDefaultDbPath();
   // Without configPath the library ignores `models.embed` in qmd's YAML, which `qmd embed` honours, so the two would disagree on the model.
-  const { configExists, getConfigPath } = await import(pathToFileURL(join(req.pkg, "dist/collections.js")).href);
-  const store = await lib.createStore({ dbPath, configPath: configExists() ? getConfigPath() : undefined });
+  const store = await lib.createStore({ dbPath, configPath: local ?? (configExists() ? getConfigPath() : undefined) });
   try {
     if (req.op === "status") {
       // The public internal.getHashesNeedingEmbedding counts the whole index, never one collection.
-      const { getHashesNeedingEmbedding } = await import(pathToFileURL(join(req.pkg, "dist/store.js")).href);
+      const { getHashesNeedingEmbedding } = qmdStore;
       const model = store.internal.llm.embedModelName;
       const distinct = store.internal.db.prepare("SELECT COUNT(DISTINCT hash) AS count FROM documents WHERE active = 1 AND collection = ?");
       return {

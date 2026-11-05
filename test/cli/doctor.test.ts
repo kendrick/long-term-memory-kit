@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { run } from "../../src/cli/run.ts";
 import { withScratch } from "../helpers/scratch.ts";
@@ -440,6 +440,47 @@ exit 1
     }, "--json");
   });
 
+  // qmd's CLI adopts a .qmd/ config above its cwd, with the index beside it, so `qmd embed` there fills that index, not the global one.
+  // Spawned, since qmd and the worker see ltm's process cwd, which an in-process run() leaves at the repo.
+  test("a project-local .qmd/ config above the cwd supplies the index and the embed model", async () => {
+    await withScratch(demo, async (dir) => {
+      const cfg = join(dir, "memory-bank.yaml");
+      writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\n${WITH_THRESHOLD}\n`);
+      writeFileSync(join(dir, PUB), PUB_TEXT);
+      mkdirSync(join(dir, ".qmd"));
+      writeFileSync(join(dir, ".qmd/index.yml"), "models:\n  embed: hf:local/embed.gguf\n");
+      const bin = mkdtempSync(join(tmpdir(), "ltm-fakeqmd-"));
+      try {
+        writeFileSync(join(bin, "qmd"), VEC_QMD);
+        chmodSync(join(bin, "qmd"), 0o755);
+        const log = join(bin, "fake.log");
+        const r = spawnSync(process.execPath, [fileURLToPath(new URL("../../src/cli/bin.ts", import.meta.url)), "doctor"], {
+          cwd: join(dir, "_memory"),
+          encoding: "utf8",
+          env: {
+            ...env,
+            PATH: `${bin}:${dirname(process.execPath)}`,
+            FAKE_PKG: fakePkg,
+            FAKE_ROOT: join(dir, "_memory/decisions"),
+            FAKE_VEC: vec(0.62),
+            FAKE_STATUS: JSON.stringify({ decisions: { active: 9, pending: 0, model: "hf:local/embed.gguf" } }),
+            FAKE_LOG: log,
+            XDG_CONFIG_HOME: join(bin, "config"),
+          },
+        });
+        expect(r.stderr).toBe("");
+        expect(r.status).toBe(0);
+        expect(r.stdout).toContain(`${MQ}: near-duplicate: scores 0.62 against ${PUB} (threshold 0.6)\n`);
+        const stores = readFileSync(log, "utf8").split("\n").filter((l) => l.startsWith("createStore "));
+        expect(stores.length).toBeGreaterThan(0);
+        const local = join(realpathSync(dir), ".qmd");
+        for (const line of stores) expect(line).toBe(`createStore ${local}/index.sqlite ${local}/index.yml`);
+      } finally {
+        rmSync(bin, { recursive: true, force: true });
+      }
+    });
+  });
+
   test("mode: vsearch exits 1 saying search or vector", async () => {
     await withVector("recall: { backend: qmd, mode: vsearch, collections: { Decision: decisions } }", {}, (r) => {
       expect(r.exitCode).toBe(1);
@@ -449,14 +490,18 @@ exit 1
 
   // Opt-in: the embedding model is ~300 MB, so no default run downloads it.
   const models = process.env.LTM_TEST_QMD_MODELS;
+  const decide = (id: string, title: string, summary: string) =>
+    `---\nschema: 1\nid: ${id}\nmemory_type: Decision\ntitle: ${title}\nstatus: accepted\ndate: 2026-04-22\nsummary: ${summary}\napplies_to: [service:order-service]\n---\n\n## Decision Outcome\n\n${title}.\n`;
+  const writePair = (dir: string) => {
+    writeFileSync(join(dir, "_memory/decisions/use-postgres-pGa1b2c3d4.md"), decide("pGa1b2c3d4", "Use Postgres", "Order data lives in Postgres for ACID guarantees."));
+    writeFileSync(join(dir, "_memory/decisions/relational-stores-rSq5e6f7g8.md"), decide("rSq5e6f7g8", "Relational stores run on PostgreSQL", "Order data is kept in PostgreSQL for ACID guarantees."));
+  };
+  const pair = (out: string) => out.includes("near-duplicate") && out.includes("use-postgres") && out.includes("relational-stores");
   test.skipIf(!hasQmd || !models)(
     "real qmd embeddings (needs qmd and LTM_TEST_QMD_MODELS): vector pairs paraphrased Decisions, search does not, a changed model demands qmd embed",
     async () => {
       await withScratch(demo, async (dir) => {
-        const decide = (id: string, title: string, summary: string) =>
-          `---\nschema: 1\nid: ${id}\nmemory_type: Decision\ntitle: ${title}\nstatus: accepted\ndate: 2026-04-22\nsummary: ${summary}\napplies_to: [service:order-service]\n---\n\n## Decision Outcome\n\n${title}.\n`;
-        writeFileSync(join(dir, "_memory/decisions/use-postgres-pGa1b2c3d4.md"), decide("pGa1b2c3d4", "Use Postgres", "Order data lives in Postgres for ACID guarantees."));
-        writeFileSync(join(dir, "_memory/decisions/relational-stores-rSq5e6f7g8.md"), decide("rSq5e6f7g8", "Relational stores run on PostgreSQL", "Order data is kept in PostgreSQL for ACID guarantees."));
+        writePair(dir);
         const xdg = mkdtempSync(join(tmpdir(), "ltm-xdg-"));
         try {
           mkdirSync(join(xdg, "cache/qmd"), { recursive: true });
@@ -468,7 +513,6 @@ exit 1
           const cfg = join(dir, "memory-bank.yaml");
           const base = readFileSync(cfg, "utf8").trimEnd();
           const setMode = (mode: string) => writeFileSync(cfg, `${base}\ndoctor: { near_duplicate_threshold: 0.5 }\nrecall: { backend: qmd, mode: ${mode}, collections: { Decision: decisions } }\n`);
-          const pair = (out: string) => out.includes("near-duplicate") && out.includes("use-postgres") && out.includes("relational-stores");
           setMode("vector");
           const vector = await run({ argv: ["doctor"], cwd: dir, env: qenv });
           expect(vector.exitCode).toBe(0);
@@ -477,6 +521,11 @@ exit 1
           const search = await run({ argv: ["doctor"], cwd: dir, env: qenv });
           expect(pair(search.stdout)).toBe(false);
           setMode("vector");
+          // Byte-identical to use-postgres, so qmd stores one hash for two documents. Once the model changes, 11 hashes cover 12 documents
+          // and all 11 need embedding: a distinct-hash count calls that "no embeddings", a document count would only warn.
+          // Added after the search step, whose own near-duplicate of the copy would satisfy pair().
+          writeFileSync(join(dir, "_memory/decisions/pg-copy.md"), readFileSync(join(dir, "_memory/decisions/use-postgres-pGa1b2c3d4.md")));
+          expect(qmd("update").status).toBe(0);
           // qmd's CLI writes its model into its config, and the config outranks QMD_EMBED_MODEL, so change the model there.
           const qmdCfg = join(xdg, "config/qmd/index.yml");
           const yml = readFileSync(qmdCfg, "utf8");
@@ -485,6 +534,38 @@ exit 1
           const other = await run({ argv: ["doctor"], cwd: dir, env: qenv });
           expect(other.exitCode).toBe(1);
           expect(other.stderr).toContain("run qmd embed");
+          expect(other.stderr).toContain("has no embeddings");
+        } finally {
+          rmSync(xdg, { recursive: true, force: true });
+        }
+      });
+    },
+    300000,
+  );
+
+  // qmd's CLI keeps a project-local config's index in .qmd/ beside it, so the worker has to read that index, not the global one.
+  test.skipIf(!hasQmd || !models)(
+    "real qmd embeddings (needs qmd and LTM_TEST_QMD_MODELS): with qmd init's project-local index, vector pairs paraphrased Decisions",
+    async () => {
+      await withScratch(demo, async (dir) => {
+        writePair(dir);
+        const xdg = mkdtempSync(join(tmpdir(), "ltm-xdg-"));
+        try {
+          mkdirSync(join(xdg, "cache/qmd"), { recursive: true });
+          symlinkSync(join(models!, "models"), join(xdg, "cache/qmd/models"));
+          const qenv = { PATH: process.env.PATH, XDG_CACHE_HOME: join(xdg, "cache"), XDG_CONFIG_HOME: join(xdg, "config"), LTM_TODAY: env.LTM_TODAY };
+          const qmd = (...a: string[]) => spawnSync("qmd", a, { cwd: dir, encoding: "utf8", env: qenv });
+          expect(qmd("init").status).toBe(0);
+          expect(qmd("collection", "add", join(dir, "_memory/decisions"), "--name", "decisions").status).toBe(0);
+          expect(qmd("embed").status).toBe(0);
+          const cfg = join(dir, "memory-bank.yaml");
+          writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\ndoctor: { near_duplicate_threshold: 0.5 }\nrecall: { backend: qmd, mode: vector, collections: { Decision: decisions } }\n`);
+          // Spawned, since qmd and the worker find .qmd/ from ltm's process cwd, which an in-process run() leaves at the repo.
+          const r = spawnSync(process.execPath, [fileURLToPath(new URL("../../src/cli/bin.ts", import.meta.url)), "doctor"], { cwd: dir, encoding: "utf8", env: qenv });
+          expect(r.stderr).toBe("");
+          expect(r.status).toBe(0);
+          expect(pair(r.stdout)).toBe(true);
+          expect(existsSync(join(xdg, "cache/qmd/index.sqlite"))).toBe(false);
         } finally {
           rmSync(xdg, { recursive: true, force: true });
         }

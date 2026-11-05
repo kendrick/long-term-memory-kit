@@ -10,8 +10,12 @@ export async function createStore({ dbPath, configPath }) {
   return {
     searchVector: async (q, { collection }) => (JSON.parse(process.env.FAKE_VEC ?? "{}")[collection] ?? {})[q] ?? [],
     internal: {
-      // Answers the worker's distinct-hash count; `hashes` defaults to `active` for a collection with no shared content.
-      db: { prepare: () => ({ get: (name) => ({ count: status()[name]?.hashes ?? status()[name]?.active ?? 0 }) }) },
+      // Counts rows as SQLite would: DISTINCT hash gives `hashes` (defaulting to `active` for a collection with no shared content), a plain count gives `active`.
+      db: {
+        prepare: (sql) => ({
+          get: (name) => ({ count: (/COUNT\(DISTINCT hash\)/i.test(sql) ? status()[name]?.hashes : undefined) ?? status()[name]?.active ?? 0 }),
+        }),
+      },
       llm: { embedModelName: configured || process.env.QMD_EMBED_MODEL || "fake-embed-model" },
     },
     close: async () => {},
