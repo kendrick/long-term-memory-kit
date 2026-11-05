@@ -212,7 +212,7 @@ describe("ltm doctor with recall:", () => {
         const r = await ltm(dir, "doctor");
         expect(r.exitCode).toBe(1);
         expect(r.stdout).toBe("");
-        expect(r.stderr).toBe(`ltm doctor: memory-bank.yaml: recall.mode must be search, not "${mode}"\n`);
+        expect(r.stderr).toBe(`ltm doctor: memory-bank.yaml: recall.mode must be search or vector, not "${mode}"\n`);
       });
     });
   }

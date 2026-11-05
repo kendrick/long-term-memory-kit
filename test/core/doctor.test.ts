@@ -585,6 +585,13 @@ const withBackend = (dir: string, t: number = 0.85) =>
     runDoctor(listRecords(loadConfig(dir), () => {}), TODAY, { ...DEFAULTS, near_duplicate_threshold: t }, jaccard),
   );
 
+// Ids of every Record the near-duplicate pass queries for: accepted and typed.
+const acceptedIds = (dir: string) =>
+  listRecords(loadConfig(dir), () => {})
+    .filter((r) => r.frontmatter.status === "accepted" && typeof r.frontmatter.memory_type === "string")
+    .map((r) => String(r.frontmatter.id))
+    .sort();
+
 describe("near-duplicate", () => {
   test("reports the one pair, on the path that sorts first", async () => {
     await scratch(async (dir) => {
@@ -733,6 +740,32 @@ describe("near-duplicate", () => {
       expect(run(dir, spy)).toEqual([]);
       expect(queries).not.toContain("???");
       expect(queries).not.toContain(undefined as unknown as string);
+    });
+  });
+
+  test("a backend's queryText replaces the title as the query", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, PUB_FIELDS);
+      const texts: string[] = [];
+      const picky: RecallBackend = {
+        search: (_r, text) => (texts.push(text), []),
+        queryText: (r) => `Q:${r.frontmatter.id}`,
+      };
+      run(dir, picky);
+      expect(texts.sort()).toEqual(acceptedIds(dir).map((id) => `Q:${id}`));
+    });
+  });
+
+  test("a null queryText skips that Record's query", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, PUB_FIELDS);
+      const texts: string[] = [];
+      const picky: RecallBackend = {
+        search: (_r, text) => (texts.push(text), []),
+        queryText: (r) => (r.frontmatter.id === "aB3cD4eF5g" ? null : `Q:${r.frontmatter.id}`),
+      };
+      run(dir, picky);
+      expect(texts.sort()).toEqual(acceptedIds(dir).filter((id) => id !== "aB3cD4eF5g").map((id) => `Q:${id}`));
     });
   });
 

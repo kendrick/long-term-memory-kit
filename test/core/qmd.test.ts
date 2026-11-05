@@ -67,6 +67,22 @@ describe("loadRecall", () => {
     });
   });
 
+  test("mode vector parses when doctor.near_duplicate_threshold is set", () => {
+    const recall = { backend: "qmd", mode: "vector", collections: { Decision: "decisions" } };
+    expect(loadRecall(config({ recall, doctor: { near_duplicate_threshold: 0.6 } }))).toEqual({
+      backend: "qmd",
+      mode: "vector",
+      collections: { Decision: "decisions" },
+    });
+  });
+
+  test("mode vector without doctor.near_duplicate_threshold is an error naming the key", () => {
+    const recall = { backend: "qmd", mode: "vector", collections: { Decision: "decisions" } };
+    expect(loadRecall(config({ recall }))).toEqual({
+      error: "doctor.near_duplicate_threshold is required when recall.mode is vector",
+    });
+  });
+
   const errors: [string, unknown, string][] = [
     ["null", null, "recall is not a mapping"],
     ["a string", "qmd", "recall is not a mapping"],
@@ -74,9 +90,9 @@ describe("loadRecall", () => {
     ["an unknown key", { backend: "qmd", index: "x", mode: "search", collections: { Decision: "d" } }, "recall.index: unknown key"],
     ["another backend", { backend: "lexical", mode: "search", collections: { Decision: "d" } }, "recall.backend must be qmd"],
     ["no backend", { mode: "search", collections: { Decision: "d" } }, "recall.backend must be qmd"],
-    ["mode query", { backend: "qmd", mode: "query", collections: { Decision: "d" } }, 'recall.mode must be search, not "query"'],
-    ["mode vsearch", { backend: "qmd", mode: "vsearch", collections: { Decision: "d" } }, 'recall.mode must be search, not "vsearch"'],
-    ["no mode", { backend: "qmd", collections: { Decision: "d" } }, "recall.mode must be search, not undefined"],
+    ["mode query", { backend: "qmd", mode: "query", collections: { Decision: "d" } }, 'recall.mode must be search or vector, not "query"'],
+    ["mode vsearch", { backend: "qmd", mode: "vsearch", collections: { Decision: "d" } }, 'recall.mode must be search or vector, not "vsearch"'],
+    ["no mode", { backend: "qmd", collections: { Decision: "d" } }, "recall.mode must be search or vector, not undefined"],
     ["empty collections", { backend: "qmd", mode: "search", collections: {} }, "recall.collections must map a memory_type to a qmd collection"],
     ["list collections", { backend: "qmd", mode: "search", collections: ["d"] }, "recall.collections must map a memory_type to a qmd collection"],
     ["no collections", { backend: "qmd", mode: "search" }, "recall.collections must map a memory_type to a qmd collection"],

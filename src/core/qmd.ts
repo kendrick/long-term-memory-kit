@@ -6,9 +6,10 @@ import { tokenize, type Hit, type RecallBackend } from "./recall.ts";
 import { byCodeUnit, firstLine } from "./text.ts";
 
 // `qmd vsearch` expands the query with a generative LLM and `qmd query` reranks with one, which ADR 0001 rules out (see ADR 0003).
+// `vector` runs the library's searchVector, which only embeds (see ADR 0004).
 export type Recall = {
   backend: "qmd";
-  mode: "search";
+  mode: "search" | "vector";
   collections: Partial<Record<MemoryType, string>>;
 };
 
@@ -30,7 +31,7 @@ export function loadRecall(config: BankConfig): Recall | null | { error: string 
   }
   if (raw.backend !== "qmd") return { error: "recall.backend must be qmd" };
   const mode = raw.mode;
-  if (mode !== "search") return { error: `recall.mode must be search, not ${JSON.stringify(mode)}` };
+  if (mode !== "search" && mode !== "vector") return { error: `recall.mode must be search or vector, not ${JSON.stringify(mode)}` };
   const collections = raw.collections;
   if (!isMapping(collections) || Object.keys(collections).length === 0) {
     return { error: "recall.collections must map a memory_type to a qmd collection" };
@@ -40,6 +41,11 @@ export function loadRecall(config: BankConfig): Recall | null | { error: string 
   }
   for (const [key, name] of Object.entries(collections)) {
     if (typeof name !== "string" || name === "") return { error: `recall.collections.${key} must be a collection name` };
+  }
+  // Vector scores don't sit on search's scale, so the schema default would be meaningless (ADR 0004).
+  const doctor = config.raw.doctor;
+  if (mode === "vector" && !(isMapping(doctor) && doctor.near_duplicate_threshold !== undefined)) {
+    return { error: "doctor.near_duplicate_threshold is required when recall.mode is vector" };
   }
   return { backend: "qmd", mode, collections: { ...(collections as Partial<Record<MemoryType, string>>) } };
 }

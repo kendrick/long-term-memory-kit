@@ -325,7 +325,11 @@ function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
     const { summary, title } = r.frontmatter;
     // qmd search ANDs every query word, and a whole summary rarely fits inside another Record, so the title goes first.
     // A title with no tokens ("???", spaces) would query nothing, so it falls through to the summary.
-    const text = typeof title === "string" && tokenize(title).length > 0 ? title : summary;
+    const text = backend.queryText
+      ? backend.queryText(r)
+      : typeof title === "string" && tokenize(title).length > 0
+        ? title
+        : summary;
     // A Record with neither is `ltm validate`'s to report; it can still be a hit for another query.
     if (typeof text !== "string" || text === "") continue;
     const mine = stringListField(r, "applies_to");
