@@ -96,9 +96,10 @@ esac
 
 if [ -n "$platform" ]; then
   mkdir "$tmp/t"
+  # The container runs as root, so a directory it makes under the mount (qmdbin) is root-owned and the EXIT trap's rm fails on CI. Hand everything back to the caller before exiting.
   docker run --rm --platform "$platform" \
-    -v "$bin:/usr/local/bin/ltm:ro" -v "$tmp:/smoke" -e TMPDIR=/smoke/t \
-    debian:bookworm-slim sh /smoke/steps.sh /usr/local/bin/ltm /smoke/bank
+    -v "$bin:/usr/local/bin/ltm:ro" -v "$tmp:/smoke" -e TMPDIR=/smoke/t -e HOST_ID="$(id -u):$(id -g)" \
+    debian:bookworm-slim sh -c 'sh /smoke/steps.sh "$@"; rc=$?; chown -R "$HOST_ID" /smoke; exit $rc' sh /usr/local/bin/ltm /smoke/bank
 else
   mkdir "$tmp/home" "$tmp/t"
   env -i PATH=/usr/bin:/bin HOME="$tmp/home" TMPDIR="$tmp/t" sh "$tmp/steps.sh" "$bin" "$tmp/bank"
