@@ -109,7 +109,13 @@
   },
   "additionalProperties": false,
   "if": {
-    "properties": { "recall": { "type": "object", "properties": { "mode": { "const": "vector" } }, "required": ["mode"] } },
+    "properties": {
+      "recall": {
+        "type": "object",
+        "properties": { "mode": { "const": "vector" } },
+        "required": ["mode"]
+      }
+    },
     "required": ["recall"]
   },
   "then": {
