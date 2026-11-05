@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -442,7 +442,7 @@ exit 1
 
   // qmd's CLI adopts a .qmd/ config above its cwd, with the index beside it, so `qmd embed` there fills that index, not the global one.
   // Spawned, since qmd and the worker see ltm's process cwd, which an in-process run() leaves at the repo.
-  test("a project-local .qmd/ config above the cwd supplies the index and the embed model", async () => {
+  const withLocalConfig = async (vars: Record<string, string> | ((local: string) => Record<string, string>), fn: (r: SpawnSyncReturns<string>, stores: string[], local: string) => void) => {
     await withScratch(demo, async (dir) => {
       const cfg = join(dir, "memory-bank.yaml");
       writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\n${WITH_THRESHOLD}\n`);
@@ -466,18 +466,53 @@ exit 1
             FAKE_STATUS: JSON.stringify({ decisions: { active: 9, pending: 0, model: "hf:local/embed.gguf" } }),
             FAKE_LOG: log,
             XDG_CONFIG_HOME: join(bin, "config"),
+            ...(typeof vars === "function" ? vars(join(realpathSync(dir), ".qmd")) : vars),
           },
         });
-        expect(r.stderr).toBe("");
-        expect(r.status).toBe(0);
-        expect(r.stdout).toContain(`${MQ}: near-duplicate: scores 0.62 against ${PUB} (threshold 0.6)\n`);
-        const stores = readFileSync(log, "utf8").split("\n").filter((l) => l.startsWith("createStore "));
-        expect(stores.length).toBeGreaterThan(0);
-        const local = join(realpathSync(dir), ".qmd");
-        for (const line of stores) expect(line).toBe(`createStore ${local}/index.sqlite ${local}/index.yml`);
+        const stores = existsSync(log) ? readFileSync(log, "utf8").split("\n").filter((l) => l.startsWith("createStore ")) : [];
+        fn(r, stores, join(realpathSync(dir), ".qmd"));
       } finally {
         rmSync(bin, { recursive: true, force: true });
       }
+    });
+  };
+
+  // QMD_TRUST_LOCAL_CONFIG is qmd's unattended opt-in for a checked-in config's custom models.
+  test("a trusted project-local .qmd/ config above the cwd supplies the index and the embed model", async () => {
+    await withLocalConfig({ QMD_TRUST_LOCAL_CONFIG: "1" }, (r, stores, local) => {
+      expect(r.stderr).toBe("");
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain(`${MQ}: near-duplicate: scores 0.62 against ${PUB} (threshold 0.6)\n`);
+      expect(stores.length).toBeGreaterThan(0);
+      for (const line of stores) expect(line).toBe(`createStore ${local}/index.sqlite ${local}/index.yml`);
+    });
+  });
+
+  test("qmd's recorded trust in a project-local config lets its embed model through", async () => {
+    const trusted = (local: string) => ({ FAKE_TRUSTED: JSON.stringify({ [`${local}/index.yml`]: JSON.stringify({ embed: "hf:local/embed.gguf" }) }) });
+    await withLocalConfig(trusted, (r, stores, local) => {
+      expect(r.stderr).toBe("");
+      expect(r.status).toBe(0);
+      for (const line of stores) expect(line).toBe(`createStore ${local}/index.sqlite ${local}/index.yml`);
+    });
+  });
+
+  // A cloned repo's .qmd/ can name any model file; qmd's CLI loads its own defaults until you trust the config (qmd #889).
+  test("an untrusted project-local config's custom embed model never reaches the store", async () => {
+    await withLocalConfig({}, (r, stores, local) => {
+      expect(r.status).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toContain("has no embeddings for qmd's current embedding model");
+      expect(stores.length).toBeGreaterThan(0);
+      for (const line of stores) expect(line).toBe(`createStore ${local}/index.sqlite inline`);
+    });
+  });
+
+  test("a model that can't embed a query exits 1 naming the model, not a clean run", async () => {
+    await withVector(WITH_THRESHOLD, { FAKE_VEC: vec(0.62), FAKE_UNLOADABLE: "fake-embed-model" }, (r) => {
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toBe('ltm doctor: qmd vector search failed: qmd could not embed a query with model fake-embed-model: No model file found at "fake-embed-model"\n');
     });
   });
 
@@ -566,6 +601,54 @@ exit 1
           expect(r.status).toBe(0);
           expect(pair(r.stdout)).toBe(true);
           expect(existsSync(join(xdg, "cache/qmd/index.sqlite"))).toBe(false);
+        } finally {
+          rmSync(xdg, { recursive: true, force: true });
+        }
+      });
+    },
+    300000,
+  );
+
+  // A checked-in .qmd/ can name any model file. The custom model here is a symlink to the downloaded default, so nothing fetches.
+  test.skipIf(!hasQmd || !models)(
+    "real qmd embeddings (needs qmd and LTM_TEST_QMD_MODELS): a project-local custom embed model loads only once trusted, and one that can't load exits 1",
+    async () => {
+      await withScratch(demo, async (dir) => {
+        writePair(dir);
+        const xdg = mkdtempSync(join(tmpdir(), "ltm-xdg-"));
+        try {
+          mkdirSync(join(xdg, "cache/qmd"), { recursive: true });
+          symlinkSync(join(models!, "models"), join(xdg, "cache/qmd/models"));
+          const custom = join(xdg, "custom.gguf");
+          symlinkSync(join(models!, "models/hf_ggml-org_embeddinggemma-300M-Q8_0.gguf"), custom);
+          const qenv = { PATH: process.env.PATH, XDG_CACHE_HOME: join(xdg, "cache"), XDG_CONFIG_HOME: join(xdg, "config"), LTM_TODAY: env.LTM_TODAY };
+          const optIn = { ...qenv, QMD_TRUST_LOCAL_CONFIG: "1" };
+          const qmd = (e: Record<string, string | undefined>, ...a: string[]) => spawnSync("qmd", a, { cwd: dir, encoding: "utf8", env: e });
+          expect(qmd(qenv, "init").status).toBe(0);
+          expect(qmd(qenv, "collection", "add", join(dir, "_memory/decisions"), "--name", "decisions").status).toBe(0);
+          const qmdCfg = join(dir, ".qmd/index.yml");
+          writeFileSync(qmdCfg, readFileSync(qmdCfg, "utf8").replace(/^(\s+embed: )\S+$/m, `$1${custom}`));
+          expect(qmd(optIn, "embed").status).toBe(0);
+          const cfg = join(dir, "memory-bank.yaml");
+          writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\ndoctor: { near_duplicate_threshold: 0.5 }\nrecall: { backend: qmd, mode: vector, collections: { Decision: decisions } }\n`);
+          const doctor = (e: Record<string, string | undefined>) =>
+            spawnSync(process.execPath, [fileURLToPath(new URL("../../src/cli/bin.ts", import.meta.url)), "doctor"], { cwd: dir, encoding: "utf8", env: e });
+          // Untrusted, qmd's defaults apply, and the index holds vectors only for the custom model.
+          const untrusted = doctor(qenv);
+          expect(untrusted.status).toBe(1);
+          expect(untrusted.stderr).toContain("has no embeddings for qmd's current embedding model");
+          const trusted = doctor(optIn);
+          expect(trusted.stderr).toBe("");
+          expect(trusted.status).toBe(0);
+          expect(pair(trusted.stdout)).toBe(true);
+          // qmd trust records a digest; matching it means the worker re-derived qmd's trust check, not only the env opt-in.
+          expect(qmd(qenv, "trust").status).toBe(0);
+          expect(pair(doctor(qenv).stdout)).toBe(true);
+          rmSync(custom);
+          const gone = doctor(optIn);
+          expect(gone.status).toBe(1);
+          expect(gone.stdout).toBe("");
+          expect(gone.stderr).toBe(`ltm doctor: qmd vector search failed: qmd could not embed a query with model ${custom}: No model file found at "${custom}"\n`);
         } finally {
           rmSync(xdg, { recursive: true, force: true });
         }

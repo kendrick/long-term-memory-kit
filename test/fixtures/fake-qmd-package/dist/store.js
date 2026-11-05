@@ -1,6 +1,9 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+export const DEFAULT_EMBED_MODEL = "fake-embed-model";
+export const DEFAULT_RERANK_MODEL = "fake-rerank-model";
+export const DEFAULT_QUERY_MODEL = "fake-query-model";
 // qmd's getDefaultDbPath throws until the CLI (or the worker) turns production mode on; the fake keeps that trap.
 let production = false;
 export const enableProductionMode = () => {

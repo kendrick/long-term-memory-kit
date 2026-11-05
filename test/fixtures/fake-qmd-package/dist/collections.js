@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -13,3 +13,9 @@ export function findLocalConfigPath(startDir = process.cwd()) {
   }
 }
 export const getLocalDbPath = (configPath) => join(dirname(configPath), "index.sqlite");
+let source;
+export const setConfigSource = ({ configPath } = {}) => {
+  source = configPath;
+};
+// Only the embed model, the one gated field the tests exercise.
+export const loadConfig = () => ({ models: { embed: /^\s+embed:\s*(\S+)/m.exec(readFileSync(source ?? getConfigPath(), "utf8"))?.[1] } });
