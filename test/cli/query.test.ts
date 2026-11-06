@@ -900,4 +900,20 @@ describe("ltm query Stage 0 (#134)", () => {
       expect(paths(r.stdout)[0]).toBe(PG);
     });
   });
+
+  test("a Record whose header drifted from its folder still ranks through the folder's collection", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }");
+      const drift = "_memory/decisions/drifted-header-zZ0dR1fT02.md";
+      writeFileSync(
+        join(dir, drift),
+        "---\nschema: 1\nid: zZ0dR1fT02\nmemory_type: Context\ntitle: Drifted header\nstatus: accepted\ndate: 2026-10-10\nsummary: Header says Context, folder says Decision.\n---\n\nBody.\n",
+      );
+      const r = await ltmQmd(dir, hits([drift, 0.8]), "query", "--json", "--type", "Decision", "--text", "drifted");
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe("");
+      const rows = JSON.parse(r.stdout) as { path: string; ranked_by: string }[];
+      expect([rows[0]!.path, rows[0]!.ranked_by]).toEqual([drift, "qmd search"]);
+    });
+  });
 });

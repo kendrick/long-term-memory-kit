@@ -91,8 +91,9 @@ export function qmdCollections(collections: Partial<Record<MemoryType, string>>,
     return null;
   };
   const collectionOf = (record: ParsedRecord): string | undefined => {
-    const type = record.frontmatter.memory_type;
-    return typeof type === "string" && Object.hasOwn(collections, type) ? collections[type as MemoryType] : undefined;
+    // The folder decides memory_type (see matches() in query.ts); a drifted header must not pick the collection.
+    const type = record.memoryType;
+    return Object.hasOwn(collections, type) ? collections[type] : undefined;
   };
   const indexed = (name: string): Set<string> => {
     if (!collectionRoots.has(name)) {
@@ -150,7 +151,7 @@ export function qmdBackend(
     collectionOf,
     indexed,
     search(records, text) {
-      const type = records[0]?.frontmatter.memory_type;
+      const type = records[0]?.memoryType;
       const collection = records[0] && collectionOf(records[0]);
       // tokenize drops qmd's query syntax: a leading `-` negates a term, and an unbalanced `"` returns nothing.
       const tokens = tokenize(text);

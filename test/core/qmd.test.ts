@@ -48,9 +48,9 @@ function fake(vars: Record<string, string> = {}) {
 
 const config = (raw: Record<string, unknown>): BankConfig => ({ root: "/bank", folders: DEFAULT_FOLDERS, raw });
 
-const rec = (path: string, memory_type = "Decision"): ParsedRecord => ({
+const rec = (path: string, memory_type = "Decision", memoryType: ParsedRecord["memoryType"] = "Decision"): ParsedRecord => ({
   path,
-  memoryType: "Decision",
+  memoryType,
   frontmatter: { memory_type, status: "accepted" },
 });
 
@@ -184,7 +184,7 @@ describe("qmdBackend.search", () => {
     const { env, argv } = fake();
     const backend = qmdBackend(RECALL, bank, env, noWarn);
     expect(backend.search([], "orders")).toEqual([]);
-    expect(backend.search([rec("_memory/context/c.md", "Context")], "orders")).toEqual([]);
+    expect(backend.search([rec("_memory/context/c.md", "Context", "Context")], "orders")).toEqual([]);
     expect(backend.search([rec("_memory/decisions/a.md")], "")).toEqual([]);
     expect(argv()).toBe("");
   });
@@ -292,9 +292,15 @@ describe("qmdBackend.indexed and collectionOf", () => {
     expect(run).toThrow("Collection not found");
   });
 
-  test("collectionOf maps a Record's memory_type to its collection", () => {
+  test("collectionOf maps a Record's folder-derived memory_type to its collection", () => {
     const b = backend(fake().env);
     expect(b.collectionOf(rec("_memory/decisions/a.md"))).toBe("decisions");
-    expect(b.collectionOf(rec("_memory/x.md", "Context"))).toBeUndefined();
+    expect(b.collectionOf(rec("_memory/x.md", "Context", "Context"))).toBeUndefined();
+  });
+
+  test("collectionOf follows the folder, not a drifted frontmatter memory_type", () => {
+    const b = backend(fake().env);
+    expect(b.collectionOf(rec("_memory/decisions/a.md", "Context", "Decision"))).toBe("decisions");
+    expect(b.collectionOf(rec("_memory/context/a.md", "Decision", "Context"))).toBeUndefined();
   });
 });

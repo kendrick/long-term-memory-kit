@@ -334,7 +334,7 @@ function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
     if (typeof text !== "string" || text === "") continue;
     const mine = stringListField(r, "applies_to");
     if (mine === null) continue;
-    const candidates = accepted.filter((c) => c !== r && c.frontmatter.memory_type === r.frontmatter.memory_type);
+    const candidates = accepted.filter((c) => c !== r && c.memoryType === r.memoryType && typeof c.frontmatter.memory_type === "string");
     // A backend may return Records it wasn't handed, such as an index hit outside this Bank, so hits are checked against the candidates.
     const allowed = new Set(candidates);
     for (const hit of backend.search(candidates, text)) {
