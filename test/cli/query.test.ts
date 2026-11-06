@@ -1,10 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   cpSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -524,15 +526,20 @@ describe("ltm query options", () => {
     });
   });
 
-  test("7: a recall: key in memory-bank.yaml changes nothing", async () => {
+  test("7: with recall: set, --json --text rows carry the fake qmd's score and ranked_by, by score", async () => {
     await withScratch(demo, async (dir) => {
-      const before = await ltm(dir, "query", "--text", "postgres");
-      const cfg = join(dir, "memory-bank.yaml");
-      writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\nrecall: { backend: qmd, mode: search, collections: { Decision: decisions } }\n`);
-      expect(readFileSync(cfg, "utf8")).toContain("recall: { backend: qmd, mode: search, collections: { Decision: decisions } }");
-      const after = await ltm(dir, "query", "--text", "postgres");
-      expect(after).toEqual(before);
-      expect(before.stdout).not.toBe("");
+      setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }");
+      const r = await ltmQmd(dir, hits([PG, 0.42], [TRUNK, 0.9]), "query", "--json", "--text", "postgres");
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe("");
+      const rows = JSON.parse(r.stdout) as { path: string; score: number; ranked_by: string }[];
+      expect(rows.slice(0, 2).map((x) => [x.path, x.score, x.ranked_by])).toEqual([
+        [TRUNK, 0.9, "qmd search"],
+        [PG, 0.42, "qmd search"],
+      ]);
+      // PolicyRule and Exception have no collection, so lexical ranks them after the qmd rows.
+      expect(rows.slice(2).map((x) => x.ranked_by)).toEqual(["lexical", "lexical"]);
+      expect(rows.slice(2).map((x) => x.path).sort()).toEqual([PG_RULE, PG_EXC].sort());
     });
   });
 
@@ -731,6 +738,154 @@ describe("ltm query, frontmatter map keys JSON can't carry", () => {
       const r = await ltm(dir, "query", "--json", "id=hT5cY8dUa6");
       expect(r.exitCode).toBe(0);
       expect(ids(r.stdout)).toContain("hT5cY8dUa6");
+    });
+  });
+});
+
+const TRUNK = "_memory/decisions/trunk-based-deployment-rX6jK1fWc9.md";
+const PG_RULE = "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md";
+const PG_EXC = "_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md";
+
+// A stand-in qmd on a test-owned PATH, so no test runs the real binary or touches the user's index.
+const FAKE_QMD = `#!/bin/sh
+if [ "$1" = collection ]; then printf 'Collection: %s\\n  Path:     %s\\n' "$3" "$QMD_ROOT"; exit 0; fi
+if [ "$1" = ls ]; then printf '%s' "$QMD_LS"; exit 0; fi
+printf '%s' "$QMD_OUT"
+`;
+const qmdDir = mkdtempSync(join(tmpdir(), "ltm-query-qmd-"));
+const qmdBin = join(qmdDir, "bin");
+const noQmdBin = join(qmdDir, "empty");
+mkdirSync(qmdBin);
+mkdirSync(noQmdBin);
+writeFileSync(join(qmdBin, "qmd"), FAKE_QMD);
+chmodSync(join(qmdBin, "qmd"), 0o755);
+afterAll(() => rmSync(qmdDir, { recursive: true, force: true }));
+
+const hits = (...hs: [string, number][]) =>
+  JSON.stringify(hs.map(([p, score]) => ({ file: `qmd://decisions/${p.slice("_memory/decisions/".length)}`, score })));
+const setRecall = (dir: string, yaml: string) => {
+  const cfg = join(dir, "memory-bank.yaml");
+  writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\n${yaml}\n`);
+};
+// Every Decision file is in the fake index unless the test names one to leave out.
+function ltmQmd(dir: string, out: string, ...argv: string[]) {
+  return ltmQmdLs(dir, out, null, ...argv);
+}
+function ltmQmdLs(dir: string, out: string, omit: string | null, ...argv: string[]) {
+  const decisions = join(dir, "_memory/decisions");
+  const ls = readdirSync(decisions)
+    .filter((f) => `_memory/decisions/${f}` !== omit)
+    .map((f) => `   1.2 KB  Nov  5 10:00  qmd://decisions/${f}\n`)
+    .join("");
+  return run({ argv, cwd: dir, env: { PATH: qmdBin, QMD_ROOT: decisions, QMD_OUT: out, QMD_LS: ls } });
+}
+
+// Recorded from `ltm query` on fixtures/demo-bank before Stage 0 existed (AC 1), never regenerated.
+const AC1 = {"text":{"exitCode":0,"stdout":"_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md  Decision  accepted  Postgres everywhere\n_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md  PolicyRule  accepted  Relational stores use PostgreSQL\n_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md  Exception  accepted  billing-service may keep MySQL until 2026-12\n","stderr":""},"json":{"exitCode":0,"stdout":"[\n  {\n    \"path\": \"_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md\",\n    \"id\": \"kQ7vN2xLp4\",\n    \"memory_type\": \"Decision\",\n    \"status\": \"accepted\",\n    \"title\": \"Postgres everywhere\",\n    \"summary\": \"Acme services use PostgreSQL as their relational store, superseding the MySQL decision for all new and migrated services.\",\n    \"is_proposal\": false,\n    \"frontmatter\": {\n      \"schema\": 1,\n      \"id\": \"kQ7vN2xLp4\",\n      \"memory_type\": \"Decision\",\n      \"title\": \"Postgres everywhere\",\n      \"status\": \"accepted\",\n      \"date\": \"2026-02-10\",\n      \"last_confirmed\": \"2026-09-01\",\n      \"summary\": \"Acme services use PostgreSQL as their relational store, superseding the MySQL decision for all new and migrated services.\",\n      \"supersedes\": [\n        \"mB3tR9wZe1\"\n      ],\n      \"applies_to\": [\n        \"domain:commerce\",\n        \"system:data-platform\"\n      ],\n      \"owners\": [\n        \"team:commerce-architecture\"\n      ],\n      \"tags\": [\n        \"database\",\n        \"postgres\"\n      ],\n      \"source_refs\": [\n        \"fixtures/hydration-sources/adr/0001-postgres.md\"\n      ]\n    }\n  },\n  {\n    \"path\": \"_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md\",\n    \"id\": \"nR5hB2yTq8\",\n    \"memory_type\": \"PolicyRule\",\n    \"status\": \"accepted\",\n    \"title\": \"Relational stores use PostgreSQL\",\n    \"summary\": \"A service in the commerce domain that needs a relational store runs PostgreSQL, not another engine.\",\n    \"is_proposal\": false,\n    \"frontmatter\": {\n      \"schema\": 1,\n      \"id\": \"nR5hB2yTq8\",\n      \"memory_type\": \"PolicyRule\",\n      \"title\": \"Relational stores use PostgreSQL\",\n      \"status\": \"accepted\",\n      \"date\": \"2026-02-10\",\n      \"last_confirmed\": \"2026-09-01\",\n      \"summary\": \"A service in the commerce domain that needs a relational store runs PostgreSQL, not another engine.\",\n      \"applies_to\": [\n        \"domain:commerce\",\n        \"system:data-platform\"\n      ],\n      \"owners\": [\n        \"team:commerce-architecture\"\n      ],\n      \"tags\": [\n        \"database\",\n        \"postgres\",\n        \"relational-storage\",\n        \"data-platform\",\n        \"commerce-services\",\n        \"persistence-layer\",\n        \"operational-standards\"\n      ]\n    }\n  },\n  {\n    \"path\": \"_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md\",\n    \"id\": \"tZ6qL0vKd1\",\n    \"memory_type\": \"Exception\",\n    \"status\": \"accepted\",\n    \"title\": \"billing-service may keep MySQL until 2026-12\",\n    \"summary\": \"Billing-service may stay on MySQL until 2026-12-31 while its migration to Postgres completes.\",\n    \"is_proposal\": false,\n    \"frontmatter\": {\n      \"schema\": 1,\n      \"id\": \"tZ6qL0vKd1\",\n      \"memory_type\": \"Exception\",\n      \"title\": \"billing-service may keep MySQL until 2026-12\",\n      \"status\": \"accepted\",\n      \"date\": \"2026-03-02\",\n      \"effective_to\": \"2026-12-31\",\n      \"review_by\": \"2026-11-15\",\n      \"summary\": \"Billing-service may stay on MySQL until 2026-12-31 while its migration to Postgres completes.\",\n      \"applies_to\": [\n        \"service:billing-service\"\n      ],\n      \"owners\": [\n        \"team:commerce-architecture\"\n      ],\n      \"related\": [\n        \"constrained_by::nR5hB2yTq8\"\n      ]\n    }\n  }\n]\n","stderr":""}} as const;
+
+describe("ltm query Stage 0 (#134)", () => {
+  test("AC 1: with no recall:, --text and --json --text match the pre-Stage-0 output", async () => {
+    expect(await ltm(demo, "query", "--text", "postgres")).toEqual(AC1.text);
+    expect(await ltm(demo, "query", "--json", "--text", "postgres")).toEqual(AC1.json);
+  });
+
+  test("recall: set and no qmd on PATH falls back to lexical with a note, exit 0", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }");
+      const r = await run({ argv: ["query", "--json", "--text", "postgres"], cwd: dir, env: { PATH: noQmdBin } });
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe("ltm query: recall: qmd not found on PATH; ranked by lexical\n");
+      const rows = JSON.parse(r.stdout) as { path: string; ranked_by: string }[];
+      expect(rows.map((x) => x.path)).toEqual(JSON.parse(AC1.json.stdout).map((x: { path: string }) => x.path));
+      expect(rows.map((x) => x.ranked_by)).toEqual(["lexical", "lexical", "lexical"]);
+    });
+  });
+
+  test("recall: set without --text, or with a token-less --text, prints today's output", async () => {
+    await withScratch(demo, async (dir) => {
+      const before = [
+        await ltm(dir, "query", "--json"),
+        await ltm(dir, "query", "--text", ""),
+        await ltm(dir, "query", "--json", "--text", " - "),
+      ];
+      expect(before[1]!.stdout).not.toBe("");
+      setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }");
+      const after = [
+        await ltmQmd(dir, hits([PG, 0.5]), "query", "--json"),
+        await ltmQmd(dir, hits([PG, 0.5]), "query", "--text", ""),
+        await ltmQmd(dir, hits([PG, 0.5]), "query", "--json", "--text", " - "),
+      ];
+      expect(after).toEqual(before);
+    });
+  });
+
+  test("a malformed recall: exits 1 with --text, stdout empty; without --text it is never read", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: vsearch, collections: { Decision: decisions } }");
+      const bad = await ltmQmd(dir, "[]", "query", "--text", "postgres");
+      expect(bad).toEqual({
+        exitCode: 1,
+        stdout: "",
+        stderr: 'ltm query: memory-bank.yaml: recall.mode must be search or vector, not "vsearch"\n',
+      });
+      expect((await ltmQmd(dir, "[]", "query")).exitCode).toBe(0);
+      expect((await ltmQmd(dir, "[]", "query", "--text", "")).exitCode).toBe(0);
+    });
+  });
+
+  test("vector without query.min_score exits 1 naming it", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: vector, collections: { Decision: decisions } }\ndoctor: { near_duplicate_threshold: 0.6 }");
+      const r = await ltmQmd(dir, "[]", "query", "--text", "postgres");
+      expect(r).toEqual({
+        exitCode: 1,
+        stdout: "",
+        stderr: "ltm query: memory-bank.yaml: query.min_score is required when recall.mode is vector\n",
+      });
+    });
+  });
+
+  test("query.min_score drops a hit below it and keeps one at it; out of range exits 1", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }\nquery: { min_score: 0.5 }");
+      const r = await ltmQmd(dir, hits([PG, 0.49], [TRUNK, 0.5]), "query", "--json", "--text", "postgres");
+      expect(r.exitCode).toBe(0);
+      const rows = JSON.parse(r.stdout) as { path: string; ranked_by: string }[];
+      expect(rows.filter((x) => x.ranked_by === "qmd search").map((x) => x.path)).toEqual([TRUNK]);
+      expect(rows.map((x) => x.path)).not.toContain(PG);
+    });
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }\nquery: { min_score: 2 }");
+      const r = await ltmQmd(dir, "[]", "query", "--text", "postgres");
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toStartWith("ltm query: memory-bank.yaml: query.min_score");
+    });
+  });
+
+  test("--bank: Stage 0 notes land in JSON notes, prefixed with the Bank's name", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }");
+      const r = await run({
+        argv: ["query", "--json", "--bank", dir, "--facet", "domain:commerce", "--text", "postgres"],
+        cwd: dir,
+        env: { PATH: noQmdBin },
+      });
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(r.stdout) as { results: { bank: string; ranked_by: string }[]; notes: string[] };
+      expect(out.notes).toEqual(['Bank "acme": recall: qmd not found on PATH; ranked by lexical']);
+      expect(out.results.length).toBeGreaterThan(0);
+      for (const x of out.results) expect([x.bank, x.ranked_by]).toEqual(["acme", "lexical"]);
+    });
+  });
+
+  test("a kept Record missing from the collection's index gets a note on stderr", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }");
+      const r = await ltmQmdLs(dir, hits([PG, 0.9]), TRUNK, "query", "--text", "postgres");
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe("ltm query: 1 Record is not in qmd collection 'decisions'; run qmd update\n");
+      expect(paths(r.stdout)[0]).toBe(PG);
     });
   });
 });

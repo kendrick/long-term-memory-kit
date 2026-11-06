@@ -1,4 +1,8 @@
-import { ConfigError, isMapping, MEMORY_TYPES, type MemoryType } from "../core/bank.ts";
+import { ConfigError, isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
+import { loadRecall, qmdBackend, type QmdBackend, type Recall } from "../core/qmd.ts";
+import { qmdVectorBackend } from "../core/qmd-vector.ts";
+import { tokenize } from "../core/recall.ts";
+import { rankStage0, type RankedBy } from "../core/stage0.ts";
 import { isOrgWide, listRecords, parseFilter, selectRecords, type Filter, type QueryOptions } from "../core/query.ts";
 import type { ParsedRecord } from "../core/record.ts";
 import {
@@ -26,10 +30,62 @@ const row = (r: ParsedRecord) => ({
   frontmatter: r.frontmatter,
 });
 
-function line(r: ParsedRecord): string {
-  const status = scalar(r.frontmatter.status);
-  const title = scalar(r.frontmatter.title);
-  return `${r.path}  ${r.memoryType}  ${status ?? ""}  ${title ?? ""}${status === "proposed" ? "  (proposal)" : ""}\n`;
+type Row = ReturnType<typeof row> & { score?: number; ranked_by?: RankedBy };
+
+export function formatRow(r: Row): string {
+  return `${r.path}  ${r.memory_type}  ${r.status ?? ""}  ${r.title ?? ""}${r.is_proposal ? "  (proposal)" : ""}\n`;
+}
+
+export function loadQueryMinScore(config: BankConfig, recall: Recall): number | undefined | { error: string } {
+  const raw = config.raw.query;
+  if (raw !== undefined && !isMapping(raw)) return { error: "query is not a mapping" };
+  for (const key of Object.keys(raw ?? {})) {
+    if (key !== "min_score") return { error: `query.${key}: unknown key` };
+  }
+  const v = raw?.min_score;
+  if (v === undefined) {
+    // Vector scores have no scale a default could sit on, as with doctor's threshold (ADR 0004).
+    return recall.mode === "vector" ? { error: "query.min_score is required when recall.mode is vector" } : undefined;
+  }
+  if (typeof v !== "number" || !Number.isFinite(v) || v < -1 || v > 1) {
+    return { error: "query.min_score must be a number from -1 to 1" };
+  }
+  return v;
+}
+
+// Stage 0 needs `--text` with a token: an empty token list gets no qmd hits, while lexical
+// keeps every Record, so `--text ""` stays today's unfiltered list. recall: and query: are
+// read only then, so a malformed block never breaks a query that couldn't use it.
+// Returns the rows, or 1 after printing a config error.
+function selectForBank(
+  ctx: CommandContext,
+  config: BankConfig,
+  records: ParsedRecord[],
+  opts: QueryOptions,
+  notes: string[],
+): Row[] | 1 {
+  const text = opts.text;
+  if (text === undefined || tokenize(text).length === 0) return selectRecords(records, opts).map(row);
+  const recall = loadRecall(config);
+  if (recall === null) return selectRecords(records, opts).map(row);
+  if ("error" in recall) {
+    ctx.err(`ltm query: memory-bank.yaml: ${recall.error}\n`);
+    return 1;
+  }
+  const minScore = loadQueryMinScore(config, recall);
+  if (typeof minScore === "object") {
+    ctx.err(`ltm query: memory-bank.yaml: ${minScore.error}\n`);
+    return 1;
+  }
+  const warn = (line: string) => notes.push(`qmd: ${line}`);
+  const backend: QmdBackend =
+    recall.mode === "vector" ? qmdVectorBackend(recall, config.root, ctx.env, warn) : qmdBackend(recall, config.root, ctx.env, warn);
+  const kept = selectRecords(records, { ...opts, text: undefined });
+  return rankStage0(kept, text, backend, recall.mode, minScore, config.root, notes).map((r) => ({
+    ...row(r.record),
+    score: r.score,
+    ranked_by: r.rankedBy,
+  }));
 }
 
 // The Consumer repo's own Facets, from this Bank's `consumers` map. null means the Bank
@@ -49,7 +105,7 @@ function runResolved(ctx: CommandContext, opts: QueryOptions): 0 | 1 {
   let banks: ResolvedBank[];
   let resolvedBy: ResolvedBy;
   const notes: string[] = [];
-  const results: { bank: string; record: ParsedRecord }[] = [];
+  const results: ({ bank: string } & Row)[] = [];
   try {
     if (typeof flag === "string") {
       banks = [resolveBankFlag(flag, ctx.cwd, ctx.env)];
@@ -86,7 +142,11 @@ function runResolved(ctx: CommandContext, opts: QueryOptions): 0 | 1 {
         if (mapped === null || mapped.length === 0) records = records.filter(isOrgWide);
         else facets = mapped;
       }
-      for (const r of selectRecords(records, { ...opts, facets })) results.push({ bank: bank.name, record: r });
+      const bankNotes: string[] = [];
+      const rows = selectForBank(ctx, bank.config, records, { ...opts, facets }, bankNotes);
+      if (rows === 1) return 1;
+      for (const note of bankNotes) notes.push(`Bank "${bank.name}": ${note}`);
+      for (const r of rows) results.push({ bank: bank.name, ...r });
     }
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e;
@@ -95,7 +155,7 @@ function runResolved(ctx: CommandContext, opts: QueryOptions): 0 | 1 {
   }
   if (ctx.values.json === true) {
     const out = {
-      results: results.map(({ bank, record }) => ({ bank, ...row(record) })),
+      results,
       notes,
       resolved_by: resolvedBy,
     };
@@ -103,7 +163,7 @@ function runResolved(ctx: CommandContext, opts: QueryOptions): 0 | 1 {
     return 0;
   }
   for (const note of notes) ctx.err(`ltm query: ${note}\n`);
-  for (const { bank, record } of results) ctx.out(`${bank}:${line(record)}`);
+  for (const r of results) ctx.out(`${r.bank}:${formatRow(r)}`);
   return 0;
 }
 
@@ -115,7 +175,7 @@ export const query: Command = {
     type: { type: "string", description: "Only Records of this memory type" },
     facet: { type: "string", multiple: true, description: "Only Records that apply to this Facet" },
     status: { type: "string", multiple: true, description: "Only Records with this status, which may be a retired one" },
-    text: { type: "string", description: "Rank results by matches in title and summary" },
+    text: { type: "string", description: "Rank results by matches in title and summary, or through recall: when the Bank sets it" },
     all: { type: "boolean", description: "Include Retired Records" },
     bank: { type: "string", description: "Bank name from your user config, or path to a Bank" },
   },
@@ -154,17 +214,24 @@ export const query: Command = {
     if (root === null) return runResolved(ctx, opts);
     const config = loadBankAt(ctx, "query", root);
     if (config === 1) return 1;
-    const records = selectRecords(
+    const notes: string[] = [];
+    const rows = selectForBank(
+      ctx,
+      config,
       listRecords(config, (path, reason) => {
         ctx.err(`ltm query: skipped ${path}: ${reason}\n`);
       }),
       opts,
+      notes,
     );
+    if (rows === 1) return 1;
+    // A bare JSON array has no notes key, so in-Bank notes always go to stderr.
+    for (const note of notes) ctx.err(`ltm query: ${note}\n`);
     if (ctx.values.json === true) {
-      ctx.out(`${JSON.stringify(records.map(row), null, 2)}\n`);
+      ctx.out(`${JSON.stringify(rows, null, 2)}\n`);
       return 0;
     }
-    for (const r of records) ctx.out(line(r));
+    for (const r of rows) ctx.out(formatRow(r));
     return 0;
   },
 };

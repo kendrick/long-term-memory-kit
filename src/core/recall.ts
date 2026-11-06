@@ -3,7 +3,7 @@ import { byCodeUnit } from "./text.ts";
 
 export type Hit = { record: ParsedRecord; score: number };
 
-// `ltm doctor` reads `recall:` and plugs qmd in through `src/core/qmd.ts`; `ltm query` still uses `lexical` only.
+// `ltm doctor` and `ltm query --text` read `recall:` and plug qmd in through `src/core/qmd.ts`; without it they use `lexical`.
 export interface RecallBackend {
   search(records: ParsedRecord[], text: string): Hit[];
   // A backend whose matching differs from qmd search's AND-every-word picks its own query; null skips the Record.
