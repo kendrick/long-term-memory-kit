@@ -672,6 +672,20 @@ describe("near-duplicate", () => {
     });
   });
 
+  test("a header that drifted from its folder still pairs within the folder", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, { ...PUB_FIELDS, memory_type: "Context" });
+      expect(withBackend(dir).map((f) => f.related_files)).toEqual([[PUB]]);
+    });
+  });
+
+  test("an invalid memory_type never pairs, even inside a typed folder", async () => {
+    await scratch(async (dir) => {
+      await writeRecord(dir, PUB, { ...PUB_FIELDS, memory_type: "Nonsense" });
+      expect(withBackend(dir)).toEqual([]);
+    });
+  });
+
   const MQ_TITLE = "Adopt a message queue for order events";
   // The demo Bank holds other Decisions; only the MQ/PUB pair should score.
   const pairOnly = (record: { path: string }, text: string, score: number) =>

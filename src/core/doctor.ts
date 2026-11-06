@@ -1,5 +1,5 @@
 import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type: "json" };
-import { isMapping, type BankConfig } from "./bank.ts";
+import { isMapping, MEMORY_TYPES, type BankConfig } from "./bank.ts";
 import { isCalendarDate } from "./clock.ts";
 import { RETIRED_STATUSES } from "./query.ts";
 import { tokenize, type RecallBackend } from "./recall.ts";
@@ -320,8 +320,10 @@ function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
   const t = ctx.thresholds.near_duplicate_threshold;
   const accepted = ctx.records.filter((r) => r.frontmatter.status === "accepted");
   const pairs = new Map<string, { first: string; other: string; score: number }>();
+  // Pairs group by folder, as collectionOf does, but a header whose memory_type is missing or invalid still never pairs.
+  const typed = (r: ParsedRecord) => (MEMORY_TYPES as readonly unknown[]).includes(r.frontmatter.memory_type);
   for (const r of accepted) {
-    if (typeof r.frontmatter.memory_type !== "string") continue;
+    if (!typed(r)) continue;
     const { summary, title } = r.frontmatter;
     // qmd search ANDs every query word, and a whole summary rarely fits inside another Record, so the title goes first.
     // A title with no tokens ("???", spaces) would query nothing, so it falls through to the summary.
@@ -334,7 +336,7 @@ function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
     if (typeof text !== "string" || text === "") continue;
     const mine = stringListField(r, "applies_to");
     if (mine === null) continue;
-    const candidates = accepted.filter((c) => c !== r && c.memoryType === r.memoryType && typeof c.frontmatter.memory_type === "string");
+    const candidates = accepted.filter((c) => c !== r && c.memoryType === r.memoryType && typed(c));
     // A backend may return Records it wasn't handed, such as an index hit outside this Bank, so hits are checked against the candidates.
     const allowed = new Set(candidates);
     for (const hit of backend.search(candidates, text)) {
