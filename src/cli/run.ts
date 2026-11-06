@@ -26,7 +26,7 @@ export type Command = {
   options?: Record<string, Option>;
   // `variadic` is honored only on the last entry; earlier entries are ignored for it.
   positionals?: { name: string; required: boolean; variadic?: true }[];
-  checkArgs?(positionals: string[], values: CommandContext["values"]): string | undefined;
+  checkArgs?(positionals: string[], values: CommandContext["values"], env: RunInput["env"]): string | undefined;
   // A planned command holds its slot in commands.ts before it works; top-level --help leaves it out.
   hidden?: true;
   run(ctx: CommandContext): Promise<0 | 1>;
@@ -146,7 +146,7 @@ export async function run(
     return usageError(`ltm ${cmd.name}: unexpected argument '${parsed.positionals[declared.length]}'\n`);
   }
   const values = parsed.values as CommandContext["values"];
-  const bad = cmd.checkArgs?.(parsed.positionals, values);
+  const bad = cmd.checkArgs?.(parsed.positionals, values, input.env);
   if (bad !== undefined) return usageError(`ltm ${cmd.name}: ${bad}\n`);
 
   let stdout = "";
