@@ -130,7 +130,7 @@ describe("digest", () => {
   test("6: bodies appear in full and no markdown table survives outside a fence", async () => {
     await withScratch(DEMO, async (dir) => {
       const p = pathOf(dir, RULE);
-      writeFileSync(p, `${readFileSync(p, "utf8")}\n| a | b |\n|---|---|\n| 1 | 2 |\n`);
+      writeFileSync(p, `${readFileSync(p, "utf8")}\n| a | b |\n|---|---|\n| 1 | 2 |\n\nName | Port\n--- | ---\napi | 8080\n`);
       const { config, all } = load(dir);
       const picked = digestRecords(all, "2026-11-05");
       const md = renderDigest({ config, all, picked, scope: "x" });
@@ -139,11 +139,31 @@ describe("digest", () => {
         for (const row of body.split("\n").filter((l) => l.trim().startsWith("|"))) expect(md).toContain(row);
         expect(md).toContain(body.split("\n")[0]!);
       }
+      const fencedPlain = md.split("```text\n").some((chunk) => chunk.startsWith("Name | Port\n--- | ---\napi | 8080\n```"));
+      expect(fencedPlain).toBe(true);
       let fenced = false;
       for (const line of md.split("\n")) {
         if (line.startsWith("```")) fenced = !fenced;
         else if (!fenced) expect(/^\s*\|.*\|\s*$/.test(line)).toBe(false);
       }
+    });
+  });
+
+  test("6b: a foreign .md in the out dir survives; split always writes org-wide.md", async () => {
+    await withScratch(DEMO, async (dir) => {
+      const out = join(dir, "out");
+      mkdirSync(out);
+      writeFileSync(join(out, "README.md"), "# mine\n\nhello\n");
+      const old = readFileSync(pathOf(dir, ORG), "utf8").match(/^applies_to: .*$/m)?.[0];
+      if (old) edit(dir, ORG, old, "applies_to: [team:x]");
+      else edit(dir, ORG, "owners:", "applies_to: [team:x]\nowners:");
+      const { config, all } = load(dir);
+      const files = digestFiles({ config, all, today: "2026-11-05", split: true });
+      const org = files.find((f) => f.name === "org-wide.md")!;
+      expect(org).toBeDefined();
+      expect(org.content).not.toContain("### ");
+      writeDigest(out, files, true, "2026-11-05");
+      expect(readFileSync(join(out, "README.md"), "utf8")).toBe("# mine\n\nhello\n");
     });
   });
 

@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { BankConfig } from "./bank.ts";
+import { relatedId } from "./doctor.ts";
 import { facetsOf, selectRecords } from "./query.ts";
 import { type ParsedRecord, splitFrontmatter } from "./record.ts";
 import { byCodeUnit } from "./text.ts";
@@ -14,9 +15,11 @@ export const SIZE_LIMIT = 1_500_000;
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const idOf = (r: ParsedRecord): string => str(r.frontmatter.id);
 
-// Same reading `relatedId` in doctor.ts gives: the id follows the last `::`.
-const relatedId = (entry: string): string =>
-  entry.includes("::") ? entry.slice(entry.lastIndexOf("::") + 2) : entry;
+const ruleIdsOf = (r: ParsedRecord): string[] => {
+  const related = Array.isArray(r.frontmatter.related) ? r.frontmatter.related : [];
+  const entries = related.filter((x): x is string => typeof x === "string" && x.startsWith("constrained_by::"));
+  return [...new Set(entries.map(relatedId))];
+};
 
 export function digestRecords(records: ParsedRecord[], today: string): ParsedRecord[] {
   const accepted = selectRecords(records, { filters: [], statuses: ["accepted"], facets: [], all: false });
@@ -37,30 +40,38 @@ export function bankHeader(config: BankConfig): { name: string; commit: string }
     }).trim();
     const [sha, date] = out.split("\t");
     if (sha && date) commit = `Bank commit ${sha} (${date}).`;
-  } catch {
-    // No git or no commit: the "none" line stands.
-  }
+  } catch {}
   return { name, commit };
 }
 
-// A body table would put markdown table syntax in the Digest; Copilot's index reads it poorly, so
-// each run of `|` lines outside a code fence becomes a text block.
+// A body table would put markdown table syntax in the Digest, and pandoc turns it into a Word table; each table becomes a text block. Leading-pipe rows and GFM delimiter-row tables both count.
+const DELIMITER_ROW = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/;
+
 function fenceTables(body: string): string {
-  const out: string[] = [];
+  const lines = body.split("\n");
+  const inFence: boolean[] = [];
   let fence: string | null = null;
-  let inTable = false;
-  for (const line of body.split("\n")) {
+  for (const line of lines) {
     const mark = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    let fenced = fence !== null;
     if (mark && (fence === null || (mark[0] === fence[0] && mark.length >= fence.length))) {
       fence = fence === null ? mark : null;
+      fenced = true;
     }
-    const isRow = fence === null && !mark && line.trimStart().startsWith("|");
-    if (isRow && !inTable) out.push("```text");
-    if (!isRow && inTable) out.push("```");
-    inTable = isRow;
-    out.push(line);
+    inFence.push(fenced);
   }
-  if (inTable) out.push("```");
+  const isTable = lines.map((l, i) => !inFence[i] && l.trimStart().startsWith("|"));
+  lines.forEach((l, i) => {
+    if (inFence[i] || i === 0 || inFence[i - 1] || !DELIMITER_ROW.test(l) || !lines[i - 1]!.includes("|")) return;
+    isTable[i - 1] = true;
+    for (let j = i; j < lines.length && !inFence[j] && lines[j]!.includes("|"); j++) isTable[j] = true;
+  });
+  const out: string[] = [];
+  lines.forEach((l, i) => {
+    if (isTable[i] && !isTable[i - 1]) out.push("```text");
+    out.push(l);
+    if (isTable[i] && !isTable[i + 1]) out.push("```");
+  });
   return out.join("\n");
 }
 
@@ -77,11 +88,12 @@ export function renderDigest(opts: {
   picked: ParsedRecord[];
   entries?: ParsedRecord[];
   scope: string;
+  header?: { name: string; commit: string };
 }): string {
   // `picked` is the whole Digest set so a PolicyRule's Exception lines survive a split into files.
   const { config, all, picked, scope } = opts;
   const rendered = opts.entries ?? picked;
-  const { name, commit } = bankHeader(config);
+  const { name, commit } = opts.header ?? bankHeader(config);
   const byId = new Map(all.map((r) => [idOf(r), r]));
   const inForce = (id: string): boolean => {
     const r = byId.get(id);
@@ -99,9 +111,7 @@ export function renderDigest(opts: {
       if (section === "Exception") {
         if (fm.effective_from != null) lines.push(`- effective_from: ${String(fm.effective_from)}`);
         if (fm.effective_to != null) lines.push(`- effective_to: ${String(fm.effective_to)}`);
-        const related = Array.isArray(fm.related) ? fm.related.filter((x): x is string => typeof x === "string") : [];
-        const ruleIds = [...new Set(related.filter((e) => e.startsWith("constrained_by::")).map(relatedId))];
-        for (const id of ruleIds) {
+        for (const id of ruleIdsOf(r)) {
           const rule = byId.get(id);
           const title = rule ? str(rule.frontmatter.title) : id;
           lines.push(
@@ -113,12 +123,7 @@ export function renderDigest(opts: {
       }
       if (section === "PolicyRule") {
         const id = idOf(r);
-        for (const ex of picked.filter(
-          (e) =>
-            e.memoryType === "Exception" &&
-            Array.isArray(e.frontmatter.related) &&
-            e.frontmatter.related.some((x) => typeof x === "string" && x.startsWith("constrained_by::") && relatedId(x) === id),
-        )) {
+        for (const ex of picked.filter((e) => e.memoryType === "Exception" && ruleIdsOf(e).includes(id))) {
           lines.push(
             `- Exception: ${str(ex.frontmatter.title)} (${idOf(ex)}); Facets: ${facetsText(ex)}; effective_to: ${
               ex.frontmatter.effective_to != null ? String(ex.frontmatter.effective_to) : "none"
@@ -133,8 +138,7 @@ export function renderDigest(opts: {
   return `${lines.join("\n")}\n`;
 }
 
-// Every non-[a-z0-9-] byte escapes, `_` and uppercase included, so the map is one-to-one even on
-// SharePoint's case-insensitive names.
+// Every non-[a-z0-9-] byte escapes, `_` and uppercase included, so the map is one-to-one even on SharePoint's case-insensitive names.
 export function facetFileName(facet: string): string {
   let out = "";
   for (const b of new TextEncoder().encode(facet)) {
@@ -152,10 +156,11 @@ export function digestFiles(opts: {
 }): DigestFile[] {
   const { config, all, split } = opts;
   const picked = digestRecords(all, opts.today);
+  const header = bankHeader(config);
   if (!split) {
-    return [{ name: "accepted.md", content: renderDigest({ config, all, picked, scope: "all accepted Records" }) }];
+    return [{ name: "accepted.md", content: renderDigest({ config, all, picked, scope: "all accepted Records", header }) }];
   }
-  const groups = new Map<string, ParsedRecord[]>();
+  const groups = new Map<string, ParsedRecord[]>([["org-wide", []]]);
   const add = (key: string, r: ParsedRecord) => groups.set(key, [...(groups.get(key) ?? []), r]);
   for (const r of picked) {
     const f = facetsOf(r);
@@ -165,7 +170,7 @@ export function digestFiles(opts: {
   return [...groups]
     .map(([key, recs]) => ({
       name: key === "org-wide" ? "org-wide.md" : facetFileName(key),
-      content: renderDigest({ config, all, picked, entries: recs, scope: key }),
+      content: renderDigest({ config, all, picked, entries: recs, scope: key, header }),
     }))
     .sort((a, b) => byCodeUnit(a.name, b.name));
 }
@@ -177,7 +182,9 @@ export function writeDigest(dir: string, files: DigestFile[], split: boolean, to
   for (const name of readdirSync(dir)) {
     if (!name.endsWith(".md") || names.has(name)) continue;
     const path = join(dir, name);
-    if (readFileSync(path, "utf8").split("\n")[0] === PLACEHOLDER_MARK) continue;
+    const lines = readFileSync(path, "utf8").split("\n");
+    // Only a file this command wrote is ours to replace; `--out .` must not eat a Bank's README.
+    if (lines[0] === PLACEHOLDER_MARK || !lines[2]?.startsWith("Bank commit")) continue;
     const text = !split
       ? `This Digest moved to accepted.md in this folder as of ${today}; nothing here is current.`
       : name === "accepted.md"

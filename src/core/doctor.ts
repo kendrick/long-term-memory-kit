@@ -133,7 +133,7 @@ function stringListField(r: ParsedRecord, key: string): string[] | null {
 }
 
 // Same reading `checkBrightLine` gives a `related` entry: the id follows the last `::`.
-const relatedId = (entry: string): string =>
+export const relatedId = (entry: string): string =>
   entry.includes("::") ? entry.slice(entry.lastIndexOf("::") + 2) : entry;
 
 const finding = (file: string, check: CheckName, message: string, related: string[] = []): DoctorFinding => ({
