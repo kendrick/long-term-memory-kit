@@ -117,7 +117,7 @@ When the backend can't run, `ltm query` ranks with `lexical`, adds a note, and e
 
 A Record can pass the filters and still be missing from its collection's index. `ltm query` adds a note such as `2 Records are not in qmd collection 'decisions'; run qmd update`, and under `vector` the note adds `qmd embed`. A file that changed after indexing still ranks on its old text, and the note doesn't catch that. Lines qmd itself prints on stderr appear as notes prefixed `qmd: `.
 
-Inside a Bank, notes go to stderr, and `--json` prints a bare array. On the resolved path (outside a Bank, or with `--bank`), `--json` carries them in `notes`, prefixed `Bank "<name>": `, and text mode prints them on stderr.
+Inside a Bank, notes go to stderr, and `--json` prints a bare array. On the resolved path (outside a Bank, or with `--bank`), `--json` carries them in `notes`, prefixed `Bank "<name>": `, and text mode prints them on stderr. The MCP `query` tool returns the same notes, in `notes` on the resolved path and in `bank_notes` inside a Bank.
 
 qmd searches its index, not the files, so run `qmd update` after you edit Records. The same Bank and the same index give the same output on every run, which is the promise [ADR 0002](adr/0002-a-ranked-lookup-is-not-a-model-call.md) makes for a ranked lookup. [ADR 0003](adr/0003-only-qmd-search-qualifies.md) and [ADR 0004](adr/0004-an-embedding-only-lookup-qualifies.md) say which qmd modes qualify. Precise questions don't need Stage 0, because the funnel is exact when the headers are canonical.
 
