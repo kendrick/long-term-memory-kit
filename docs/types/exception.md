@@ -26,7 +26,7 @@ To see when each one ends:
 grep -rh '^effective_to:' _memory/exceptions
 ```
 
-`effective_to` records the intended end for readers and agents, and nothing enforces it: no query drops an Exception after that date, and [ltm doctor](../doctor.md) never reads the field. The doctor's `review-due` check reads `review_by` on every live Record, Exceptions included, and reports each one whose date has passed.
+`effective_to` records the intended end for readers and agents. Neither `ltm query` nor [ltm doctor](../doctor.md) enforces it. No query drops an Exception after that date, and `ltm doctor` never reads the field. `ltm digest` is the one command that reads it, and it leaves an Exception out of the Digest from the day after its `effective_to`, as [M365 Copilot](../../guide/m365-copilot.md) describes. The doctor's `review-due` check reads `review_by` on every live Record, Exceptions included, and reports each one whose date has passed.
 
 ## Common Mistakes
 

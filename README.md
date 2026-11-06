@@ -79,6 +79,7 @@ The guides cover running a Bank day to day:
 - [Reviewing](guide/reviewing.md) reviews and accepts Proposals, and supersedes Records.
 - [Promotion](guide/promotion.md) moves a decision from a repo into a Bank.
 - [Maintenance](guide/maintenance.md) runs `ltm doctor` and acts on what it finds.
+- [M365 Copilot](guide/m365-copilot.md) renders a Digest of accepted Records and puts it where M365 Copilot can read it.
 - [Formatters](guide/formatters.md) stops Prettier, oxfmt, and the Obsidian Linter from rewriting Record frontmatter.
 
 The reference pages explain why the kit works the way it does:
