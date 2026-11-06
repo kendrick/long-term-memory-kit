@@ -39,7 +39,7 @@ The connector shows repo content only to people who can already see the repo on 
 
 ## Route 2: The Publish Workflow
 
-This workflow renders the Digest, converts each file to Word with `pandoc`, commits `digest/`, and uploads the Word files to a SharePoint document library through Microsoft Graph. It runs on every push to the default branch and once a day.
+This workflow renders the Digest, converts each file to Word with `pandoc`, uploads the Word files to a SharePoint document library through Microsoft Graph, and then commits `digest/`. It runs on every push to the default branch and once a day.
 
 The Word step is there because M365 Copilot's semantic retrieval covers `.docx` but not `.md`, which gets keyword matching at best. `ltm` itself writes only markdown. [ADR 0005](../docs/adr/0005-the-digest-ships-as-word-files.md) records why.
 
@@ -67,6 +67,11 @@ on:
 
 permissions:
   contents: write
+
+# A run that overlapped another could upload an older Digest over a newer one.
+concurrency:
+  group: ltm-digest
+  cancel-in-progress: false
 
 jobs:
   ltm-digest:
@@ -103,13 +108,6 @@ jobs:
           for f in digest/*.md; do
             pandoc "$f" -o "docx/$(basename "$f" .md).docx"
           done
-      - name: Commit the Digest
-        if: steps.render.outputs.changed == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Update the Digest"
-          git push
       - name: Save the Word files
         if: steps.render.outputs.changed == 'true'
         uses: actions/upload-artifact@v4
@@ -135,11 +133,18 @@ jobs:
       - name: Upload to SharePoint
         if: steps.render.outputs.changed == 'true'
         run: ltm publish sharepoint --site "${{ vars.SHAREPOINT_SITE_ID }}" --drive "${{ vars.SHAREPOINT_DRIVE_ID }}" --path Digest docx/
+      - name: Commit the Digest
+        if: steps.render.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update the Digest"
+          git push
 ```
 
 An Entra access token lasts about an hour, so the Get a Graph token step mints a new one on each run with the client-credentials grant and hands it to `ltm` as `LTM_GRAPH_TOKEN`. Nobody has run this step against a real tenant yet.
 
-The workflow commits and uploads only when some Digest file's bytes changed. It checks the markdown in `digest/` and not the Word files, because `pandoc` writes a different `.docx` on every run. The workflow makes this check because `ltm publish sharepoint` never skips a file and uploads every file in the directory each time it runs. A push made with the workflow's own token starts no new run, so the `digest/` commit doesn't loop.
+The workflow commits and uploads only when some Digest file's bytes changed. It checks the markdown in `digest/` and not the Word files, because `pandoc` writes a different `.docx` on every run. The workflow makes this check because `ltm publish sharepoint` never skips a file and uploads every file in the directory each time it runs. A push made with the workflow's own token starts no new run, so the `digest/` commit doesn't loop. The commit comes last because the change check compares against the committed `digest/`. When an upload fails, the run commits nothing, so the next run still sees the change and uploads again.
 
 `ltm publish sharepoint` sends one `PUT` per file to the folder `--path` names in the drive, and it overwrites the file it wrote last time. It uploads each file as it is and converts nothing. When one upload fails, it still sends the rest, then exits `1` and names each failed path on stderr. A rerun is always safe. Without `LTM_GRAPH_TOKEN`, it exits `2`, names the variable, and sends nothing. It calls the Graph API and never a model.
 
