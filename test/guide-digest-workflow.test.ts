@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
-type Step = { name?: string; run?: string };
+type Step = { name?: string; run?: string; env?: Record<string, string> };
 type Workflow = { concurrency?: unknown; jobs: Record<string, { steps: Step[] }> };
 
 const guide = readFileSync(fileURLToPath(new URL("../guide/m365-copilot.md", import.meta.url)), "utf8");
@@ -20,4 +20,16 @@ test("the guide's ltm-digest workflow pushes digest/ only after the upload succe
   expect(push).toBeGreaterThan(upload);
   // Two overlapping runs could otherwise upload an older Digest after a newer one was pushed.
   expect(wf.concurrency).toBeDefined();
+});
+
+const section = (heading: string) => guide.split(/^## /m).find((s) => s.startsWith(heading)) ?? "";
+
+test.each(["Route 1:", "Route 3:"])("%s names every Graph step a reader must drop from the workflow", (heading) => {
+  const steps = (parse(block!) as Workflow).jobs["ltm-digest"]!.steps;
+  // A Graph step kept without its secrets fails the job, and the commit now comes after it.
+  const graph = steps.filter((s) => s.run?.includes("ltm publish sharepoint") || Object.values(s.env ?? {}).some((v) => v.includes("ENTRA_")));
+  expect(graph.length).toBe(2);
+  const text = section(heading);
+  expect(text).not.toBe("");
+  for (const s of graph) expect(text).toContain(s.name!);
 });

@@ -33,7 +33,7 @@ Two runs on the same commit and the same day write the same bytes. To render the
 
 Microsoft's GitHub Cloud Knowledge connector indexes every markdown file in a repo, and it can't tell an accepted Record from a Proposal. Pointed at the whole Bank, it lets Copilot cite a Retired Record as current. Point it at `digest/` instead.
 
-The workflow in [Route 2](#route-2-the-publish-workflow) commits `digest/` to the Bank on every change. For this route alone, keep its render and commit steps and drop the `pandoc`, upload, and artifact steps.
+The workflow in [Route 2](#route-2-the-publish-workflow) commits `digest/` to the Bank on every change. For this route alone, keep its Render the Digest and Commit the Digest steps, and drop Convert to Word, Save the Word files, Get a Graph token, and Upload to SharePoint.
 
 The connector shows repo content only to people who can already see the repo on GitHub. Readers without a GitHub seat need Route 2 or Route 3.
 
@@ -162,7 +162,7 @@ https://graph.microsoft.com/v1.0/sites/<site-id>/drives/<drive-id>/root:/Digest/
 
 ## Route 3: Upload by Hand
 
-Some tenants won't grant the Graph token. For them, delete the workflow's Upload to SharePoint step and keep Save the Word files. Each run that changes the Digest then saves the `.docx` files as a zip in a GitHub Actions artifact named `digest-docx`.
+Some tenants won't grant the Graph token. For them, delete the workflow's Get a Graph token and Upload to SharePoint steps and keep Save the Word files. Each run that changes the Digest then saves the `.docx` files as a zip in a GitHub Actions artifact named `digest-docx`.
 
 To bring SharePoint up to date, download that artifact from the run's page and unzip it. Upload every `.docx` file in it to the document library, and replace the files with the same names.
 
