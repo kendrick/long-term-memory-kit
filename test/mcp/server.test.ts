@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
@@ -795,3 +795,343 @@ describe("ltm mcp, a config-resolved query whose Bank changes mid-read", () => {
     MCP_TEST_TIMEOUT,
   );
 });
+
+// Task 5 of #134: query's text comes from its --json rows, so Stage 0 runs once per request.
+describe("ltm mcp, query runs the CLI once", () => {
+  afterEach(() => mock.restore());
+
+  // Resolved path (LTM_BANK_PATH, so --bank) from the consumer repo, and in-Bank path (cwd in the Bank, nothing picked).
+  type At = { client: Client; bank: string; inBank: boolean; cwd: string; env: Record<string, string | undefined> };
+  const atBoth = <T>(edit: ((root: string) => void) | undefined, extra: (bank: string) => Record<string, string>, fn: (o: At) => Promise<T>) =>
+    withDemoGitBank(
+      (bank) =>
+        withConsumerRepo(async (consumer) => {
+          const base = { ...process.env, LTM_BANK_URL: undefined, LTM_CONFIG: undefined, ...extra(bank) };
+          for (const [inBank, cwd, env] of [
+            [false, consumer, { ...base, LTM_BANK_PATH: bank }],
+            [true, bank, { ...base, LTM_BANK_PATH: undefined }],
+          ] as const) {
+            await serve(env, cwd, (client) => fn({ client, bank, inBank, cwd, env }));
+          }
+        }),
+      edit,
+    );
+  const none = () => ({});
+
+  // Recorded from the server before it built query's text from rows (AC 1), never regenerated.
+  test(
+    "with no recall:, query's structuredContent and text match the pre-Stage-0 server",
+    () =>
+      atBoth(undefined, none, async ({ client, inBank }) => {
+        const r = await call(client, "query", { text: "postgres" });
+        const got = { structured: minusCommits(ok(r)), text: textOf(r) };
+        if (inBank) expect(got).toMatchInlineSnapshot(`
+          {
+            "structured": {
+              "results": [
+                {
+                  "frontmatter": {
+                    "applies_to": [
+                      "domain:commerce",
+                      "system:data-platform",
+                    ],
+                    "date": "2026-02-10",
+                    "id": "kQ7vN2xLp4",
+                    "last_confirmed": "2026-09-01",
+                    "memory_type": "Decision",
+                    "owners": [
+                      "team:commerce-architecture",
+                    ],
+                    "schema": 1,
+                    "source_refs": [
+                      "fixtures/hydration-sources/adr/0001-postgres.md",
+                    ],
+                    "status": "accepted",
+                    "summary": "Acme services use PostgreSQL as their relational store, superseding the MySQL decision for all new and migrated services.",
+                    "supersedes": [
+                      "mB3tR9wZe1",
+                    ],
+                    "tags": [
+                      "database",
+                      "postgres",
+                    ],
+                    "title": "Postgres everywhere",
+                  },
+                  "id": "kQ7vN2xLp4",
+                  "is_proposal": false,
+                  "memory_type": "Decision",
+                  "path": "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+                  "status": "accepted",
+                  "summary": "Acme services use PostgreSQL as their relational store, superseding the MySQL decision for all new and migrated services.",
+                  "title": "Postgres everywhere",
+                },
+                {
+                  "frontmatter": {
+                    "applies_to": [
+                      "domain:commerce",
+                      "system:data-platform",
+                    ],
+                    "date": "2026-02-10",
+                    "id": "nR5hB2yTq8",
+                    "last_confirmed": "2026-09-01",
+                    "memory_type": "PolicyRule",
+                    "owners": [
+                      "team:commerce-architecture",
+                    ],
+                    "schema": 1,
+                    "status": "accepted",
+                    "summary": "A service in the commerce domain that needs a relational store runs PostgreSQL, not another engine.",
+                    "tags": [
+                      "database",
+                      "postgres",
+                      "relational-storage",
+                      "data-platform",
+                      "commerce-services",
+                      "persistence-layer",
+                      "operational-standards",
+                    ],
+                    "title": "Relational stores use PostgreSQL",
+                  },
+                  "id": "nR5hB2yTq8",
+                  "is_proposal": false,
+                  "memory_type": "PolicyRule",
+                  "path": "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+                  "status": "accepted",
+                  "summary": "A service in the commerce domain that needs a relational store runs PostgreSQL, not another engine.",
+                  "title": "Relational stores use PostgreSQL",
+                },
+                {
+                  "frontmatter": {
+                    "applies_to": [
+                      "service:billing-service",
+                    ],
+                    "date": "2026-03-02",
+                    "effective_to": "2026-12-31",
+                    "id": "tZ6qL0vKd1",
+                    "memory_type": "Exception",
+                    "owners": [
+                      "team:commerce-architecture",
+                    ],
+                    "related": [
+                      "constrained_by::nR5hB2yTq8",
+                    ],
+                    "review_by": "2026-11-15",
+                    "schema": 1,
+                    "status": "accepted",
+                    "summary": "Billing-service may stay on MySQL until 2026-12-31 while its migration to Postgres completes.",
+                    "title": "billing-service may keep MySQL until 2026-12",
+                  },
+                  "id": "tZ6qL0vKd1",
+                  "is_proposal": false,
+                  "memory_type": "Exception",
+                  "path": "_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md",
+                  "status": "accepted",
+                  "summary": "Billing-service may stay on MySQL until 2026-12-31 while its migration to Postgres completes.",
+                  "title": "billing-service may keep MySQL until 2026-12",
+                },
+              ],
+            },
+            "text": 
+          "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md  Decision  accepted  Postgres everywhere
+          _memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md  PolicyRule  accepted  Relational stores use PostgreSQL
+          _memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md  Exception  accepted  billing-service may keep MySQL until 2026-12
+          "
+          ,
+          }
+        `);
+        else expect(got).toMatchInlineSnapshot(`
+          {
+            "structured": {
+              "notes": [],
+              "resolved_by": "flag",
+              "results": [
+                {
+                  "bank": "acme",
+                  "frontmatter": {
+                    "applies_to": [
+                      "domain:commerce",
+                      "system:data-platform",
+                    ],
+                    "date": "2026-02-10",
+                    "id": "kQ7vN2xLp4",
+                    "last_confirmed": "2026-09-01",
+                    "memory_type": "Decision",
+                    "owners": [
+                      "team:commerce-architecture",
+                    ],
+                    "schema": 1,
+                    "source_refs": [
+                      "fixtures/hydration-sources/adr/0001-postgres.md",
+                    ],
+                    "status": "accepted",
+                    "summary": "Acme services use PostgreSQL as their relational store, superseding the MySQL decision for all new and migrated services.",
+                    "supersedes": [
+                      "mB3tR9wZe1",
+                    ],
+                    "tags": [
+                      "database",
+                      "postgres",
+                    ],
+                    "title": "Postgres everywhere",
+                  },
+                  "id": "kQ7vN2xLp4",
+                  "is_proposal": false,
+                  "memory_type": "Decision",
+                  "path": "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md",
+                  "status": "accepted",
+                  "summary": "Acme services use PostgreSQL as their relational store, superseding the MySQL decision for all new and migrated services.",
+                  "title": "Postgres everywhere",
+                },
+                {
+                  "bank": "acme",
+                  "frontmatter": {
+                    "applies_to": [
+                      "domain:commerce",
+                      "system:data-platform",
+                    ],
+                    "date": "2026-02-10",
+                    "id": "nR5hB2yTq8",
+                    "last_confirmed": "2026-09-01",
+                    "memory_type": "PolicyRule",
+                    "owners": [
+                      "team:commerce-architecture",
+                    ],
+                    "schema": 1,
+                    "status": "accepted",
+                    "summary": "A service in the commerce domain that needs a relational store runs PostgreSQL, not another engine.",
+                    "tags": [
+                      "database",
+                      "postgres",
+                      "relational-storage",
+                      "data-platform",
+                      "commerce-services",
+                      "persistence-layer",
+                      "operational-standards",
+                    ],
+                    "title": "Relational stores use PostgreSQL",
+                  },
+                  "id": "nR5hB2yTq8",
+                  "is_proposal": false,
+                  "memory_type": "PolicyRule",
+                  "path": "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md",
+                  "status": "accepted",
+                  "summary": "A service in the commerce domain that needs a relational store runs PostgreSQL, not another engine.",
+                  "title": "Relational stores use PostgreSQL",
+                },
+              ],
+            },
+            "text": 
+          "acme:_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md  Decision  accepted  Postgres everywhere
+          acme:_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md  PolicyRule  accepted  Relational stores use PostgreSQL
+          "
+          ,
+          }
+        `);
+      }),
+    MCP_TEST_TIMEOUT,
+  );
+
+  // Counts calls to run(), the one door every CLI run in jsonTool goes through.
+  const countRuns = (): (() => number) => {
+    const real = runModule.run;
+    let n = 0;
+    spyOn(runModule, "run").mockImplementation(async (input) => {
+      n++;
+      return real(input);
+    });
+    return () => n;
+  };
+
+  test(
+    "query runs the CLI once per request; facets and validate still run it twice",
+    () =>
+      atBoth(undefined, none, async ({ client }) => {
+        for (const [name, args, runs] of [["query", { text: "postgres" }, 1], ["facets", {}, 2], ["validate", {}, 2]] as const) {
+          const runsNow = countRuns();
+          ok(await call(client, name, args));
+          expect({ name, runs: runsNow() }).toEqual({ name, runs });
+          mock.restore();
+        }
+      }),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "with recall: and no qmd on PATH, the fallback note reaches notes (--bank) and bank_notes (in-Bank)",
+    async () => {
+      // git only, so the server can still read HEAD while qmd is missing.
+      const dir = mkdtempSync(join(tmpdir(), "ltm-mcp-noqmd-"));
+      symlinkSync(realGit, join(dir, "git"));
+      try {
+        await atBoth(setSearchRecall, () => ({ PATH: dir }), async ({ client, inBank, cwd, env, bank }) => {
+          const r = await call(client, "query", { text: "postgres" });
+          const sc = ok(r);
+          const rows = sc.results as { ranked_by: string }[];
+          expect(rows.length).toBeGreaterThan(0);
+          for (const x of rows) expect(x.ranked_by).toBe("lexical");
+          const note = "recall: qmd not found on PATH; ranked by lexical";
+          if (inBank) {
+            expect(sc.bank_notes).toEqual([note]);
+            expect(textOf(r)).toBe(await cli(["query", "--text", "postgres"], cwd, env));
+          } else {
+            expect(sc.notes).toEqual([`Bank "acme": ${note}`]);
+            expect(sc.bank_notes).toBeUndefined();
+            expect(textOf(r)).toBe(await cli(["query", "--bank", bank, "--text", "postgres"], cwd, env));
+          }
+        });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "with recall: and qmd ranking, rows and text match the CLI's, from one run",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "ltm-mcp-qmd-"));
+      writeFileSync(join(dir, "qmd"), FAKE_QMD);
+      chmodSync(join(dir, "qmd"), 0o755);
+      symlinkSync(realGit, join(dir, "git"));
+      try {
+        await atBoth(
+          setSearchRecall,
+          (bank) => {
+            const decisions = join(bank, "_memory/decisions");
+            const ls = readdirSync(decisions).map((f) => `   1.2 KB  Nov  5 10:00  qmd://decisions/${f}\n`).join("");
+            return { PATH: dir, QMD_ROOT: decisions, QMD_LS: ls, QMD_OUT: JSON.stringify([{ file: `qmd://decisions/${POSTGRES.slice("_memory/decisions/".length)}`, score: 0.9 }]) };
+          },
+          async ({ client, inBank, cwd, env, bank }) => {
+            const runs = countRuns();
+            const r = await call(client, "query", { text: "postgres" });
+            expect(runs()).toBe(1);
+            mock.restore();
+            const sc = ok(r);
+            const argv = [...(inBank ? [] : ["--bank", bank]), "--text", "postgres"];
+            const json = JSON.parse(await cli(["query", "--json", ...argv], cwd, env));
+            const rows = inBank ? json : json.results;
+            expect(rows[0]).toMatchObject({ path: POSTGRES, ranked_by: "qmd search", score: 0.9 });
+            expect(minusCommits(sc)).toEqual(inBank ? { results: json } : json);
+            expect(textOf(r)).toBe(await cli(["query", ...argv], cwd, env));
+            expect(textOf(r).split("\n")[0]).toEndWith(`${POSTGRES}  Decision  accepted  Postgres everywhere`);
+          },
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    MCP_TEST_TIMEOUT,
+  );
+});
+
+const setSearchRecall = (root: string) => {
+  const cfg = join(root, "memory-bank.yaml");
+  writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\nrecall: { backend: qmd, mode: search, collections: { Decision: decisions } }\n`);
+};
+
+// A stand-in qmd, copied from test/cli/query.test.ts, so no test runs the real binary or touches the user's index.
+const FAKE_QMD = `#!/bin/sh
+if [ "$1" = collection ]; then printf 'Collection: %s\\n  Path:     %s\\n' "$3" "$QMD_ROOT"; exit 0; fi
+if [ "$1" = ls ]; then printf '%s' "$QMD_LS"; exit 0; fi
+printf '%s' "$QMD_OUT"
+`;

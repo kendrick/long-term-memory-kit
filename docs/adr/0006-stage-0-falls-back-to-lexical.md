@@ -1,0 +1,5 @@
+# Stage 0 Ranks After the Filters and Falls Back to Lexical
+
+`ltm query --text` ranks through a Bank's `recall:` backend only after the exact filters run, and only among the Records they keep. A rank-first funnel would drop a Record qmd hasn't indexed without saying so. Filtering first tells `ltm query` which Records should have come back, so it can add a note naming the ones missing from a collection's index.
+
+When the backend can't run, `ltm query` ranks with `lexical`, adds a note, and exits 0. That covers qmd missing from `PATH`, a missing collection, and a failed lookup. `ltm doctor` exits 1 on the same setup, but only a Bank's maintainers run `doctor`. `recall:` is committed to the Bank and reaches every consumer machine, and most of those have no qmd or no matching collections, so exiting 1 would break `--text` for all of them. Each row's `ranked_by` names the matcher that produced the order, which keeps a fallback visible. A malformed `recall:` or `query:` block still exits 1 as a config error, because the maintainer can fix it before it merges.

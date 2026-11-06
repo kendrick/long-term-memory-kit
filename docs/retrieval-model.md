@@ -2,7 +2,7 @@
 
 An agent that needs a Bank's Records should read as little as it can and still be right. The retrieval model is a four-stage funnel that narrows the Bank to the few files worth reading. Each stage costs more per file than the one before, so each one runs on fewer files.
 
-You can walk the funnel with plain shell tools. `ltm query` and the MCP `query` tool both run `selectRecords` to do stages 1 and 2 for you. Neither is required.
+You can walk the funnel with plain shell tools. `ltm query` and the MCP `query` tool both run `selectRecords` to do stages 1 and 2 for you, and a Bank that sets `recall:` can rank `--text` through [Stage 0](#stage-0). None of it is required.
 
 ## The Four Stages
 
@@ -75,7 +75,7 @@ That code sits in two layers.
 
 - It leaves retired Records out. Name a retired status with `--status`, or pass `--all`, to see them. `--status accepted` never lets a retired Record through.
 - It filters Facets by overlap. A Record matches `--facet service:order-service` when its `applies_to` holds that Facet. An org-wide Record matches every Facet, because it applies everywhere. A Record with no `applies_to` is org-wide.
-- It ranks `--text` on the header. It searches `title` and `summary`, not the body, so a passing mention in a body doesn't outrank a Record about the topic.
+- It ranks `--text` on the header. It searches `title` and `summary`, not the body, so a passing mention in a body doesn't outrank a Record about the topic. A Bank that sets `recall:` ranks `--text` through qmd instead, as [Stage 0](#stage-0) describes.
 
 `ltm query` adds three behaviors of its own around `selectRecords`.
 
@@ -87,9 +87,39 @@ That code sits in two layers.
 
 A repo can read from several Banks. `ltm query` resolves them, queries each on its own, and joins the results in resolution order. Each line starts with its Bank's name, and `--json` adds `resolved_by`, which says whether the flag, the repo's `.ltm.yaml`, a user rule, or the default picked them. Ranking under `--text` stays inside each Bank, so a strong match in the second Bank never jumps ahead of the first.
 
-## Stage 0 Is Reserved
+## Stage 0
 
-Semantic recall would run before stage 1, as a ranked search over meaning. It's planned for v1.1. A ranked backend can plug in through the `RecallBackend` interface in `src/core/recall.ts`. Today only a plain lexical match is wired in, and `recall:` in `memory-bank.yaml` turns on qmd for `ltm doctor`'s `near-duplicate` check only. `ltm query` ignores it. Precise questions don't need it, because the funnel is exact when the headers are canonical.
+Stage 0 ranks the Records the exact filters keep through the backend that `recall:` names in `memory-bank.yaml`. It runs only when two things hold: the Bank sets `recall:`, and the query passes `--text` with at least one word. A query without `--text`, or with `--text ""`, skips it, and so does a Bank without `recall:`. No flag or extra key turns it on. [ltm doctor](doctor.md) covers the `recall:` keys.
+
+The filters run first. `--type`, `--facet`, `--status`, and the rest narrow the Bank, and the backend ranks only what is left. qmd still searches its whole collection, and `ltm query` ignores any hit for a Record the filters dropped.
+
+qmd ranks the whole file, body included. The `lexical` matcher reads only `title` and `summary`, so a Record can rank under qmd on a word that appears only in its body. Under `mode: search`, qmd returns a Record only when its text holds every word of the query.
+
+`recall.collections` maps each memory type to one qmd collection, and Stage 0 searches the collection of each type that survives the filters. Without `--type`, that can mean up to four searches. The ranked rows from every collection merge by score, highest first, and break ties by path. A type with no entry in `recall.collections` ranks with `lexical`, and those rows follow the ranked ones. BM25 scores from different collections are not strictly comparable, because each collection scores against its own corpus, so a merged order across types is approximate.
+
+`query.min_score` sets a floor. A Record that scores below it drops out, and a score equal to it stays. It sits in its own block beside `doctor:`:
+
+```yaml
+recall:
+  backend: qmd
+  mode: search
+  collections:
+    Decision: decisions
+query:
+  min_score: 0.3
+```
+
+Under `mode: search` the key is optional. Under `mode: vector` it is required, along with `doctor.near_duplicate_threshold`, because cosine similarity gives every document a score and only the floor makes `--text` narrow the list. `min_score` is a number from -1 to 1. When Stage 0 would run, `ltm query` exits 1 with a `memory-bank.yaml:` line if `recall:` or `query:` is malformed or a `vector` Bank leaves `min_score` out. Without `--text`, it doesn't read either block.
+
+Each row gains two fields when Stage 0 runs. `score` is the number the matcher gave the Record. `ranked_by` is `qmd search`, `qmd vector`, or `lexical`, whichever produced that row's place in the order.
+
+When the backend can't run, `ltm query` ranks with `lexical`, adds a note, and exits 0. That covers qmd missing from `PATH`, a missing collection, and a failed lookup. Every row then says `lexical` in `ranked_by`. [ADR 0006](adr/0006-stage-0-falls-back-to-lexical.md) explains why `ltm query` falls back where `ltm doctor` exits 1.
+
+A Record can pass the filters and still be missing from its collection's index. `ltm query` adds a note such as `2 Records are not in qmd collection 'decisions'; run qmd update`, and under `vector` the note adds `qmd embed`. A file that changed after indexing still ranks on its old text, and the note doesn't catch that. Lines qmd itself prints on stderr appear as notes prefixed `qmd: `.
+
+Inside a Bank, notes go to stderr, and `--json` prints a bare array. On the resolved path (outside a Bank, or with `--bank`), `--json` carries them in `notes`, prefixed `Bank "<name>": `, and text mode prints them on stderr.
+
+qmd searches its index, not the files, so run `qmd update` after you edit Records. The same Bank and the same index give the same output on every run, which is the promise [ADR 0002](adr/0002-a-ranked-lookup-is-not-a-model-call.md) makes for a ranked lookup. [ADR 0003](adr/0003-only-qmd-search-qualifies.md) and [ADR 0004](adr/0004-an-embedding-only-lookup-qualifies.md) say which qmd modes qualify. Precise questions don't need Stage 0, because the funnel is exact when the headers are canonical.
 
 ## Related Pages
 
@@ -98,3 +128,5 @@ Semantic recall would run before stage 1, as a ranked search over meaning. It's 
 - [ltm doctor](doctor.md) reports Records that have gone stale.
 - [ADR 0001](adr/0001-ltm-never-calls-a-model.md) is why `ltm` runs the funnel without judgment calls.
 - [ADR 0002](adr/0002-a-ranked-lookup-is-not-a-model-call.md) is why a ranked lookup doesn't break that rule.
+- [ADR 0003](adr/0003-only-qmd-search-qualifies.md) and [ADR 0004](adr/0004-an-embedding-only-lookup-qualifies.md) say which qmd modes qualify.
+- [ADR 0006](adr/0006-stage-0-falls-back-to-lexical.md) is why Stage 0 ranks after the filters and falls back to `lexical`.

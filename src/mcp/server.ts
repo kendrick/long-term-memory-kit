@@ -12,10 +12,12 @@ import { listRecords } from "../core/query.ts";
 import { splitFrontmatter } from "../core/record.ts";
 import { resolveBankFlag, resolveBanks, type Env } from "../core/resolve.ts";
 import { configErrorLine, noBankLine } from "../cli/bank.ts";
+import { formatRow } from "../cli/query.ts";
 import { run } from "../cli/run.ts";
 import { BankLocator, bankCommits, namedRoot } from "./bank.ts";
 
 type Named = { name: string; root: string };
+type QueryRow = Parameters<typeof formatRow>[0];
 
 // Descriptions come from the schema file, like canonical.ts, so an input named after a Record field describes itself the way the schema does.
 const SCHEMA_PROPS: Record<string, { description?: string }> = recordSchema.properties;
@@ -87,17 +89,39 @@ export function createServer(env: Env, cwd: string): McpServer {
   });
 
   // A non-zero exit with empty stdout is a tool error. Anything else is data, including validate's exit 1 with findings on stdout.
-  const jsonTool = async (argv: string[], at: string, roots: () => Named[], notes: string[]): Promise<CallToolResult> => {
+  // `render` builds the text from the parsed JSON instead of a second, human-output run, so query's Stage 0 (and vector's model load) runs once per request.
+  const jsonTool = async (
+    argv: string[],
+    at: string,
+    roots: () => Named[],
+    notes: string[],
+    render?: (parsed: unknown, stderr: string) => { text: string; notes: string[] },
+  ): Promise<CallToolResult> => {
     const read = await pinned(roots, async () => ({
       json: await cli([argv[0] as string, "--json", ...argv.slice(1)], at),
-      human: await cli(argv, at),
+      human: render === undefined ? await cli(argv, at) : undefined,
     }));
     if ("content" in read) return read;
     const r = read.out.json;
     if (r.exitCode !== 0 && r.stdout === "") return fail(r.stderr.trimEnd());
     const parsed = JSON.parse(r.stdout) as unknown;
     const body = Array.isArray(parsed) ? { results: parsed } : (parsed as object);
-    return { structuredContent: withCommits(body, read.commits, notes), content: [{ type: "text", text: read.out.human.stdout }] };
+    const rendered = render?.(parsed, r.stderr);
+    const text = rendered?.text ?? (read.out.human as { stdout: string }).stdout;
+    return { structuredContent: withCommits(body, read.commits, [...notes, ...(rendered?.notes ?? [])]), content: [{ type: "text", text }] };
+  };
+
+  // In-Bank --json is a bare array with nowhere to put notes, so they come from stderr. `skipped` lines aren't notes on the resolved path either.
+  const renderQuery = (parsed: unknown, stderr: string): { text: string; notes: string[] } => {
+    if (!Array.isArray(parsed)) {
+      const { results } = parsed as { results: ({ bank: string } & QueryRow)[] };
+      return { text: results.map((row) => `${row.bank}:${formatRow(row)}`).join(""), notes: [] };
+    }
+    const notes = stderr
+      .split("\n")
+      .filter((l) => l.startsWith("ltm query: ") && !l.startsWith("ltm query: skipped "))
+      .map((l) => l.slice("ltm query: ".length));
+    return { text: (parsed as QueryRow[]).map(formatRow).join(""), notes };
   };
 
   server.registerTool(
@@ -148,7 +172,7 @@ export function createServer(env: Env, cwd: string): McpServer {
           return [];
         }
       };
-      return jsonTool(argv, cwd, roots, picked.notes);
+      return jsonTool(argv, cwd, roots, picked.notes, renderQuery);
     },
   );
 

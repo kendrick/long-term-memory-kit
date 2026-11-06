@@ -42,7 +42,7 @@ acme:_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md  PolicyRu
 acme:_memory/policy-rules/structured-json-logging-vD8mH3zQb5.md  PolicyRule  accepted  Structured JSON logging
 ```
 
-Each line starts with the Bank's name, and the path after the colon is relative to that Bank's root. Add `--text` to rank results by their `title` and `summary`. Add `--json` for the full frontmatter of each result:
+Each line starts with the Bank's name, and the path after the colon is relative to that Bank's root. Add `--text` to rank results by their `title` and `summary`. A Bank that sets `recall:` ranks `--text` through qmd instead, as [Stage 0](../docs/retrieval-model.md#stage-0) explains. Add `--json` for the full frontmatter of each result:
 
 ```sh
 ltm query --type PolicyRule --text logging --json

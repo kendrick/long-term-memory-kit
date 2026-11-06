@@ -100,7 +100,7 @@ Every report line below except `near-duplicate`'s came from `ltm doctor` run wit
 
 **Threshold:** `doctor.near_duplicate_threshold`, default 0.85, a number strictly between 0 and 1. The check fires when a ranked recall backend scores a pair above the threshold on a 0-to-1 scale, so a score equal to it doesn't fire. `runDoctor` runs the check only when its caller passes a backend, and `ltm doctor` passes one when `memory-bank.yaml` sets `recall:`. Without `recall:`, `ltm doctor` doesn't run this check and its output doesn't change. [ADR 0002](adr/0002-a-ranked-lookup-is-not-a-model-call.md) explains why a ranked lookup keeps the rule that `ltm` never calls a model, and [ADR 0003](adr/0003-only-qmd-search-qualifies.md) says which qmd modes qualify.
 
-**Recall:** `recall:` in `memory-bank.yaml` names qmd, a mode, and one qmd collection per `memory_type`. All three keys are required.
+**Recall:** `recall:` in `memory-bank.yaml` names qmd, a mode, and one qmd collection per `memory_type`. All three keys are required. `ltm query --text` reads the same block to rank Records, as [Stage 0](retrieval-model.md#stage-0) describes.
 
 ```yaml
 recall:
@@ -114,7 +114,7 @@ recall:
 
 qmd searches its index, not the files. Run `qmd update` after you edit Records. A re-index can add or drop `near-duplicate` findings, and `ltm doctor` doesn't detect a stale index. Two `ltm doctor` runs on one Bank and one unchanged index give the same output.
 
-**Vector mode:** `recall.mode: vector` requires `doctor.near_duplicate_threshold`, and it has no default. `ltm doctor` exits 1 with `doctor.near_duplicate_threshold is required when recall.mode is vector` when the key is missing. A `vector` score is cosine similarity, and `ltm doctor` accepts scores from -1 to 1, so the threshold must sit strictly between 0 and 1. On the demo Bank, a Record scored 0.49 to 0.81 against its own title, unrelated pairs scored 0.24 to 0.43, and "Use Postgres" against "Relational stores use PostgreSQL" scored 0.62. Treat those numbers as a starting point for your own Bank. `vector` queries with a Record's title and summary joined, or with whichever of the two it has, and a pair keeps the higher of its two scores.
+**Vector mode:** `recall.mode: vector` requires `doctor.near_duplicate_threshold`, and it has no default. `ltm query --text` also needs `query.min_score` under `vector`. `ltm doctor` exits 1 with `doctor.near_duplicate_threshold is required when recall.mode is vector` when the key is missing. A `vector` score is cosine similarity, and `ltm doctor` accepts scores from -1 to 1, so the threshold must sit strictly between 0 and 1. On the demo Bank, a Record scored 0.49 to 0.81 against its own title, unrelated pairs scored 0.24 to 0.43, and "Use Postgres" against "Relational stores use PostgreSQL" scored 0.62. Treat those numbers as a starting point for your own Bank. `vector` queries with a Record's title and summary joined, or with whichever of the two it has, and a pair keeps the higher of its two scores.
 
 Run `qmd embed` after `qmd update`. When a collection has no embeddings for qmd's current embedding model, `ltm doctor` exits 1 and names `qmd embed`. When only some of its documents lack them, `ltm doctor` prints `ltm doctor: qmd: collection '<name>': <n> of <total> documents need embedding; run qmd embed` to stderr and runs anyway. That count treats documents with identical content as one.
 
