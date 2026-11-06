@@ -47,7 +47,7 @@ The daily run removes an expired Exception from SharePoint even when nobody push
 
 Before you add the workflow, set up the following:
 
-- `LTM_GRAPH_TOKEN` is an Entra app token with write access to the one drive the Digest goes to. Store it as a repo secret. `ltm` stores no credential.
+- Register an Entra app with Graph application permission to write the one drive the Digest goes to. Store its tenant id and client id as the repo variables or secrets `ENTRA_TENANT_ID` and `ENTRA_CLIENT_ID`, and its client secret as the repo secret `ENTRA_CLIENT_SECRET`. `ltm` stores no credential.
 - `SHAREPOINT_SITE_ID` and `SHAREPOINT_DRIVE_ID` are repo variables holding the site id and the document library's drive id.
 - The default branch must let the workflow push its `digest/` commit.
 
@@ -116,12 +116,28 @@ jobs:
         with:
           name: digest-docx
           path: docx/
-      - name: Upload to SharePoint
+      - name: Get a Graph token
         if: steps.render.outputs.changed == 'true'
         env:
-          LTM_GRAPH_TOKEN: ${{ secrets.LTM_GRAPH_TOKEN }}
+          TENANT: ${{ vars.ENTRA_TENANT_ID || secrets.ENTRA_TENANT_ID }}
+          CLIENT_ID: ${{ vars.ENTRA_CLIENT_ID || secrets.ENTRA_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
+        run: |
+          # The default shell has no pipefail, so curl piped straight into jq could fail without failing the job.
+          response=$(curl -fsS "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/token" \
+            --data-urlencode grant_type=client_credentials \
+            --data-urlencode "client_id=$CLIENT_ID" \
+            --data-urlencode "client_secret=$CLIENT_SECRET" \
+            --data-urlencode scope=https://graph.microsoft.com/.default)
+          token=$(jq -r .access_token <<< "$response")
+          echo "::add-mask::$token"
+          echo "LTM_GRAPH_TOKEN=$token" >> "$GITHUB_ENV"
+      - name: Upload to SharePoint
+        if: steps.render.outputs.changed == 'true'
         run: ltm publish sharepoint --site "${{ vars.SHAREPOINT_SITE_ID }}" --drive "${{ vars.SHAREPOINT_DRIVE_ID }}" --path Digest docx/
 ```
+
+An Entra access token lasts about an hour, so the Get a Graph token step mints a new one on each run with the client-credentials grant and hands it to `ltm` as `LTM_GRAPH_TOKEN`. Nobody has run this step against a real tenant yet.
 
 The workflow commits and uploads only when some Digest file's bytes changed. It checks the markdown in `digest/` and not the Word files, because `pandoc` writes a different `.docx` on every run. The workflow makes this check because `ltm publish sharepoint` never skips a file and uploads every file in the directory each time it runs. A push made with the workflow's own token starts no new run, so the `digest/` commit doesn't loop.
 
