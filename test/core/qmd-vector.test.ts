@@ -167,6 +167,19 @@ describe("qmdVectorBackend.prefetch and search", () => {
     expect(() => backend.search([a, b], text)).toThrow(RecallError);
   });
 
+  test("prefetchQueries caches free-text lookups that search then serves", () => {
+    const free = "free words";
+    const vec = { decisions: { [free]: [{ filepath: "qmd://decisions/b.md", score: 0.7 }] } };
+    const { backend } = ready({ vec });
+    backend.prefetchQueries([{ collection: "decisions", text: free }]);
+    expect(backend.search([a, b], free)).toEqual([{ record: b, score: 0.7 }]);
+  });
+
+  test("collectionOf maps a Record to its collection", () => {
+    const { backend } = ready();
+    expect(backend.collectionOf(a)).toBe("decisions");
+  });
+
   test("runs the worker once for all Records", () => {
     const { backend, createStores } = ready();
     const before = createStores();

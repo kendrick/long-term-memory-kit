@@ -370,18 +370,64 @@ describe("checkConfig", () => {
   test("recall.mode vector needs doctor.near_duplicate_threshold; search keeps its default", async () => {
     const base = "schema: 1\nname: acme\nfacet_prefixes: [service]\n";
     const recall = (mode: string) => `recall: { backend: qmd, mode: ${mode}, collections: { Decision: decisions } }\n`;
+    // Vector also needs query.min_score; set it so these cases isolate the threshold rule.
+    const minScore = "query:\n  min_score: 0.5\n";
     await withScratch(demoBank, async (dir) => {
       const path = join(dir, "memory-bank.yaml");
-      writeFileSync(path, base + recall("vector"));
+      writeFileSync(path, base + recall("vector") + minScore);
       expect(checkConfig(dir).findings).toEqual([expect.objectContaining({ rule: "config-schema", key: "doctor" })]);
-      writeFileSync(path, `${base}doctor:\n  orphan_days: 10\n${recall("vector")}`);
+      writeFileSync(path, `${base}doctor:\n  orphan_days: 10\n${recall("vector")}${minScore}`);
       expect(checkConfig(dir).findings).toEqual([
         expect.objectContaining({ rule: "config-schema", key: "doctor", line: 4 }),
       ]);
-      writeFileSync(path, `${base}doctor:\n  near_duplicate_threshold: 0.6\n${recall("vector")}`);
+      writeFileSync(path, `${base}doctor:\n  near_duplicate_threshold: 0.6\n${recall("vector")}${minScore}`);
       expect(checkConfig(dir).findings).toEqual([]);
       writeFileSync(path, base + recall("search"));
       expect(checkConfig(dir).findings).toEqual([]);
+    });
+  });
+
+  test("recall.mode vector needs query.min_score; search doesn't, and the query block is checked", async () => {
+    const base = "schema: 1\nname: acme\nfacet_prefixes: [service]\ndoctor:\n  near_duplicate_threshold: 0.6\n";
+    const recall = (mode: string) => `recall: { backend: qmd, mode: ${mode}, collections: { Decision: decisions } }\n`;
+    await withScratch(demoBank, async (dir) => {
+      const path = join(dir, "memory-bank.yaml");
+      const findings = (yaml: string) => {
+        writeFileSync(path, yaml);
+        return checkConfig(dir).findings;
+      };
+      expect(findings(base + recall("vector"))).toEqual([
+        {
+          file: "memory-bank.yaml",
+          line: 1,
+          rule: "config-schema",
+          severity: "error",
+          key: "query",
+          message: "query.min_score is required when recall.mode is vector",
+        },
+      ]);
+      // A query block without min_score is the same rule, placed on the block's line.
+      expect(findings(`${base}${recall("vector")}query: {}\n`)).toEqual([
+        expect.objectContaining({
+          line: 7,
+          key: "query",
+          message: "query.min_score is required when recall.mode is vector",
+        }),
+      ]);
+      expect(findings(`${base}${recall("vector")}query:\n  min_score: 0.5\n`)).toEqual([]);
+      expect(findings(`${base}${recall("vector")}query:\n  min_score: -1\n`)).toEqual([]);
+      expect(findings(base + recall("search"))).toEqual([]);
+      expect(findings(`${base}${recall("search")}query:\n  min_score: 2\n`)).toEqual([
+        expect.objectContaining({ rule: "config-schema", key: "query" }),
+      ]);
+      expect(findings(`${base}${recall("search")}query:\n  other: 1\n`)).toEqual([
+        expect.objectContaining({ rule: "config-schema", key: "query" }),
+      ]);
+      // Missing both vector keys reports each with its own message.
+      expect(findings(`schema: 1\nname: acme\nfacet_prefixes: [service]\n${recall("vector")}`).map((f) => f.message)).toEqual([
+        "doctor.near_duplicate_threshold is required when recall.mode is vector",
+        "query.min_score is required when recall.mode is vector",
+      ]);
     });
   });
 

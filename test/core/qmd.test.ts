@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { realpathSync } from "node:fs";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,11 @@ printf -- '--\\n' >> "$QMD_LOG"
 if [ "$1" = collection ]; then
   if [ -n "$QMD_ROOT" ]; then printf 'Collection: %s\\n  Path:     %s\\n' "$3" "$QMD_ROOT"; fi
   exit "\${QMD_SHOW_STATUS:-0}"
+fi
+if [ "$1" = ls ]; then
+  printf '%s' "$QMD_LS"
+  if [ -n "$QMD_LS_ERR" ]; then printf '%s\\n' "$QMD_LS_ERR" >&2; fi
+  exit "\${QMD_LS_STATUS:-0}"
 fi
 if [ -n "$QMD_OUT_FILE" ]; then /bin/cat "$QMD_OUT_FILE"; else printf '%s' "$QMD_OUT"; fi
 if [ -n "$QMD_ERR" ]; then printf '%s\\n' "$QMD_ERR" >&2; fi
@@ -259,5 +265,36 @@ describe("qmdBackend.preflight", () => {
     const recall: Recall = { ...RECALL, collections: { PolicyRule: "rules", Context: "ctx", Decision: "decisions" } };
     expect(qmdBackend(recall, bank, env, noWarn).preflight()).toBeNull();
     expect(argv()).toBe("collection\nshow\nctx\n--\ncollection\nshow\ndecisions\n--\ncollection\nshow\nrules\n--\n");
+  });
+});
+
+describe("qmdBackend.indexed and collectionOf", () => {
+  const backend = (env: Record<string, string>) => qmdBackend(RECALL, bank, env, noWarn);
+
+  test("indexed joins each listed file onto the collection root and runs qmd ls", () => {
+    const QMD_LS = "   1.2 KB  Nov  5 10:00  qmd://decisions/a.md\n  900 B  Nov  5 10:01  qmd://decisions/sub/b.md\n";
+    const { env, argv } = fake({ QMD_LS });
+    expect(backend(env).indexed("decisions")).toEqual(
+      new Set([join(realpathSync(decisions), "a.md"), join(realpathSync(decisions), "sub/b.md")]),
+    );
+    expect(argv()).toContain("ls\ndecisions\n--\n");
+  });
+
+  test("an empty collection gives an empty set", () => {
+    const { env } = fake({ QMD_LS: "No files found in collection: decisions\n" });
+    expect(backend(env).indexed("decisions")).toEqual(new Set());
+  });
+
+  test("a failing qmd ls throws RecallError with qmd's message", () => {
+    const { env } = fake({ QMD_LS_STATUS: "1", QMD_LS_ERR: "Collection not found: decisions" });
+    const run = () => backend(env).indexed("decisions");
+    expect(run).toThrow(RecallError);
+    expect(run).toThrow("Collection not found");
+  });
+
+  test("collectionOf maps a Record's memory_type to its collection", () => {
+    const b = backend(fake().env);
+    expect(b.collectionOf(rec("_memory/decisions/a.md"))).toBe("decisions");
+    expect(b.collectionOf(rec("_memory/x.md", "Context"))).toBeUndefined();
   });
 });

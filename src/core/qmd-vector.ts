@@ -19,9 +19,12 @@ export function qmdVectorBackend(
   root: string,
   env: Record<string, string | undefined>,
   warn: (line: string) => void,
-): QmdBackend & { prefetch(records: ParsedRecord[]): void } {
+): QmdBackend & {
+  prefetch(records: ParsedRecord[]): void;
+  prefetchQueries(queries: Query[]): void;
+} {
   const { collections } = recall;
-  const { qmd, collectionRoots, checkAll, collectionOf } = qmdCollections(collections, env);
+  const { qmd, collectionRoots, checkAll, collectionOf, indexed } = qmdCollections(collections, env);
   const cache = new Map<string, Results["results"][number]>();
   let pkg: string | undefined;
   let bankRoot: string | undefined;
@@ -50,8 +53,17 @@ export function qmdVectorBackend(
     return parts.length === 0 ? null : parts.join(". ");
   };
 
+  const prefetchQueries = (queries: Query[]) => {
+    if (queries.length === 0) return;
+    const res = worker<Results>({ op: "search", queries });
+    if (typeof res === "string") throw new RecallError(`qmd vector search failed: ${res}`);
+    queries.forEach((q, i) => cache.set(`${q.collection}\0${q.text}`, res.results[i] ?? []));
+  };
+
   return {
     queryText,
+    collectionOf,
+    indexed,
     preflight() {
       const located = qmd(["skills", "path"]);
       if ((located.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return "qmd not found on PATH";
@@ -84,6 +96,7 @@ export function qmdVectorBackend(
       return null;
     },
     // One worker call for every lookup: the model load (seconds) dwarfs a lookup (~7 ms).
+    prefetchQueries,
     prefetch(records) {
       const queries: Query[] = [];
       for (const r of records) {
@@ -91,10 +104,7 @@ export function qmdVectorBackend(
         const text = queryText(r);
         if (collection !== undefined && text !== null) queries.push({ collection, text });
       }
-      if (queries.length === 0) return;
-      const res = worker<Results>({ op: "search", queries });
-      if (typeof res === "string") throw new RecallError(`qmd vector search failed: ${res}`);
-      queries.forEach((q, i) => cache.set(`${q.collection}\0${q.text}`, res.results[i] ?? []));
+      prefetchQueries(queries);
     },
     search(records, text) {
       const collection = records[0] && collectionOf(records[0]);

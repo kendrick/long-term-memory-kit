@@ -569,12 +569,14 @@ export function checkConfig(root: string): { findings: Finding[]; config: BankCo
     // Config line 1 is the file's first line; Records start their frontmatter at line 2.
     const keys = keyLines(parseDocument(src), src, 1);
     for (const e of validate.errors ?? []) {
-      // The schema's only if/then is vector mode's threshold rule. Ajv adds a bare "must match then" beside the real error, and the real one names `doctor` but not the threshold, so say what loadRecall says.
+      // The schema's only if/then is vector mode's two required keys. Ajv adds a bare "must match then" beside the real error, and the real one names `doctor` or `query` but not the key under it, so say what the loaders say.
       if (e.keyword === "if") continue;
-      const message = e.schemaPath.startsWith("#/then/")
-        ? "doctor.near_duplicate_threshold is required when recall.mode is vector"
-        : (e.message ?? e.keyword);
       const key = errorKey(e);
+      const message = !e.schemaPath.startsWith("#/then/")
+        ? (e.message ?? e.keyword)
+        : key === "query"
+          ? "query.min_score is required when recall.mode is vector"
+          : "doctor.near_duplicate_threshold is required when recall.mode is vector";
       findings.push(finding(CONFIG_FILE, key === null ? 1 : (keys.get(key)?.line ?? 1), "config-schema", key, message));
     }
   }
