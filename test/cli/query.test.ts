@@ -863,6 +863,18 @@ describe("ltm query Stage 0 (#134)", () => {
     });
   });
 
+  test("--bank: a malformed recall: names that Bank's memory-bank.yaml path, stdout empty", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: vsearch, collections: { Decision: decisions } }");
+      const r = await run({ argv: ["query", "--bank", dir, "--text", "postgres"], cwd: dir, env: { PATH: noQmdBin } });
+      expect(r).toEqual({
+        exitCode: 1,
+        stdout: "",
+        stderr: `ltm query: ${join(dir, "memory-bank.yaml")}: recall.mode must be search or vector, not "vsearch"\n`,
+      });
+    });
+  });
+
   test("--bank: Stage 0 notes land in JSON notes, prefixed with the Bank's name", async () => {
     await withScratch(demo, async (dir) => {
       setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }");

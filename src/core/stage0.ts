@@ -1,20 +1,12 @@
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
-import { RecallError } from "./qmd.ts";
-import { lexical, search, type RecallBackend } from "./recall.ts";
+import { RecallError, type QmdBackend } from "./qmd.ts";
+import { lexical, search } from "./recall.ts";
 import type { ParsedRecord } from "./record.ts";
 import { byCodeUnit } from "./text.ts";
 
 export type RankedBy = "qmd search" | "qmd vector" | "lexical";
 export type RankedRow = { record: ParsedRecord; score: number; rankedBy: RankedBy };
-
-// Structural, not imported from qmd.ts, so the qmd backends satisfy it without this file knowing them.
-export type Stage0Backend = RecallBackend & {
-  preflight(): string | null;
-  collectionOf(record: ParsedRecord): string | undefined;
-  indexed(collection: string): Set<string>;
-  prefetchQueries?(queries: { collection: string; text: string }[]): void;
-};
 
 const plural = (n: number) => (n === 1 ? "1 Record is" : `${n} Records are`);
 
@@ -26,7 +18,7 @@ function lexicalAll(kept: ParsedRecord[], text: string): RankedRow[] {
 export function rankStage0(
   kept: ParsedRecord[],
   text: string,
-  backend: Stage0Backend,
+  backend: QmdBackend,
   mode: "search" | "vector",
   minScore: number | undefined,
   bankRoot: string,

@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
+import type { Query } from "./qmd-vector-worker.ts";
 import type { ParsedRecord } from "./record.ts";
 import { tokenize, type Hit, type RecallBackend } from "./recall.ts";
 import { byCodeUnit, firstLine } from "./text.ts";
@@ -55,7 +56,7 @@ export function loadRecall(config: BankConfig): Recall | null | { error: string 
 export type QmdBackend = RecallBackend & {
   preflight(): string | null;
   prefetch?(records: ParsedRecord[]): void;
-  prefetchQueries?(queries: { collection: string; text: string }[]): void;
+  prefetchQueries?(queries: Query[]): void;
   collectionOf(record: ParsedRecord): string | undefined;
   // Absolute, realpath'd paths of every active file qmd has indexed in this collection.
   indexed(collection: string): Set<string>;

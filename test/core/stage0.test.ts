@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RecallError } from "../../src/core/qmd.ts";
+import { RecallError, type QmdBackend } from "../../src/core/qmd.ts";
 import type { Hit } from "../../src/core/recall.ts";
 import type { ParsedRecord } from "../../src/core/record.ts";
-import { rankStage0, type Stage0Backend } from "../../src/core/stage0.ts";
+import { rankStage0 } from "../../src/core/stage0.ts";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "stage0-")));
 const rec = (path: string, title = "redis"): ParsedRecord => ({
@@ -24,7 +24,7 @@ type Opts = {
 };
 function stub(o: Opts = {}) {
   const prefetched: { collection: string; text: string }[][] = [];
-  const backend: Stage0Backend = {
+  const backend: QmdBackend = {
     preflight: () => o.preflight ?? null,
     collectionOf,
     search(records) {

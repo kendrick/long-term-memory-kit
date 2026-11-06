@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { ConfigError, isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
 import { loadRecall, qmdBackend, type QmdBackend, type Recall } from "../core/qmd.ts";
 import { qmdVectorBackend } from "../core/qmd-vector.ts";
@@ -63,18 +64,20 @@ function selectForBank(
   records: ParsedRecord[],
   opts: QueryOptions,
   notes: string[],
+  // Bare in-Bank (one file, obvious); the real path when several Banks are in play.
+  cfgLabel: string,
 ): Row[] | 1 {
   const text = opts.text;
   if (text === undefined || tokenize(text).length === 0) return selectRecords(records, opts).map(row);
   const recall = loadRecall(config);
   if (recall === null) return selectRecords(records, opts).map(row);
   if ("error" in recall) {
-    ctx.err(`ltm query: memory-bank.yaml: ${recall.error}\n`);
+    ctx.err(`ltm query: ${cfgLabel}: ${recall.error}\n`);
     return 1;
   }
   const minScore = loadQueryMinScore(config, recall);
   if (typeof minScore === "object") {
-    ctx.err(`ltm query: memory-bank.yaml: ${minScore.error}\n`);
+    ctx.err(`ltm query: ${cfgLabel}: ${minScore.error}\n`);
     return 1;
   }
   const warn = (line: string) => notes.push(`qmd: ${line}`);
@@ -143,7 +146,7 @@ function runResolved(ctx: CommandContext, opts: QueryOptions): 0 | 1 {
         else facets = mapped;
       }
       const bankNotes: string[] = [];
-      const rows = selectForBank(ctx, bank.config, records, { ...opts, facets }, bankNotes);
+      const rows = selectForBank(ctx, bank.config, records, { ...opts, facets }, bankNotes, join(bank.config.root, "memory-bank.yaml"));
       if (rows === 1) return 1;
       for (const note of bankNotes) notes.push(`Bank "${bank.name}": ${note}`);
       for (const r of rows) results.push({ bank: bank.name, ...r });
@@ -223,6 +226,7 @@ export const query: Command = {
       }),
       opts,
       notes,
+      "memory-bank.yaml",
     );
     if (rows === 1) return 1;
     // A bare JSON array has no notes key, so in-Bank notes always go to stderr.
