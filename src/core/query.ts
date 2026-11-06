@@ -192,7 +192,7 @@ export type QueryOptions = {
 // A string `applies_to` is a hand-edited one-entry list, and `null` is org-wide like a
 // missing key. Any other shape is malformed; reading that as org-wide would leak the
 // Record into every Facet.
-function appliesTo(r: ParsedRecord): string[] | "org-wide" | null {
+export function facetsOf(r: ParsedRecord): string[] | "org-wide" | null {
   const v = r.frontmatter.applies_to;
   if (v === undefined || v === null) return "org-wide";
   if (typeof v === "string") return [v];
@@ -202,11 +202,11 @@ function appliesTo(r: ParsedRecord): string[] | "org-wide" | null {
 }
 
 export function isOrgWide(r: ParsedRecord): boolean {
-  return appliesTo(r) === "org-wide";
+  return facetsOf(r) === "org-wide";
 }
 
 function inFacets(r: ParsedRecord, facets: string[]): boolean {
-  const scope = appliesTo(r);
+  const scope = facetsOf(r);
   if (scope === "org-wide") return true;
   if (scope === null) return false;
   return scope.some((f) => facets.includes(f));
@@ -237,7 +237,7 @@ export function countFacets(records: ParsedRecord[], all: boolean): { facet: str
   const counts = new Map<string, number>();
   for (const r of records) {
     if (!all && isRetired(r)) continue;
-    const scope = appliesTo(r);
+    const scope = facetsOf(r);
     if (scope === "org-wide" || scope === null) continue;
     for (const f of new Set(scope)) counts.set(f, (counts.get(f) ?? 0) + 1);
   }
