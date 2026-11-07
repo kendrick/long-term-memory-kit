@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,28 +12,81 @@ const BINARIES = ["ltm-linux-x64", "ltm-linux-arm64", "ltm-darwin-x64", "ltm-dar
 const hostOs = process.platform === "win32" ? "windows" : process.platform;
 const hostBinary = `ltm-${hostOs}-${process.arch}${process.platform === "win32" ? ".exe" : ""}`;
 
+// A stand-in npm that appends "<cwd-basename> <args>" per call, so a test can tell whether publish was reached and in which package dir.
+function fakeNpm(dir: string): { bin: string; log: string } {
+  const bin = join(dir, "bin");
+  const log = join(dir, "npm-calls");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "npm"), `#!/bin/sh\necho "$(basename "$PWD") $*" >> '${log}'\n`);
+  chmodSync(join(bin, "npm"), 0o755);
+  return { bin, log };
+}
+
 describe("publish-npm.sh guard", () => {
-  test("refuses a real publish while the scope is the placeholder, before any npm command", () => {
-    // The guard is only meaningful against the committed config, so check it still holds the placeholder.
+  test.each([
+    ["without NPM_TOKEN", {}],
+    ["with NPM_TOKEN set", { NPM_TOKEN: "npm_fake", NODE_AUTH_TOKEN: "npm_fake" }],
+  ])("skips the real publish with a notice and exit 0 while the scope is the placeholder, %s", (_label, extra) => {
+    // The skip is only meaningful against the committed config, so check it still holds the placeholder.
     expect(JSON.parse(readFileSync(join(ROOT, "npm/config.json"), "utf8"))).toEqual({ NPM_SCOPE_NAME: "CHANGE-ME-BEFORE-PUBLISH" });
 
     const dir = mkdtempSync(join(tmpdir(), "ltm-publish-guard-"));
     try {
-      const marker = join(dir, "npm-was-called");
-      mkdirSync(join(dir, "bin"));
-      writeFileSync(join(dir, "bin/npm"), `#!/bin/sh\necho "$@" >> '${marker}'\n`);
-      chmodSync(join(dir, "bin/npm"), 0o755);
-
+      const { bin, log } = fakeNpm(dir);
       const r = spawnSync("bash", [join(ROOT, "scripts/publish-npm.sh")], {
         encoding: "utf8",
-        env: { ...process.env, PATH: `${join(dir, "bin")}:${process.env.PATH}` },
+        env: { ...process.env, ...extra, PATH: `${bin}:${process.env.PATH}` },
       });
-      expect(r.status).toBe(1);
-      expect(r.stderr).toContain("publish-npm: set NPM_SCOPE_NAME in npm/config.json before publishing");
-      expect(existsSync(marker)).toBe(false);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("::notice::");
+      expect(r.stdout).toContain("NPM_SCOPE_NAME");
+      expect(existsSync(log)).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  describe("with a real-looking scope", () => {
+    let root: string;
+    let npmBin: { bin: string; log: string };
+
+    beforeAll(() => {
+      root = mkdtempSync(join(tmpdir(), "ltm-publish-acme-"));
+      mkdirSync(join(root, "scripts"));
+      copyFileSync(join(ROOT, "scripts/publish-npm.sh"), join(root, "scripts/publish-npm.sh"));
+      mkdirSync(join(root, "npm"));
+      writeFileSync(join(root, "npm/config.json"), '{ "NPM_SCOPE_NAME": "acme" }\n');
+      for (const pkg of ["ltm", "ltm-linux-x64"]) {
+        mkdirSync(join(root, "dist/npm", pkg), { recursive: true });
+        writeFileSync(join(root, "dist/npm", pkg, "package.json"), JSON.stringify({ name: `@acme/${pkg}`, version: "0.0.0" }));
+      }
+      npmBin = fakeNpm(root);
+    });
+    afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+    const runIt = (...args: string[]) => {
+      rmSync(npmBin.log, { force: true });
+      return spawnSync("bash", [join(root, "scripts/publish-npm.sh"), ...args], {
+        encoding: "utf8",
+        env: { ...process.env, PATH: `${npmBin.bin}:${process.env.PATH}` },
+      });
+    };
+
+    test("the real publish reaches npm publish, platform packages before the main one", () => {
+      const r = runIt();
+      expect(r.status).toBe(0);
+      expect(r.stdout).not.toContain("::notice::");
+      expect(readFileSync(npmBin.log, "utf8").trim().split("\n")).toEqual([
+        "ltm-linux-x64 publish --access public",
+        "ltm publish --access public",
+      ]);
+    });
+
+    test("--dry-run still runs npm's dry run", () => {
+      const r = runIt("--dry-run");
+      expect(r.status).toBe(0);
+      expect(readFileSync(npmBin.log, "utf8")).toContain("ltm publish --access public --dry-run");
+    });
   });
 });
 

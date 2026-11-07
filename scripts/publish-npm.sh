@@ -14,11 +14,11 @@ esac
 scope="$(sed -n 's/.*"NPM_SCOPE_NAME"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$root/npm/config.json")"
 [ -n "$scope" ] || { echo "publish-npm: no NPM_SCOPE_NAME in npm/config.json" >&2; exit 1; }
 
-# Nobody owns the placeholder scope, so a real publish would fail at npm, or land under a scope somebody else claims first. Stop before any npm command runs.
+# Nobody owns the placeholder scope, so a real publish would fail at npm or land under a scope someone else claims first. The Release doesn't wait on npm, so exit 0 with a notice instead of failing every tag run, and do it before any npm command, whatever NPM_TOKEN holds.
 if [ "$scope" = "$placeholder" ]; then
   if [ -z "$dry_run" ]; then
-    echo "publish-npm: set NPM_SCOPE_NAME in npm/config.json before publishing" >&2
-    exit 1
+    echo "::notice::npm publishing is off until NPM_SCOPE_NAME in npm/config.json names a real scope; skipping."
+    exit 0
   fi
   # npm rejects the uppercase placeholder as a package name, so a dry run rebuilds under a throwaway scope.
   bun "$root/scripts/build-npm.ts" --scope ltm-local
