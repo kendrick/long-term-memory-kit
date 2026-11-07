@@ -137,10 +137,10 @@ jobs:
           path: evals/results/${{ env.PLUGIN_EVAL_VERSION }}/plugin-eval.json
           if-no-files-found: warn
 
-  # Only tag pushes trigger `push`, so this gate means "real release". Gating on github.ref would let a dispatch run on a tag ref publish. `release` waits on `npm` so a failed publish can't leave a Release whose packages never reached the registry.
+  # Only tag pushes trigger `push`, so this gate means "real release". Gating on github.ref would let a dispatch run on a tag ref publish. `release` doesn't wait on `npm`, which is optional: every other install method downloads these binaries, so a failed or skipped publish mustn't hold them back. It lists bench-gate itself, since it used to reach bench-gate only through `npm`.
   release:
     if: github.event_name == 'push'
-    needs: [smoke-linux, smoke-macos, npm]
+    needs: [smoke-linux, smoke-macos, bench-gate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -155,7 +155,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   npm:
-    # Nothing ships unsmoked or below the committed bench hit rate; release inherits both via npm.
+    # Nothing publishes unsmoked or below the committed bench hit rate.
     needs: [smoke-linux, smoke-macos, bench-gate]
     runs-on: ubuntu-latest
     steps:

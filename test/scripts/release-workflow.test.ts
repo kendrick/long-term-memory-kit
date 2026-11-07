@@ -8,8 +8,9 @@ const text = readFileSync(join(ROOT, ".github/workflows/release.yml"), "utf8");
 const wf = parse(text, { logLevel: "error" });
 
 describe("release.yml", () => {
-  test("the GitHub Release waits on npm, so a failed publish leaves no Release behind", () => {
-    expect(wf.jobs.release.needs).toEqual(expect.arrayContaining(["npm", "smoke-linux", "smoke-macos"]));
+  test("the GitHub Release needs the smokes and bench-gate but not npm, so a failed or skipped publish can't hold back the binaries", () => {
+    expect(wf.jobs.release.needs).toEqual(expect.arrayContaining(["bench-gate", "smoke-linux", "smoke-macos"]));
+    expect(wf.jobs.release.needs).not.toContain("npm");
     expect(wf.jobs.npm.needs).not.toContain("release");
   });
 
@@ -25,9 +26,10 @@ describe("release.yml", () => {
     expect(publish.if).toBe("github.event_name == 'push'");
   });
 
-  test("bench-gate always runs and blocks npm, so nothing publishes below the committed hit rate", () => {
+  test("bench-gate always runs and blocks both the Release and npm, so nothing ships below the committed hit rate", () => {
     expect(wf.jobs).toHaveProperty("bench-gate");
     expect(wf.jobs["bench-gate"]).not.toHaveProperty("if");
+    expect(wf.jobs.release.needs).toContain("bench-gate");
     expect(wf.jobs.npm.needs).toContain("bench-gate");
   });
 
