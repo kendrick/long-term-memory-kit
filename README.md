@@ -18,18 +18,24 @@ A Bank is a git repository of Records. Each Record is one Markdown file with fla
 
 ## Install
 
-`ltm` is one self-contained binary. Until the first GitHub Release ships prebuilt binaries, build it from source with [Bun](https://bun.sh) 1.3 or later:
+`ltm` is one self-contained binary. Each GitHub Release publishes it for five platforms: `ltm-linux-x64`, `ltm-linux-arm64`, `ltm-darwin-x64`, `ltm-darwin-arm64`, and `ltm-windows-x64.exe`, along with a `SHA256SUMS` file.
+
+### Fallback: Download a Release Binary
+
+Download your platform's binary and `SHA256SUMS`, check the binary against it, and move it onto your `PATH`. On an Apple silicon Mac:
 
 ```sh
-git clone https://github.com/kendrick/long-term-memory-kit.git
-cd long-term-memory-kit
-bun install --frozen-lockfile
-bun build --compile src/cli/bin.ts --outfile ltm
-mv ltm /usr/local/bin/ltm
+curl -fsSLO https://github.com/kendrick/long-term-memory-kit/releases/latest/download/ltm-darwin-arm64
+curl -fsSLO https://github.com/kendrick/long-term-memory-kit/releases/latest/download/SHA256SUMS
+grep ' ltm-darwin-arm64$' SHA256SUMS | shasum -a 256 -c
+chmod +x ltm-darwin-arm64
+mv ltm-darwin-arm64 /usr/local/bin/ltm
 ltm --version
 ```
 
-The last command prints the version, `0.0.0` until the first release. The compiled binary doesn't need Bun to run.
+On Linux, use `ltm-linux-x64` or `ltm-linux-arm64` and check it with `sha256sum -c` in place of `shasum -a 256 -c`. On Windows, download `ltm-windows-x64.exe`, compare `Get-FileHash ltm-windows-x64.exe` with its line in `SHA256SUMS`, and put it in a folder on your `PATH` as `ltm.exe`.
+
+### Claude Code Plugin
 
 To give Claude Code the Bank, install the plugin from this repo's marketplace. When it asks for `bank_url`, enter your Bank's git URL. The plugin starts its MCP server by running `ltm mcp`, so `ltm` has to be on your `PATH` first.
 
