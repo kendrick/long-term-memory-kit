@@ -293,7 +293,7 @@ function checkExceptionLink({ rel, data, keys, lineOf }: Frontmatter): Finding[]
 const show = (v: unknown): string => (typeof v === "string" ? `'${v}'` : String(v));
 const kindOf = (v: unknown): string => (v === null ? "null" : Array.isArray(v) ? "list" : typeof v === "string" ? "string" : typeof v === "number" ? "number" : typeof v === "boolean" ? "boolean" : typeof v);
 
-// A list value is checked item by item; the Record schema already limits lists to flat scalars.
+// Lists are safe to walk item by item because the Record schema allows only flat scalars in them.
 function checkCustomKeys({ rel, data, keys: present, lineOf }: Frontmatter, folderType: MemoryType, declared: ReadonlyMap<string, CustomKey>): Finding[] {
   const out: Finding[] = [];
   for (const [key, decl] of declared) {
@@ -308,7 +308,7 @@ function checkCustomKeys({ rel, data, keys: present, lineOf }: Frontmatter, fold
 }
 
 function customKeyProblem(v: unknown, decl: CustomKey): string | null {
-  const wrong = `${show(v)} is a ${kindOf(v)}, not a ${decl.type}`;
+  const wrong = v === null ? `null is not a ${decl.type}` : `${show(v)} is a ${kindOf(v)}, not a ${decl.type}`;
   if (decl.type === "string" || decl.type === "date") {
     if (typeof v !== "string") return wrong;
     if (decl.type === "date" && !isCalendarDate(v)) return `${show(v)} is not a date (YYYY-MM-DD)`;

@@ -715,6 +715,20 @@ describe("ltm validate custom-key", () => {
     });
   });
 
+  for (const [name, decl, message] of [
+    ["an unknown type", "{ type: text }", "custom_keys: must be equal to one of the allowed values"],
+    ["an empty enum", "{ type: string, enum: [] }", "custom_keys: must NOT have fewer than 1 items"],
+  ] as const) {
+    test(`${name} is a config error`, async () => {
+      await withScratch(demo, async (dir) => {
+        writeFileSync(join(dir, "memory-bank.yaml"), config.replace(/  tier: .*\n/, `  tier: ${decl}\n`));
+        const r = await ltm(dir, "validate", dir);
+        expect(r.exitCode).toBe(1);
+        expect(lines(r.stdout)).toContain(`memory-bank.yaml:4: error config-schema: ${message}`);
+      });
+    });
+  }
+
   test("a named path is still checked", async () => {
     await withScratch(demo, async (dir) => {
       await setup(dir, "tier: platfrom");

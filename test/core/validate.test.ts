@@ -1483,16 +1483,17 @@ describe("supersession-cycle", () => {
 describe("custom-key", () => {
   const ctxRel = "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md";
   const withKeys = (decl: string) => `schema: 1\nname: acme\nfacet_prefixes: [service, domain, system, team, platform]\ncustom_keys:\n${decl}`;
-  // Adds one frontmatter line right after the opening fence and returns its 1-based line number (always 2).
+  // Each line goes in right after the opening fence, so the last one added sits on line 2.
   const addKey = (text: string, line: string) => text.replace(/^---\n/, `---\n${line}\n`);
-  const customKeyFindings = async (decl: string, files: Record<string, string>): Promise<Finding[]> => {
+  const customKeyFindings = async (decl: string, files: Record<string, string | string[]>): Promise<Finding[]> => {
     let out: Finding[] = [];
     await withScratch(demoBank, async (dir) => {
       writeFileSync(join(dir, "memory-bank.yaml"), withKeys(decl));
-      for (const [file, line] of Object.entries(files)) {
-        const before = readFileSync(join(dir, file), "utf8");
-        writeFileSync(join(dir, file), addKey(before, line));
-        expect(readFileSync(join(dir, file), "utf8")).toContain(`---\n${line}\n`);
+      for (const [file, added] of Object.entries(files)) {
+        for (const line of [added].flat()) {
+          writeFileSync(join(dir, file), addKey(readFileSync(join(dir, file), "utf8"), line));
+          expect(readFileSync(join(dir, file), "utf8")).toContain(`---\n${line}\n`);
+        }
       }
       out = validateBankReport(dir, null, dir).findings.filter((f) => f.rule === "custom-key");
     });
@@ -1527,12 +1528,18 @@ describe("custom-key", () => {
     ]);
   });
 
-  test("changing an unrelated key leaves the result alone", async () => {
+  test("changing an unrelated key on the same Record leaves the result alone; fixing the value clears it", async () => {
     const decl = "  tier: { type: string, enum: [platform, product] }\n";
     const a = await customKeyFindings(decl, { [rel]: "tier: platfrom" });
-    const b = await customKeyFindings(decl, { [rel]: "tier: platfrom", [ctxRel]: "owner_group: anything" });
+    const b = await customKeyFindings(decl, { [rel]: ["tier: platfrom", "owner_group: anything"] });
     expect(a).toHaveLength(1);
-    expect(b).toEqual(a);
+    expect(b.map((f) => [f.file, f.rule, f.key, f.message])).toEqual(a.map((f) => [f.file, f.rule, f.key, f.message]));
+    expect(await customKeyFindings(decl, { [rel]: ["tier: platform", "owner_group: anything"] })).toEqual([]);
+  });
+
+  test("a null value reads as 'not a string'", async () => {
+    const fs = await customKeyFindings("  tier: { type: string }\n", { [rel]: "tier: null" });
+    expect(fs.map((f) => f.message)).toEqual(["null is not a string"]);
   });
 
   test("a declared name the Record schema defines is not checked against Records", async () => {
