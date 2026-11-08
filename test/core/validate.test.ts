@@ -1542,6 +1542,10 @@ describe("custom-key", () => {
     expect(fs.map((f) => f.message)).toEqual(["null is not a string"]);
   });
 
+  test("a mapping value is left to the Record schema and does not throw", async () => {
+    expect(await customKeyFindings("  tier: { type: string }\n", { [rel]: "tier: { toString: oops }" })).toEqual([]);
+  });
+
   test("a declared name the Record schema defines is not checked against Records", async () => {
     expect(await customKeyFindings("  status: { type: integer }\n", {})).toEqual([]);
   });

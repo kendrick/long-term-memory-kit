@@ -293,13 +293,14 @@ function checkExceptionLink({ rel, data, keys, lineOf }: Frontmatter): Finding[]
 const show = (v: unknown): string => (typeof v === "string" ? `'${v}'` : String(v));
 const kindOf = (v: unknown): string => (v === null ? "null" : Array.isArray(v) ? "list" : typeof v === "string" ? "string" : typeof v === "number" ? "number" : typeof v === "boolean" ? "boolean" : typeof v);
 
-// Lists are safe to walk item by item because the Record schema allows only flat scalars in them.
+// Skip mappings and nested lists, since the Record schema already reports them and String() throws on a mapping with its own toString key.
 function checkCustomKeys({ rel, data, keys: present, lineOf }: Frontmatter, folderType: MemoryType, declared: ReadonlyMap<string, CustomKey>): Finding[] {
   const out: Finding[] = [];
   for (const [key, decl] of declared) {
     if (!present.has(key) || (decl.memory_types && !decl.memory_types.includes(folderType))) continue;
     const value = data[key];
     for (const item of Array.isArray(value) ? value : [value]) {
+      if (typeof item === "object" && item !== null) continue;
       const bad = customKeyProblem(item, decl);
       if (bad) out.push(finding(rel, lineOf(key), "custom-key", key, bad));
     }
