@@ -5,7 +5,8 @@ import addFormatsModule from "ajv-formats";
 import { isAlias, isMap, isScalar, isSeq, parseDocument, type Document, type Pair } from "yaml";
 import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type: "json" };
 import recordSchemaJson from "../../schema/record.schema.json" with { type: "json" };
-import { ConfigError, isInside, isMapping, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
+import { ConfigError, customKeys, isInside, isMapping, loadConfig, type BankConfig, type CustomKey, type MemoryType } from "./bank.ts";
+import { isCalendarDate } from "./clock.ts";
 import { fenceTracker } from "./markdown.ts";
 import { listRecordFiles } from "./query.ts";
 import { splitFrontmatter, unrepresentable, type Unrepresentable } from "./record.ts";
@@ -29,7 +30,8 @@ export type Rule =
   | "supersession-cycle"
   | "body-sections"
   | "bright-line"
-  | "exception-link";
+  | "exception-link"
+  | "custom-key";
 
 export type Severity = "error" | "warning";
 
@@ -288,6 +290,38 @@ function checkExceptionLink({ rel, data, keys, lineOf }: Frontmatter): Finding[]
   return [finding(rel, lineOf(key), "exception-link", key, "Exception names no PolicyRule; add a related entry constrained_by::<PolicyRule id>", severity)];
 }
 
+const show = (v: unknown): string => (typeof v === "string" ? `'${v}'` : String(v));
+const kindOf = (v: unknown): string => (v === null ? "null" : Array.isArray(v) ? "list" : typeof v === "string" ? "string" : typeof v === "number" ? "number" : typeof v === "boolean" ? "boolean" : typeof v);
+
+// A list value is checked item by item; the Record schema already limits lists to flat scalars.
+function checkCustomKeys({ rel, data, keys: present, lineOf }: Frontmatter, folderType: MemoryType, declared: ReadonlyMap<string, CustomKey>): Finding[] {
+  const out: Finding[] = [];
+  for (const [key, decl] of declared) {
+    if (!present.has(key) || (decl.memory_types && !decl.memory_types.includes(folderType))) continue;
+    const value = data[key];
+    for (const item of Array.isArray(value) ? value : [value]) {
+      const bad = customKeyProblem(item, decl);
+      if (bad) out.push(finding(rel, lineOf(key), "custom-key", key, bad));
+    }
+  }
+  return out;
+}
+
+function customKeyProblem(v: unknown, decl: CustomKey): string | null {
+  const wrong = `${show(v)} is a ${kindOf(v)}, not a ${decl.type}`;
+  if (decl.type === "string" || decl.type === "date") {
+    if (typeof v !== "string") return wrong;
+    if (decl.type === "date" && !isCalendarDate(v)) return `${show(v)} is not a date (YYYY-MM-DD)`;
+  } else if (decl.type === "boolean") {
+    if (typeof v !== "boolean") return wrong;
+  } else {
+    if (typeof v !== "number") return wrong;
+    if (!Number.isInteger(v)) return `${show(v)} is not an integer`;
+  }
+  if (decl.enum && !decl.enum.includes(v as string | number | boolean)) return `${show(v)} is not one of ${decl.enum.join(", ")}`;
+  return null;
+}
+
 type RecordResult = { findings: Finding[]; id: string | null; idLine: number; fm: Frontmatter | null };
 
 function analyzeRecord(
@@ -295,7 +329,7 @@ function analyzeRecord(
   folderType: MemoryType,
   text: string,
   facetPrefixes: ReadonlySet<string> | null,
-  opts: { folderPath?: string; aliases?: HeadingAliases } = {},
+  opts: { folderPath?: string; aliases?: HeadingAliases; customKeys?: ReadonlyMap<string, CustomKey> } = {},
 ): RecordResult {
   const { findings, fm } = checkFrontmatter(rel, text);
   if (!fm) return { findings, id: null, idLine: 1, fm: null };
@@ -310,6 +344,7 @@ function analyzeRecord(
   );
   if (folderType === "Decision") findings.push(...checkBodySections(fm, opts.aliases ?? {}));
   if (folderType === "Exception") findings.push(...checkExceptionLink(fm));
+  if (opts.customKeys?.size) findings.push(...checkCustomKeys(fm, folderType, opts.customKeys));
   const id = typeof fm.data.id === "string" ? fm.data.id : null;
   return { findings, id, idLine: fm.lineOf("id"), fm };
 }
@@ -658,6 +693,8 @@ export function validateBankReport(root: string, paths: string[] | null, cwd: st
   const prefixes = Array.isArray(raw) && raw.every((x) => typeof x === "string") ? new Set(raw as string[]) : null;
 
   const aliases = headingAliases(config.raw.heading_aliases);
+  // A name the Record schema already defines is a config-schema finding; checking it here too would flag every Record.
+  const declared = new Map([...customKeys(config)].filter(([name]) => !Object.hasOwn(recordSchemaJson.properties, name)));
 
   const ids: { file: string; line: number; id: string }[] = [];
   const nodes: Node[] = [];
@@ -672,7 +709,7 @@ export function validateBankReport(root: string, paths: string[] | null, cwd: st
       if (isNamed) findings.push(finding(f.rel, 1, "walk", null, firstLine((e as Error).message)));
       continue;
     }
-    const r = analyzeRecord(f.rel, f.type, text, prefixes, { folderPath: config.folders[f.type], aliases });
+    const r = analyzeRecord(f.rel, f.type, text, prefixes, { folderPath: config.folders[f.type], aliases, customKeys: declared });
     if (isNamed) findings.push(...r.findings);
     if (r.id !== null) ids.push({ file: f.rel, line: r.idLine, id: r.id });
     if (r.fm) nodes.push({ file: f.rel, type: f.type, fm: r.fm });

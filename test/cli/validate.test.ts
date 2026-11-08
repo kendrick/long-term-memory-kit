@@ -677,3 +677,50 @@ describe("exception-link through the CLI", () => {
     });
   });
 });
+
+describe("ltm validate custom-key", () => {
+  const rel = "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md";
+  const config = "schema: 1\nname: acme\nfacet_prefixes: [service, domain, system, team, platform]\ncustom_keys:\n  tier: { type: string, enum: [platform, product] }\n";
+  // The key goes right after the opening fence, so it sits on line 2.
+  const setup = async (dir: string, line: string) => {
+    writeFileSync(join(dir, "memory-bank.yaml"), config);
+    const text = readFileSync(join(dir, rel), "utf8").replace(/^---\n/, `---\n${line}\n`);
+    writeFileSync(join(dir, rel), text);
+    expect(readFileSync(join(dir, rel), "utf8")).toContain(`---\n${line}\n`);
+  };
+  const bad = `${rel}:2: error custom-key: tier: 'platfrom' is not one of platform, product`;
+
+  test("a value outside the enum fails, naming file and key", async () => {
+    await withScratch(demo, async (dir) => {
+      await setup(dir, "tier: platfrom");
+      const r = await ltm(dir, "validate", dir);
+      expect(r.exitCode).toBe(1);
+      expect(lines(r.stdout)).toContain(bad);
+    });
+  });
+
+  test("an enum member passes", async () => {
+    await withScratch(demo, async (dir) => {
+      await setup(dir, "tier: platform");
+      const r = await ltm(dir, "validate", dir);
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).not.toContain("custom-key");
+    });
+  });
+
+  test("an undeclared key still passes", async () => {
+    await withScratch(demo, async (dir) => {
+      await setup(dir, "owner_group: anything");
+      expect((await ltm(dir, "validate", dir)).exitCode).toBe(0);
+    });
+  });
+
+  test("a named path is still checked", async () => {
+    await withScratch(demo, async (dir) => {
+      await setup(dir, "tier: platfrom");
+      const r = await ltm(dir, "validate", join(dir, rel));
+      expect(r.exitCode).toBe(1);
+      expect(lines(r.stdout)).toContain(bad);
+    });
+  });
+});

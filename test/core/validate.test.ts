@@ -1479,3 +1479,68 @@ describe("supersession-cycle", () => {
     });
   });
 });
+
+describe("custom-key", () => {
+  const ctxRel = "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md";
+  const withKeys = (decl: string) => `schema: 1\nname: acme\nfacet_prefixes: [service, domain, system, team, platform]\ncustom_keys:\n${decl}`;
+  // Adds one frontmatter line right after the opening fence and returns its 1-based line number (always 2).
+  const addKey = (text: string, line: string) => text.replace(/^---\n/, `---\n${line}\n`);
+  const customKeyFindings = async (decl: string, files: Record<string, string>): Promise<Finding[]> => {
+    let out: Finding[] = [];
+    await withScratch(demoBank, async (dir) => {
+      writeFileSync(join(dir, "memory-bank.yaml"), withKeys(decl));
+      for (const [file, line] of Object.entries(files)) {
+        const before = readFileSync(join(dir, file), "utf8");
+        writeFileSync(join(dir, file), addKey(before, line));
+        expect(readFileSync(join(dir, file), "utf8")).toContain(`---\n${line}\n`);
+      }
+      out = validateBankReport(dir, null, dir).findings.filter((f) => f.rule === "custom-key");
+    });
+    return out;
+  };
+
+  test("memory_types limits where the key is checked", async () => {
+    const fs = await customKeyFindings("  reviewed: { type: date, memory_types: [Context] }\n", {
+      [rel]: "reviewed: soon",
+      [ctxRel]: "reviewed: soon",
+    });
+    expect(fs).toEqual([
+      { file: ctxRel, line: 2, rule: "custom-key", severity: "error", key: "reviewed", message: "'soon' is not a date (YYYY-MM-DD)" },
+    ]);
+  });
+
+  test("types", async () => {
+    const decl = "  s: { type: string }\n  b: { type: boolean }\n  n: { type: integer }\n  m: { type: integer }\n";
+    const fs = await customKeyFindings(decl, { [rel]: "s: 1", [ctxRel]: "b: yes" });
+    expect(fs.map((f) => [f.file, f.key, f.message])).toEqual([
+      [ctxRel, "b", "'yes' is a string, not a boolean"],
+      [rel, "s", "1 is a number, not a string"],
+    ]);
+    const ints = await customKeyFindings(decl, { [rel]: "n: 1.5", [ctxRel]: "m: -3" });
+    expect(ints.map((f) => [f.file, f.key, f.message])).toEqual([[rel, "n", "1.5 is not an integer"]]);
+  });
+
+  test("list items are checked one by one", async () => {
+    const fs = await customKeyFindings("  tier: { type: string, enum: [platform, product] }\n", { [rel]: "tier: [platform, platfrom]" });
+    expect(fs).toEqual([
+      { file: rel, line: 2, rule: "custom-key", severity: "error", key: "tier", message: "'platfrom' is not one of platform, product" },
+    ]);
+  });
+
+  test("changing an unrelated key leaves the result alone", async () => {
+    const decl = "  tier: { type: string, enum: [platform, product] }\n";
+    const a = await customKeyFindings(decl, { [rel]: "tier: platfrom" });
+    const b = await customKeyFindings(decl, { [rel]: "tier: platfrom", [ctxRel]: "owner_group: anything" });
+    expect(a).toHaveLength(1);
+    expect(b).toEqual(a);
+  });
+
+  test("a declared name the Record schema defines is not checked against Records", async () => {
+    expect(await customKeyFindings("  status: { type: integer }\n", {})).toEqual([]);
+  });
+
+  test("checkRecordText applies no declarations", () => {
+    const text = addKey(valid, "tier: platfrom");
+    expect(checkRecordText(rel, "Decision", text, demoPrefixes).findings.filter((f) => f.rule === "custom-key")).toEqual([]);
+  });
+});
