@@ -17,6 +17,7 @@ const accept = (cwd: string, id: string, env: Record<string, string> = { LTM_TOD
 const P = "_memory/decisions/adopt-opentelemetry-tracing-pL2sG4nVq0.md";
 const H = "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md";
 const K = "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md";
+const esc = (s: string) => s.replace(/[.\\^$*+?()[\]{}|]/g, "\\$&");
 
 // Every file in the Bank, not just the Records the command should touch, so a stray write anywhere shows.
 function hashes(dir: string): Record<string, string> {
@@ -168,7 +169,7 @@ describe("ltm accept", () => {
         const r = await accept(dir, "pL2sG4nVq0");
         expect(r.exitCode).toBe(1);
         expect(r.stdout).toBe("");
-        expect(r.stderr).toMatch(new RegExp(`^ltm accept: wrote nothing, then failed on ${H.replace(/[.]/g, "\\.")}: .+\\n$`));
+        expect(r.stderr).toMatch(new RegExp(`^ltm accept: wrote nothing, then failed on ${esc(H)}: .+\\n$`));
         expect(hashes(dir)).toEqual(before);
       } finally {
         chmodSync(join(dir, H), 0o644);
@@ -185,7 +186,6 @@ describe("ltm accept", () => {
       try {
         const before = hashes(dir);
         const r = await accept(dir, "pL2sG4nVq0");
-        const esc = (s: string) => s.replace(/[.\\^$*+?()[\]{}|]/g, "\\$&");
         expect(r.exitCode).toBe(1);
         expect(r.stdout).toBe("");
         expect(r.stderr).toMatch(new RegExp(`^ltm accept: wrote nothing, then failed on ${esc(P)}: .+\\n$`));
