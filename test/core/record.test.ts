@@ -252,3 +252,12 @@ describe("parseRecordFile and unrepresentable values (#44)", () => {
     });
   });
 });
+
+describe("parseRecordFile body", () => {
+  test("parseRecordFile keeps the body", async () => {
+    await withTmp(async (dir) => {
+      await writeFile(join(dir, "r.md"), "---\nid: x\n---\n\n## Context\n\nhello\n");
+      expect(parseRecordFile(join(dir, "r.md"), "r.md", "Decision").body).toBe("\n## Context\n\nhello\n");
+    });
+  });
+});

@@ -2,10 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type { ParsedRecord } from "../../src/core/record.ts";
 import { lexical, search, tokenize } from "../../src/core/recall.ts";
 
-const rec = (path: string, frontmatter: Record<string, unknown>): ParsedRecord => ({
+const rec = (path: string, frontmatter: Record<string, unknown>, body?: string): ParsedRecord => ({
   path,
   memoryType: "Decision",
   frontmatter,
+  ...(body === undefined ? {} : { body }),
 });
 
 describe("tokenize", () => {
@@ -84,5 +85,51 @@ describe("search", () => {
     const records = [rec("a.md", { title: "redis" })];
     const fixed = { search: () => [{ record: records[0]!, score: 42 }] };
     expect(search(records, "anything", fixed)).toEqual([{ record: records[0]!, score: 42 }]);
+  });
+});
+
+describe("body search", () => {
+  const paths = (hits: { record: ParsedRecord }[]) => hits.map((h) => h.record.path);
+
+  test("body off: a body-only word doesn't match", () => {
+    expect(search([rec("a.md", { title: "Queues" }, "We chose kafka.")], "kafka")).toEqual([]);
+  });
+
+  test("body on: a body-only word matches", () => {
+    const r = rec("a.md", { title: "Queues" }, "We chose kafka.");
+    expect(search([r], "kafka", lexical, { body: true }).map((h) => h.record)).toEqual([r]);
+  });
+
+  test("body on: a word inside a fenced code block still matches", () => {
+    const r = rec("a.md", { title: "Queues" }, "```\nkafka\n```\n");
+    expect(search([r], "kafka", lexical, { body: true })).toHaveLength(1);
+  });
+
+  test("body on: a header match ranks above a body-only match with more hits", () => {
+    const head = rec("z.md", { title: "Kafka" }, "");
+    const body = rec("a.md", { title: "Queues" }, "kafka ".repeat(10));
+    expect(paths(search([body, head], "kafka", lexical, { body: true }))).toEqual(["z.md", "a.md"]);
+  });
+
+  test("body on: tokens split across title and body match in the body tier", () => {
+    const split = rec("a.md", { title: "Kafka" }, "for orders");
+    const whole = rec("b.md", { title: "Kafka orders" }, "");
+    expect(paths(search([split, whole], "kafka orders", lexical, { body: true }))).toEqual(["b.md", "a.md"]);
+    expect(paths(search([split, whole], "kafka orders"))).toEqual(["b.md"]);
+  });
+
+  test("body on: header-tier scores and order equal body off", () => {
+    const records = [
+      rec("c.md", { title: "kafka" }, "unrelated"),
+      rec("a.md", { title: "Kafka kafka" }, "unrelated"),
+      rec("b.md", { title: "kafka" }, "unrelated"),
+    ];
+    expect(search(records, "kafka", lexical, { body: true })).toEqual(search(records, "kafka"));
+  });
+
+  test("body on, empty text: every Record, as today", () => {
+    const records = [rec("z.md", { title: "a" }, "x"), rec("a.md", { title: "b" })];
+    expect(search(records, "", lexical, { body: true })).toEqual(search(records, ""));
+    expect(search(records, "", lexical, { body: true })).toHaveLength(2);
   });
 });

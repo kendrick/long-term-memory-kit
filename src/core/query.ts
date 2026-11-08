@@ -189,6 +189,7 @@ export type QueryOptions = {
   all: boolean;
   // Absent means include, so a Bank that never sets query.org_wide keeps matching org-wide Records on every Facet query.
   orgWide?: OrgWide;
+  body?: boolean;
 };
 
 export type OrgWide = "include" | "exclude";
@@ -244,7 +245,7 @@ export function selectRecords(records: ParsedRecord[], opts: QueryOptions): Pars
         (typeof r.frontmatter.status === "string" && opts.statuses.includes(r.frontmatter.status))) &&
       (opts.facets.length === 0 || inFacets(r, opts.facets, opts.orgWide)),
   );
-  if (opts.text !== undefined) out = search(out, opts.text).map((h) => h.record);
+  if (opts.text !== undefined) out = search(out, opts.text, undefined, { body: opts.body }).map((h) => h.record);
   return out;
 }
 

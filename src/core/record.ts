@@ -35,6 +35,7 @@ export type ParsedRecord = {
   path: string;
   memoryType: MemoryType;
   frontmatter: Record<string, unknown>;
+  body?: string;
 };
 
 export class RecordError extends Error {
@@ -80,7 +81,7 @@ export function parseRecordFile(absPath: string, relPath: string, memoryType: Me
     const subject = first.key === null ? "frontmatter" : `frontmatter value ${first.key}`;
     throw new RecordError(relPath, `${subject} can't be represented in JSON: ${first.reason}`);
   }
-  return { path: relPath, memoryType, frontmatter };
+  return { path: relPath, memoryType, frontmatter, body: split.body };
 }
 
 export type Unrepresentable = { key: string | null; reason: string };

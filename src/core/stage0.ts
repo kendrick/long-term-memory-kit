@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { RecallError, type QmdBackend } from "./qmd.ts";
-import { lexical, search } from "./recall.ts";
+import { lexical, search, type SearchOptions } from "./recall.ts";
 import type { ParsedRecord } from "./record.ts";
 import { byCodeUnit } from "./text.ts";
 
@@ -10,8 +10,8 @@ export type RankedRow = { record: ParsedRecord; score: number; rankedBy: RankedB
 
 const plural = (n: number) => (n === 1 ? "1 Record is" : `${n} Records are`);
 
-function lexicalAll(kept: ParsedRecord[], text: string): RankedRow[] {
-  return search(kept, text, lexical).map((h) => ({ record: h.record, score: h.score, rankedBy: "lexical" }));
+function lexicalAll(kept: ParsedRecord[], text: string, opts?: SearchOptions): RankedRow[] {
+  return search(kept, text, lexical, opts).map((h) => ({ record: h.record, score: h.score, rankedBy: "lexical" }));
 }
 
 // `notes` is the array the caller's backend `warn` also pushes onto, so warnings and Stage 0 notes share one list.
@@ -23,10 +23,11 @@ export function rankStage0(
   minScore: number | undefined,
   bankRoot: string,
   notes: string[],
+  opts?: SearchOptions,
 ): RankedRow[] {
   const fallback = (why: string) => {
     notes.push(`recall: ${why}; ranked by lexical`);
-    return lexicalAll(kept, text);
+    return lexicalAll(kept, text, opts);
   };
   const problem = backend.preflight();
   if (problem) return fallback(problem);
@@ -68,5 +69,5 @@ export function rankStage0(
 
   notes.push(...missingNotes);
   ranked.sort((a, b) => b.score - a.score || byCodeUnit(a.record.path, b.record.path));
-  return [...ranked, ...lexicalAll(uncollected, text)];
+  return [...ranked, ...lexicalAll(uncollected, text, opts)];
 }
