@@ -69,7 +69,6 @@ function selectForBank(
   cfgLabel: string,
 ): Row[] | 1 {
   if (opts.facets.length > 0) {
-    // Exit on a typo. Reading it as include would leak Org-wide Records into a Bank that asked to keep them out.
     const orgWide = orgWideMode(config);
     if (typeof orgWide === "object") {
       ctx.err(`ltm query: ${cfgLabel}: ${orgWide.error}\n`);

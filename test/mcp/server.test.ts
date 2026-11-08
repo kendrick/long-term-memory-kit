@@ -115,6 +115,25 @@ describe("ltm mcp, read-only tools", () => {
   );
 
   test(
+    "query with facets still returns Org-wide Records under query.org_wide: include and with the key absent",
+    async () => {
+      for (const edit of [
+        undefined,
+        (root: string) => {
+          const cfg = join(root, "memory-bank.yaml");
+          writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\nquery:\n  org_wide: include\n`);
+        },
+      ]) {
+        await withServer(async ({ client }) => {
+          const results = ok(await call(client, "query", { facets: ["service:order-service"] })).results as { path: string }[];
+          expect(results.map((r) => r.path)).toContain("_memory/policy-rules/services-have-codeowners-aW7kC3oRf2.md");
+        }, edit);
+      }
+    },
+    MCP_TEST_TIMEOUT * 2,
+  );
+
+  test(
     "head by id and by path matches `ltm head`, and refuses a path outside the Bank",
     () =>
       withServer(async ({ client, bank, env }) => {

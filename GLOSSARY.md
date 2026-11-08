@@ -57,7 +57,7 @@ A record whose `status` is `superseded`, `deprecated`, or `rejected`. Queries le
 _Avoid_: Archived, inactive, dead
 
 **Org-wide**:
-A record whose `applies_to` is missing, `null`, or `[]`. It falls inside every facet, so it matches every facet query and every supersession scope check, unless the bank sets `query.org_wide: exclude`; then it matches no facet query.
+A record whose `applies_to` is missing, `null`, or `[]`. It falls inside every facet, so it matches every facet query and every supersession scope check. Setting `query.org_wide: exclude` in the bank takes it out of facet queries only; supersession scope checks still match it.
 _Avoid_: Global, unscoped, universal
 
 ### Lifecycle

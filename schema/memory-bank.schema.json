@@ -115,7 +115,7 @@
           "maximum": 1
         },
         "org_wide": {
-          "description": "Set to exclude so an Org-wide Record, one with no applies_to, matches no --facet query. It still matches key=value filters, --text, and a query with no Facet. Default include.",
+          "description": "Set to exclude so an Org-wide Record, one with no applies_to, matches no Facet query, whether the Facets come from --facet or from the consumers map in the Bank config. It still matches key=value filters, --text, and a query with no Facet. Default include.",
           "enum": ["include", "exclude"],
           "default": "include"
         }
