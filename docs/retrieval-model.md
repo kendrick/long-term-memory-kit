@@ -75,7 +75,7 @@ That code sits in two layers.
 
 - It leaves retired Records out. Name a retired status with `--status`, or pass `--all`, to see them. `--status accepted` never lets a retired Record through.
 - It filters Facets by overlap. A Record matches `--facet service:order-service` when its `applies_to` holds that Facet. Unless the Bank sets `query.org_wide: exclude`, an org-wide Record matches every Facet, because it applies everywhere. A Record with no `applies_to` is org-wide.
-- It ranks `--text` on the header. It searches `title` and `summary`, not the body, so a passing mention in a body doesn't outrank a Record about the topic. A Bank that sets `recall:` ranks `--text` through qmd instead, as [Stage 0](#stage-0) describes.
+- It ranks `--text` on the header. It searches `title` and `summary`, not the body, so a passing mention in a body doesn't outrank a Record about the topic. Pass `--body` with `--text` to search the body too, for that query only. A Record that matches only in its body still ranks after every Record that matches in its header. A Bank that sets `recall:` ranks `--text` through qmd instead, as [Stage 0](#stage-0) describes.
 
 `ltm query` adds three behaviors of its own around `selectRecords`.
 
@@ -93,7 +93,7 @@ Stage 0 ranks the Records the exact filters keep through the backend that `recal
 
 The filters run first. `--type`, `--facet`, `--status`, and the rest narrow the Bank, and the backend ranks only what is left. qmd still searches its whole collection, and `ltm query` ignores any hit for a Record the filters dropped.
 
-qmd ranks the whole file, body included. The `lexical` matcher reads only `title` and `summary`, so a Record can rank under qmd on a word that appears only in its body. Under `mode: search`, qmd returns a Record only when its text holds every word of the query.
+qmd ranks the whole file, body included. Unless the query passes `--body`, the `lexical` matcher reads only `title` and `summary`, so a Record can rank under qmd on a word that appears only in its body. `--body` leaves qmd's results alone, since qmd already reads bodies. It widens `lexical` to the body for the rows `lexical` ranks under Stage 0: types with no entry in `recall.collections`, and every row when qmd can't run. Under `mode: search`, qmd returns a Record only when its text holds every word of the query.
 
 `recall.collections` maps each memory type to one qmd collection, and Stage 0 searches the collection of each type that survives the filters. Without `--type`, that can mean up to four searches. The ranked rows from every collection merge by score, highest first, and break ties by path. A type with no entry in `recall.collections` ranks with `lexical`, and those rows follow the ranked ones. BM25 scores from different collections are not strictly comparable, because each collection scores against its own corpus, so a merged order across types is approximate.
 

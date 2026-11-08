@@ -134,6 +134,29 @@ describe("ltm mcp, read-only tools", () => {
   );
 
   test(
+    "query with body: true finds a body-only match",
+    () => {
+      const bodyOnly = "_memory/context/body-only-zQ1bB0dY01.md";
+      return withServer(
+        async ({ client, bank, consumer, env }) => {
+          const pathsOf = (sc: Record<string, unknown>) => (sc.results as { path: string }[]).map((r) => r.path);
+          const withBody = ok(await call(client, "query", { text: "zanzibarqueue", body: true }));
+          expect(pathsOf(withBody)).toContain(bodyOnly);
+          expect(minusCommits(withBody)).toEqual(JSON.parse(await cli(["query", "--bank", bank, "--json", "--text", "zanzibarqueue", "--body"], consumer, env)));
+          expect(pathsOf(ok(await call(client, "query", { text: "zanzibarqueue" })))).not.toContain(bodyOnly);
+        },
+        (root) => {
+          writeFileSync(
+            join(root, bodyOnly),
+            "---\nschema: 1\nid: zQ1bB0dY01\nmemory_type: Context\ntitle: Queue notes\nstatus: accepted\ndate: 2026-10-12\nsummary: S.\n---\n\nWe picked zanzibarqueue for retries.\n",
+          );
+        },
+      );
+    },
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
     "head by id and by path matches `ltm head`, and refuses a path outside the Bank",
     () =>
       withServer(async ({ client, bank, env }) => {

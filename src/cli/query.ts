@@ -93,7 +93,7 @@ function selectForBank(
   const backend: QmdBackend =
     recall.mode === "vector" ? qmdVectorBackend(recall, config.root, ctx.env, warn) : qmdBackend(recall, config.root, ctx.env, warn);
   const kept = selectRecords(records, { ...opts, text: undefined });
-  return rankStage0(kept, text, backend, recall.mode, minScore, config.root, notes).map((r) => ({
+  return rankStage0(kept, text, backend, recall.mode, minScore, config.root, notes, { body: opts.body }).map((r) => ({
     ...row(r.record),
     score: r.score,
     ranked_by: r.rankedBy,
@@ -188,6 +188,7 @@ export const query: Command = {
     facet: { type: "string", multiple: true, description: "Only Records that apply to this Facet; repeat to match any of several Facets. key=value filters must all match" },
     status: { type: "string", multiple: true, description: "Only Records with this status, which may be a retired one" },
     text: { type: "string", description: "Rank results by matches in title and summary, or through recall: when the Bank sets it" },
+    body: { type: "boolean", description: "With --text, also match words in each Record's body, ranked after title and summary matches" },
     all: { type: "boolean", description: "Include Retired Records" },
     bank: { type: "string", description: "Bank name from your user config, or path to a Bank" },
   },
@@ -196,6 +197,7 @@ export const query: Command = {
   checkArgs(positionals, values) {
     const bad = positionals.find((a) => parseFilter(a) === null);
     if (bad !== undefined) return `invalid filter '${bad}' (expected key=value)`;
+    if (values.body === true && typeof values.text !== "string") return "--body needs --text";
     const type = values.type;
     if (typeof type === "string" && !(MEMORY_TYPES as readonly string[]).includes(type)) {
       return `unknown memory type '${type}' (expected Decision, PolicyRule, Exception, or Context)`;
@@ -218,6 +220,7 @@ export const query: Command = {
       statuses: many(ctx.values.status),
       facets: many(ctx.values.facet),
       text: typeof ctx.values.text === "string" ? ctx.values.text : undefined,
+      body: ctx.values.body === true,
       all: ctx.values.all === true,
     };
     if (typeof ctx.values.bank === "string") return runResolved(ctx, opts);

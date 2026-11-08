@@ -993,3 +993,52 @@ describe("ltm query and query.org_wide (#159)", () => {
     expect(r.stdout).toContain("key=value filters must all match");
   });
 });
+
+describe("ltm query --body", () => {
+  const WORD = "zanzibarqueue";
+  const ctxRec = (id: string, title: string, body: string) =>
+    `---\nschema: 1\nid: ${id}\nmemory_type: Context\ntitle: ${title}\nstatus: accepted\ndate: 2026-10-12\nsummary: S.\n---\n\n${body}\n`;
+  const BODY_ONLY = "_memory/context/body-only-zQ1bB0dY01.md";
+  const IN_TITLE = "_memory/context/title-hit-zQ1bB0dY02.md";
+  const seed = (dir: string) => writeFileSync(join(dir, BODY_ONLY), ctxRec("zQ1bB0dY01", "Queue notes", `We picked ${WORD} for retries.`));
+
+  test(`--text ${WORD} without --body doesn't return a body-only match`, async () => {
+    await withScratch(demo, async (dir) => {
+      seed(dir);
+      const r = await ltm(dir, "query", "--text", WORD);
+      expect(r.exitCode).toBe(0);
+      expect(paths(r.stdout)).not.toContain(BODY_ONLY);
+    });
+  });
+
+  test(`--text ${WORD} --body returns it`, async () => {
+    await withScratch(demo, async (dir) => {
+      seed(dir);
+      const r = await ltm(dir, "query", "--text", WORD, "--body");
+      expect(r.exitCode).toBe(0);
+      expect(paths(r.stdout)).toContain(BODY_ONLY);
+    });
+  });
+
+  test("--body: a title match ranks first", async () => {
+    await withScratch(demo, async (dir) => {
+      seed(dir);
+      writeFileSync(join(dir, IN_TITLE), ctxRec("zQ1bB0dY02", `${WORD} retries`, "Body."));
+      const r = await ltm(dir, "query", "--text", WORD, "--body");
+      expect(r.exitCode).toBe(0);
+      expect(paths(r.stdout)).toEqual([IN_TITLE, BODY_ONLY]);
+    });
+  });
+
+  test("--body without --text exits 2", async () => {
+    const r = await ltm(demo, "query", "--body");
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain("--body needs --text");
+  });
+
+  test("--help lists --body", async () => {
+    const r = await ltm(demo, "query", "--help");
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("--body");
+  });
+});
