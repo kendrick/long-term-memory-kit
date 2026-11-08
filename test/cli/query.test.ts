@@ -917,3 +917,79 @@ describe("ltm query Stage 0 (#134)", () => {
     });
   });
 });
+
+describe("ltm query and query.org_wide (#159)", () => {
+  const CODEOWNERS = "_memory/policy-rules/services-have-codeowners-aW7kC3oRf2.md";
+  const tagged = (dir: string, facet: string) =>
+    (p: string) => (parse(readFileSync(join(dir, p), "utf8").split("---\n")[1]!) as { applies_to?: string[] }).applies_to?.includes(facet) === true;
+
+  test("org_wide exclude: --facet omits an Org-wide Record and keeps a tagged one", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "query:\n  org_wide: exclude");
+      const r = await ltm(dir, "query", "--facet", "service:order-service");
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe("");
+      const listed = paths(r.stdout);
+      expect(listed).not.toContain(CODEOWNERS);
+      expect(listed.length).toBeGreaterThan(0);
+      expect(listed.every(tagged(dir, "service:order-service"))).toBe(true);
+    });
+  });
+
+  test("org_wide absent or include: --facet keeps the Org-wide Record", async () => {
+    await withScratch(demo, async (dir) => {
+      const absent = await ltm(dir, "query", "--facet", "service:order-service");
+      expect(absent.exitCode).toBe(0);
+      expect(paths(absent.stdout)).toContain(CODEOWNERS);
+      expect(paths(absent.stdout).some(tagged(dir, "service:order-service"))).toBe(true);
+      setRecall(dir, "query:\n  org_wide: include");
+      const include = await ltm(dir, "query", "--facet", "service:order-service");
+      expect(include).toEqual(absent);
+    });
+  });
+
+  test("org_wide exclude: a query with no Facet still lists the Org-wide Record", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "query:\n  org_wide: exclude");
+      const r = await ltm(dir, "query", "memory_type=PolicyRule");
+      expect(r.exitCode).toBe(0);
+      expect(paths(r.stdout)).toContain(CODEOWNERS);
+    });
+  });
+
+  test("org_wide exlude: a Facet query exits 1 naming memory-bank.yaml", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "query:\n  org_wide: exlude");
+      const r = await ltm(dir, "query", "--facet", "service:order-service");
+      expect(r).toEqual({
+        exitCode: 1,
+        stdout: "",
+        stderr: "ltm query: memory-bank.yaml: query.org_wide must be include or exclude\n",
+      });
+      // No Facet, so the key is never read.
+      expect((await ltm(dir, "query", "memory_type=PolicyRule")).exitCode).toBe(0);
+    });
+  });
+
+  test("org_wide set: --text under recall: search does not reject the key", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }\nquery: { org_wide: exclude }");
+      const r = await run({ argv: ["query", "--text", "postgres"], cwd: dir, env: { PATH: noQmdBin } });
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).not.toContain("unknown key");
+      expect(paths(r.stdout)).toContain(PG);
+    });
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }\nquery: { org_wide: exclude, bogus: 1 }");
+      const r = await run({ argv: ["query", "--text", "postgres"], cwd: dir, env: { PATH: noQmdBin } });
+      expect(r).toEqual({ exitCode: 1, stdout: "", stderr: "ltm query: memory-bank.yaml: query.bogus: unknown key\n" });
+    });
+  });
+
+  test("--help says repeated --facet is ORed and filters are ANDed", async () => {
+    const r = await ltm(demo, "query", "--help");
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("repeat to match any");
+    expect(r.stdout).toContain("key=value filters must all match");
+  });
+});

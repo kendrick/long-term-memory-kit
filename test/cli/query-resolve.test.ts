@@ -284,3 +284,33 @@ describe("ltm query from a Consumer repo", () => {
     }
   });
 });
+
+describe("ltm query from a Consumer repo, under query.org_wide (#159)", () => {
+  const exclude = (name: string) => {
+    const cfg = join(home, "banks", name, "memory-bank.yaml");
+    writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\nquery:\n  org_wide: exclude\n`);
+  };
+  const orgWide = [ORG_RULE, ORG_EXC, ORG_CTX];
+
+  // A mapped repo queries by its Facets, so exclude hides Org-wide Records from it too. That's
+  // intended, since under exclude Facet matching reads only the Record's own applies_to.
+  test("org_wide exclude: a mapped Consumer repo stops seeing Org-wide Records", async () => {
+    exclude("acme");
+    exclude("personal");
+    const r = await ltm(repo, "query", "--json");
+    expect(r.exitCode).toBe(0);
+    const got = JSON.parse(r.stdout).results.map((x: { path: string }) => x.path) as string[];
+    expect(got).toContain(REDIS);
+    for (const p of orgWide) expect(got).not.toContain(p);
+  });
+
+  test("two Banks, two settings: each Bank's org_wide applies to its own rows", async () => {
+    exclude("acme");
+    const r = await ltm(repo, "query", "--json", "--facet", "service:order-service");
+    expect(r.exitCode).toBe(0);
+    const got = JSON.parse(r.stdout).results.map((x: { bank: string; path: string }) => `${x.bank}:${x.path}`) as string[];
+    expect(got.filter((x) => x.endsWith(ORG_RULE))).toEqual([`personal:${ORG_RULE}`]);
+    for (const p of orgWide) expect(got).not.toContain(`acme:${p}`);
+    expect(got).toContain(`acme:${REDIS}`);
+  });
+});

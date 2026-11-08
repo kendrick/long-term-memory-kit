@@ -4,7 +4,7 @@ import { loadRecall, qmdBackend, type QmdBackend, type Recall } from "../core/qm
 import { qmdVectorBackend } from "../core/qmd-vector.ts";
 import { tokenize } from "../core/recall.ts";
 import { rankStage0, type RankedBy } from "../core/stage0.ts";
-import { isOrgWide, listRecords, parseFilter, selectRecords, type Filter, type QueryOptions } from "../core/query.ts";
+import { isOrgWide, listRecords, orgWideMode, parseFilter, selectRecords, type Filter, type QueryOptions } from "../core/query.ts";
 import type { ParsedRecord } from "../core/record.ts";
 import {
   noBankMessage,
@@ -41,7 +41,7 @@ export function loadQueryMinScore(config: BankConfig, recall: Recall): number | 
   const raw = config.raw.query;
   if (raw !== undefined && !isMapping(raw)) return { error: "query is not a mapping" };
   for (const key of Object.keys(raw ?? {})) {
-    if (key !== "min_score") return { error: `query.${key}: unknown key` };
+    if (key !== "min_score" && key !== "org_wide") return { error: `query.${key}: unknown key` };
   }
   const v = raw?.min_score;
   if (v === undefined) {
@@ -56,7 +56,8 @@ export function loadQueryMinScore(config: BankConfig, recall: Recall): number | 
 
 // Stage 0 needs `--text` with a token: an empty token list gets no qmd hits, while lexical
 // keeps every Record, so `--text ""` stays today's unfiltered list. recall: and query: are
-// read only then, so a malformed block never breaks a query that couldn't use it.
+// read only then (query.org_wide only on a Facet query), so a malformed block never breaks
+// a query that couldn't use it.
 // Returns the rows, or 1 after printing a config error.
 function selectForBank(
   ctx: CommandContext,
@@ -67,6 +68,15 @@ function selectForBank(
   // Bare in-Bank (one file, obvious); the real path when several Banks are in play.
   cfgLabel: string,
 ): Row[] | 1 {
+  if (opts.facets.length > 0) {
+    // Exit on a typo. Reading it as include would leak Org-wide Records into a Bank that asked to keep them out.
+    const orgWide = orgWideMode(config);
+    if (typeof orgWide === "object") {
+      ctx.err(`ltm query: ${cfgLabel}: ${orgWide.error}\n`);
+      return 1;
+    }
+    opts = { ...opts, orgWide };
+  }
   const text = opts.text;
   if (text === undefined || tokenize(text).length === 0) return selectRecords(records, opts).map(row);
   const recall = loadRecall(config);
@@ -176,7 +186,7 @@ export const query: Command = {
   options: {
     json: { type: "boolean", description: "Print each result's full frontmatter as JSON" },
     type: { type: "string", description: "Only Records of this memory type" },
-    facet: { type: "string", multiple: true, description: "Only Records that apply to this Facet" },
+    facet: { type: "string", multiple: true, description: "Only Records that apply to this Facet; repeat to match any of them. key=value filters must all match" },
     status: { type: "string", multiple: true, description: "Only Records with this status, which may be a retired one" },
     text: { type: "string", description: "Rank results by matches in title and summary, or through recall: when the Bank sets it" },
     all: { type: "boolean", description: "Include Retired Records" },

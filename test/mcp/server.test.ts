@@ -98,6 +98,23 @@ describe("ltm mcp, read-only tools", () => {
   );
 
   test(
+    "query with facets follows query.org_wide: exclude",
+    () =>
+      withServer(
+        async ({ client }) => {
+          const results = ok(await call(client, "query", { facets: ["service:order-service"] })).results as { path: string }[];
+          expect(results.length).toBeGreaterThan(0);
+          expect(results.map((r) => r.path)).not.toContain("_memory/policy-rules/services-have-codeowners-aW7kC3oRf2.md");
+        },
+        (root) => {
+          const cfg = join(root, "memory-bank.yaml");
+          writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\nquery:\n  org_wide: exclude\n`);
+        },
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
     "head by id and by path matches `ltm head`, and refuses a path outside the Bank",
     () =>
       withServer(async ({ client, bank, env }) => {
