@@ -74,7 +74,7 @@ That code sits in two layers.
 `selectRecords` in `src/core/query.ts` holds the selection rules. `ltm query` and the MCP `query` tool both run it, so the two can't drift apart. It does this:
 
 - It leaves retired Records out. Name a retired status with `--status`, or pass `--all`, to see them. `--status accepted` never lets a retired Record through.
-- It filters Facets by overlap. A Record matches `--facet service:order-service` when its `applies_to` holds that Facet. An org-wide Record matches every Facet, because it applies everywhere, unless the Bank sets `query.org_wide: exclude`. A Record with no `applies_to` is org-wide.
+- It filters Facets by overlap. A Record matches `--facet service:order-service` when its `applies_to` holds that Facet. Unless the Bank sets `query.org_wide: exclude`, an org-wide Record matches every Facet, because it applies everywhere. A Record with no `applies_to` is org-wide.
 - It ranks `--text` on the header. It searches `title` and `summary`, not the body, so a passing mention in a body doesn't outrank a Record about the topic. A Bank that sets `recall:` ranks `--text` through qmd instead, as [Stage 0](#stage-0) describes.
 
 `ltm query` adds three behaviors of its own around `selectRecords`.
@@ -111,7 +111,7 @@ query:
 
 Under `mode: search` the key is optional. Under `mode: vector` it is required, along with `doctor.near_duplicate_threshold`, because cosine similarity gives every document a score and only the floor makes `--text` narrow the list. `min_score` is a number from -1 to 1. When Stage 0 would run, `ltm query` exits 1 with a `memory-bank.yaml:` line if `recall:` or `query:` is malformed or a `vector` Bank leaves `min_score` out. Without `--text`, it reads only `query.org_wide`, and only on a Facet query.
 
-`query.org_wide` decides whether an org-wide Record matches a Facet query. It takes `include`, the default, or `exclude`. Under `exclude`, a Record matches a Facet only when its own `applies_to` holds it, so org-wide Records drop out of every `--facet` query. A query from a Consumer repo that the `consumers` map lists counts as a Facet query too, so that repo stops seeing org-wide Records. Org-wide Records still match `key=value` filters, `--type`, `--status`, `--text`, and any query with no Facet. An unmapped repo still gets org-wide Records only. `ltm query` reads the key on every Facet query, with or without `--text`, and exits 1 with a `memory-bank.yaml:` line if it holds any other value. With more than one Bank, each Bank's own setting applies to its own rows.
+`query.org_wide` decides whether an org-wide Record matches a Facet query. It takes `include`, the default, or `exclude`. Under `exclude`, a Record matches a Facet only when its own `applies_to` holds that Facet, so org-wide Records drop out of every `--facet` query. A query from a Consumer repo that the `consumers` map lists counts as a Facet query too, so that repo stops seeing org-wide Records. Org-wide Records still match `key=value` filters, `--type`, `--status`, `--text`, and any query with no Facet. An unmapped repo still gets org-wide Records only. `ltm query` reads the key on every Facet query and exits 1 with a `memory-bank.yaml:` line if the key holds any other value. With more than one Bank, each Bank's own setting applies to its own rows.
 
 Each row gains two fields when Stage 0 runs. `score` is the number the matcher gave the Record. `ranked_by` is `qmd search`, `qmd vector`, or `lexical`, whichever produced that row's place in the order.
 

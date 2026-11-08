@@ -104,7 +104,7 @@
       "additionalProperties": false
     },
     "query": {
-      "description": "Settings for ltm query: how it ranks --text through recall: (see Stage 0 in docs/retrieval-model.md) and whether Org-wide Records match a --facet query.",
+      "description": "Settings for ltm query: how it ranks --text through recall: (see Stage 0 in docs/retrieval-model.md) and whether Org-wide Records match a Facet query.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -115,7 +115,7 @@
           "maximum": 1
         },
         "org_wide": {
-          "description": "Set to exclude so an Org-wide Record, one with no applies_to, matches no Facet query, whether the Facets come from --facet or from the consumers map in the Bank config. It still matches key=value filters, --text, and a query with no Facet. Default include.",
+          "description": "Set to exclude to keep Org-wide Records, those with no applies_to, out of every Facet query, whether its Facets come from --facet or from the Bank's consumers map. An Org-wide Record still matches key=value filters, --text, and any query with no Facet. Default include.",
           "enum": ["include", "exclude"],
           "default": "include"
         }

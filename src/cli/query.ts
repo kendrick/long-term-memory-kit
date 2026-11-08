@@ -56,8 +56,8 @@ export function loadQueryMinScore(config: BankConfig, recall: Recall): number | 
 
 // Stage 0 needs `--text` with a token: an empty token list gets no qmd hits, while lexical
 // keeps every Record, so `--text ""` stays today's unfiltered list. recall: and query: are
-// read only then (query.org_wide only on a Facet query), so a malformed block never breaks
-// a query that couldn't use it.
+// read only then, except query.org_wide, which any Facet query reads. Either way a malformed
+// block never breaks a query that couldn't use it.
 // Returns the rows, or 1 after printing a config error.
 function selectForBank(
   ctx: CommandContext,

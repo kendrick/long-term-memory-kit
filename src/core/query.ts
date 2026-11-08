@@ -187,13 +187,13 @@ export type QueryOptions = {
   facets: string[];
   text?: string;
   all: boolean;
-  // Absent means include, so a Bank without query.org_wide behaves as before #159.
+  // Absent means include, so a Bank that never sets query.org_wide keeps matching org-wide Records on every Facet query.
   orgWide?: OrgWide;
 };
 
 export type OrgWide = "include" | "exclude";
 
-// A typo must surface as an error, never quietly read as include and widen every Facet query.
+// A typo must surface as an error; read as include, it would widen every Facet query with no warning.
 export function orgWideMode(config: BankConfig): OrgWide | { error: string } {
   const raw = config.raw.query;
   if (raw === undefined) return "include";
