@@ -128,3 +128,32 @@ export function loadConfig(root: string): BankConfig {
   }
   return { root, folders, raw };
 }
+
+export type CustomKeyType = "string" | "boolean" | "integer" | "date";
+
+export type CustomKey = { type: CustomKeyType; enum?: (string | number | boolean)[]; memory_types?: MemoryType[] };
+
+const CUSTOM_KEY_TYPES: readonly string[] = ["string", "boolean", "integer", "date"];
+
+const isNonEmptyList = <T>(v: unknown, ok: (x: unknown) => x is T): v is T[] =>
+  Array.isArray(v) && v.length > 0 && v.every(ok);
+
+const isScalar = (x: unknown): x is string | number | boolean =>
+  typeof x === "string" || typeof x === "number" || typeof x === "boolean";
+
+const isMemoryType = (x: unknown): x is MemoryType => MEMORY_TYPES.includes(x as MemoryType);
+
+// checkConfig reports a malformed entry, so skip it here. Checking Records against a broken declaration would bury that one finding under many.
+export function customKeys(config: BankConfig): Map<string, CustomKey> {
+  const out = new Map<string, CustomKey>();
+  const raw = config.raw.custom_keys;
+  if (!isMapping(raw)) return out;
+  for (const [name, v] of Object.entries(raw)) {
+    if (!isMapping(v) || typeof v.type !== "string" || !CUSTOM_KEY_TYPES.includes(v.type)) continue;
+    if (Object.keys(v).some((k) => k !== "type" && k !== "enum" && k !== "memory_types")) continue;
+    if (v.enum !== undefined && !isNonEmptyList(v.enum, isScalar)) continue;
+    if (v.memory_types !== undefined && !isNonEmptyList(v.memory_types, isMemoryType)) continue;
+    out.set(name, v as CustomKey);
+  }
+  return out;
+}

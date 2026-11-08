@@ -123,6 +123,12 @@
     },
     "subject": {
       "description": "Reserved. Accepted with any value, and v1 ignores it."
+    },
+    "custom_keys": {
+      "description": "Declare a frontmatter key this Bank uses, with its type and optionally its allowed values and the memory types it applies to. ltm validate checks a declared key; undeclared keys still pass.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*(?!\\n)$" },
+      "additionalProperties": { "$ref": "#/$defs/customKey" }
     }
   },
   "additionalProperties": false,
@@ -145,6 +151,32 @@
     "required": ["doctor", "query"]
   },
   "$defs": {
+    "customKey": {
+      "description": "One declared frontmatter key. A list value is checked item by item.",
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "Set the value's type. A date is a YYYY-MM-DD calendar date.",
+          "enum": ["string", "boolean", "integer", "date"]
+        },
+        "enum": {
+          "description": "List the only values the key may take.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": ["string", "number", "boolean"] }
+        },
+        "memory_types": {
+          "description": "Check the key only on Records of these memory types. Omit it to check every type.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["Decision", "PolicyRule", "Exception", "Context"] }
+        }
+      }
+    },
     "facet": {
       "description": "A Facet written as <prefix>:<value>, with a lowercase prefix.",
       "type": "string",

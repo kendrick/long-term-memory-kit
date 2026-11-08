@@ -4,7 +4,7 @@ import { chmodSync, lstatSync, mkdirSync, readFileSync, symlinkSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ConfigError, DEFAULT_FOLDERS, findBank, loadConfig } from "../../src/core/bank.ts";
+import { ConfigError, customKeys, DEFAULT_FOLDERS, findBank, loadConfig, type BankConfig } from "../../src/core/bank.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const demoBank = fileURLToPath(new URL("../../fixtures/demo-bank", import.meta.url));
@@ -269,5 +269,16 @@ describe("loadConfig alias handling (#43)", () => {
       expect(config.raw.a).toBe("service");
       expect(config.raw.b).toBe("service");
     });
+  });
+});
+
+describe("customKeys", () => {
+  const cfg = (raw: Record<string, unknown>): BankConfig => ({ root: "/bank", folders: DEFAULT_FOLDERS, raw });
+
+  test("customKeys reads declarations and skips malformed entries", () => {
+    const m = customKeys(cfg({ custom_keys: { tier: { type: "string", enum: ["platform"] }, bad: { type: "text" }, x: 3 } }));
+    expect([...m.keys()]).toEqual(["tier"]);
+    expect(m.get("tier")).toEqual({ type: "string", enum: ["platform"] });
+    expect(customKeys(cfg({})).size).toBe(0);
   });
 });

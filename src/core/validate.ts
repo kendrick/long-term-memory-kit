@@ -5,7 +5,7 @@ import addFormatsModule from "ajv-formats";
 import { isAlias, isMap, isScalar, isSeq, parseDocument, type Document, type Pair } from "yaml";
 import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type: "json" };
 import recordSchemaJson from "../../schema/record.schema.json" with { type: "json" };
-import { ConfigError, isInside, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
+import { ConfigError, isInside, isMapping, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
 import { fenceTracker } from "./markdown.ts";
 import { listRecordFiles } from "./query.ts";
 import { splitFrontmatter, unrepresentable, type Unrepresentable } from "./record.ts";
@@ -563,11 +563,18 @@ export function checkConfig(root: string): { findings: Finding[]; config: BankCo
   }
 
   const findings: Finding[] = [];
+  let keys: KeyLines | undefined;
+  const lineOfKey = (key: string | null): number => {
+    if (key === null) return 1;
+    if (!keys) {
+      const src = readFileSync(join(root, CONFIG_FILE), "utf8");
+      // Config line 1 is the file's first line; Records start their frontmatter at line 2.
+      keys = keyLines(parseDocument(src), src, 1);
+    }
+    return keys.get(key)?.line ?? 1;
+  };
   const validate = configSchema();
   if (!validate(config.raw)) {
-    const src = readFileSync(join(root, CONFIG_FILE), "utf8");
-    // Config line 1 is the file's first line; Records start their frontmatter at line 2.
-    const keys = keyLines(parseDocument(src), src, 1);
     for (const e of validate.errors ?? []) {
       // The schema's only if/then is vector mode's two required keys. Ajv adds a bare "must match then" beside the real error, and the real one names `doctor` or `query` but not the key under it, so say what the loaders say.
       if (e.keyword === "if") continue;
@@ -577,7 +584,16 @@ export function checkConfig(root: string): { findings: Finding[]; config: BankCo
         : key === "query"
           ? "query.min_score is required when recall.mode is vector"
           : "doctor.near_duplicate_threshold is required when recall.mode is vector";
-      findings.push(finding(CONFIG_FILE, key === null ? 1 : (keys.get(key)?.line ?? 1), "config-schema", key, message));
+      findings.push(finding(CONFIG_FILE, lineOfKey(key), "config-schema", key, message));
+    }
+  }
+  // A schema rule would have to copy every key from record.schema.json and drift when that file changes.
+  const declared = config.raw.custom_keys;
+  if (isMapping(declared)) {
+    for (const name of Object.keys(declared)) {
+      if (!Object.hasOwn(recordSchemaJson.properties, name)) continue;
+      const message = `custom_keys.${name}: the Record schema already defines ${name}`;
+      findings.push(finding(CONFIG_FILE, lineOfKey("custom_keys"), "config-schema", "custom_keys", message));
     }
   }
   return { findings, config };

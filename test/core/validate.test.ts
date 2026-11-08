@@ -484,6 +484,51 @@ describe("checkConfig", () => {
       expect(validateBank(dir, null, dir).map((f) => f.rule)).toEqual(["config-schema"]);
     });
   });
+
+  // custom_keys sits on line 4 of each of these configs.
+  const customKeysFindings = async (decl: string): Promise<Finding[]> => {
+    let out: Finding[] = [];
+    await withScratch(demoBank, async (dir) => {
+      writeFileSync(join(dir, "memory-bank.yaml"), `schema: 1\nname: acme\nfacet_prefixes: [service]\ncustom_keys:\n${decl}`);
+      out = checkConfig(dir).findings;
+    });
+    return out;
+  };
+  const onCustomKeys = [expect.objectContaining({ file: "memory-bank.yaml", line: 4, rule: "config-schema", key: "custom_keys" })];
+
+  test("custom_keys: an unknown type is a config-schema finding", async () => {
+    expect(await customKeysFindings("  tier: { type: text }\n")).toEqual(onCustomKeys);
+  });
+
+  test("custom_keys: an empty enum is a config-schema finding", async () => {
+    expect(await customKeysFindings("  tier: { type: string, enum: [] }\n")).toEqual(onCustomKeys);
+  });
+
+  test("custom_keys: an unknown memory type is a config-schema finding", async () => {
+    expect(await customKeysFindings("  tier: { type: string, memory_types: [Project] }\n")).toEqual(onCustomKeys);
+  });
+
+  test("custom_keys: an unknown property is a config-schema finding", async () => {
+    expect(await customKeysFindings("  tier: { type: string, required: true }\n")).toEqual(onCustomKeys);
+  });
+
+  test("custom_keys: declaring a Record schema key is a config-schema finding", async () => {
+    expect(await customKeysFindings("  status: { type: string }\n")).toEqual([
+      {
+        file: "memory-bank.yaml",
+        line: 4,
+        rule: "config-schema",
+        severity: "error",
+        key: "custom_keys",
+        message: "custom_keys.status: the Record schema already defines status",
+      },
+    ]);
+  });
+
+  test("custom_keys: a well-formed map has no findings", async () => {
+    const decl = "  tier: { type: string, enum: [platform, product] }\n  reviewed: { type: date, memory_types: [Context] }\n";
+    expect(await customKeysFindings(decl)).toEqual([]);
+  });
 });
 
 // Each level multiplies by nine, so the expanded size blows past yaml's alias limit
