@@ -185,7 +185,7 @@ export const query: Command = {
   options: {
     json: { type: "boolean", description: "Print each result's full frontmatter as JSON" },
     type: { type: "string", description: "Only Records of this memory type" },
-    facet: { type: "string", multiple: true, description: "Only Records that apply to this Facet; repeat to match any of them. key=value filters must all match" },
+    facet: { type: "string", multiple: true, description: "Only Records that apply to this Facet; repeat to match any of several Facets. key=value filters must all match" },
     status: { type: "string", multiple: true, description: "Only Records with this status, which may be a retired one" },
     text: { type: "string", description: "Rank results by matches in title and summary, or through recall: when the Bank sets it" },
     all: { type: "boolean", description: "Include Retired Records" },
