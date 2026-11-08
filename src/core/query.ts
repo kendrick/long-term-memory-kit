@@ -1,6 +1,6 @@
 import { lstatSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
-import { MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
+import { isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
 import { search } from "./recall.ts";
 import { parseRecordFile, RecordError, type ParsedRecord } from "./record.ts";
 import { byCodeUnit, firstLine } from "./text.ts";
@@ -187,7 +187,22 @@ export type QueryOptions = {
   facets: string[];
   text?: string;
   all: boolean;
+  // Absent means include, so a Bank without query.org_wide behaves as before #159.
+  orgWide?: OrgWide;
 };
+
+export type OrgWide = "include" | "exclude";
+
+// A typo must surface as an error, never quietly read as include and widen every Facet query.
+export function orgWideMode(config: BankConfig): OrgWide | { error: string } {
+  const raw = config.raw.query;
+  if (raw === undefined) return "include";
+  if (!isMapping(raw)) return { error: "query is not a mapping" };
+  const v = raw.org_wide;
+  if (v === undefined) return "include";
+  if (v === "include" || v === "exclude") return v;
+  return { error: "query.org_wide must be include or exclude" };
+}
 
 // A string `applies_to` is a hand-edited one-entry list, and `null` is org-wide like a
 // missing key. Any other shape is malformed; reading that as org-wide would leak the
@@ -205,9 +220,9 @@ export function isOrgWide(r: ParsedRecord): boolean {
   return facetsOf(r) === "org-wide";
 }
 
-function inFacets(r: ParsedRecord, facets: string[]): boolean {
+function inFacets(r: ParsedRecord, facets: string[], orgWide: OrgWide | undefined): boolean {
   const scope = facetsOf(r);
-  if (scope === "org-wide") return true;
+  if (scope === "org-wide") return orgWide !== "exclude";
   if (scope === null) return false;
   return scope.some((f) => facets.includes(f));
 }
@@ -227,7 +242,7 @@ export function selectRecords(records: ParsedRecord[], opts: QueryOptions): Pars
       (opts.type === undefined || r.memoryType === opts.type) &&
       (opts.statuses.length === 0 ||
         (typeof r.frontmatter.status === "string" && opts.statuses.includes(r.frontmatter.status))) &&
-      (opts.facets.length === 0 || inFacets(r, opts.facets)),
+      (opts.facets.length === 0 || inFacets(r, opts.facets, opts.orgWide)),
   );
   if (opts.text !== undefined) out = search(out, opts.text).map((h) => h.record);
   return out;

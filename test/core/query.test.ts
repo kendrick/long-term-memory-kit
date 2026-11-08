@@ -3,13 +3,14 @@ import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type BankConfig } from "../../src/core/bank.ts";
+import { DEFAULT_FOLDERS, type BankConfig } from "../../src/core/bank.ts";
 import {
   countFacets,
   isOrgWide,
   listRecordFiles,
   listRecords,
   matches,
+  orgWideMode,
   parseFilter,
   RETIRED_STATUSES,
   selectRecords,
@@ -408,6 +409,47 @@ describe("selectRecords with literal Records", () => {
     const z = r("z.md", { title: "z" });
     const a = r("a.md", {});
     expect(selectRecords([z, a], opts({ text: "--" })).map((x) => x.path)).toEqual(["z.md", "a.md"]);
+  });
+
+  test("orgWide exclude drops Org-wide Records from a Facet query only", () => {
+    const tagged = r("tagged.md", { applies_to: ["team:payments"] });
+    const missing = r("missing.md", {});
+    const nul = r("null.md", { applies_to: null });
+    const emptyList = r("empty.md", { applies_to: [] });
+    const facets = ["team:payments"];
+    expect(selectRecords([tagged, missing, nul, emptyList], opts({ facets, orgWide: "exclude" }))).toEqual([tagged]);
+    expect(selectRecords([tagged, missing], opts({ facets }))).toEqual([tagged, missing]);
+    expect(selectRecords([tagged, missing], opts({ facets, orgWide: "include" }))).toEqual([tagged, missing]);
+    // No Facet, so exclude has nothing to act on.
+    expect(selectRecords([tagged, missing], opts({ orgWide: "exclude" }))).toEqual([tagged, missing]);
+    // Filters, --type, --status, and --text still reach an Org-wide Record.
+    const acc = r("acc.md", { status: "accepted", title: "redis" });
+    expect(selectRecords([acc], opts({ filters: [{ key: "status", value: "accepted" }], orgWide: "exclude" }))).toEqual([acc]);
+    expect(selectRecords([acc], opts({ type: "Decision", statuses: ["accepted"], text: "redis", orgWide: "exclude" }))).toEqual([acc]);
+  });
+
+  test("under exclude, Facet matching reads only applies_to", () => {
+    const o = opts({ facets: ["team:payments"], orgWide: "exclude" });
+    expect(selectRecords([r("a.md", { status: "accepted" }), r("b.md", { memory_type: "Context" })], o)).toEqual([]);
+    const { applies_to: _, ...untagged } = r("t.md", { status: "accepted", applies_to: ["team:payments"] }).frontmatter;
+    expect(selectRecords([r("t.md", untagged)], o)).toEqual([]);
+  });
+});
+
+describe("orgWideMode", () => {
+  const cfg = (raw: Record<string, unknown>): BankConfig => ({ root: "/", folders: DEFAULT_FOLDERS, raw });
+
+  test("reads query.org_wide, defaulting to include", () => {
+    expect(orgWideMode(cfg({}))).toBe("include");
+    expect(orgWideMode(cfg({ query: { min_score: 0.5 } }))).toBe("include");
+    expect(orgWideMode(cfg({ query: { org_wide: "include" } }))).toBe("include");
+    expect(orgWideMode(cfg({ query: { org_wide: "exclude" } }))).toBe("exclude");
+  });
+
+  test("a bad value or a non-mapping query is an error, not include", () => {
+    expect(orgWideMode(cfg({ query: { org_wide: "exlude" } }))).toEqual({ error: "query.org_wide must be include or exclude" });
+    expect(orgWideMode(cfg({ query: { org_wide: null } }))).toEqual({ error: "query.org_wide must be include or exclude" });
+    expect(orgWideMode(cfg({ query: "x" }))).toEqual({ error: "query is not a mapping" });
   });
 });
 

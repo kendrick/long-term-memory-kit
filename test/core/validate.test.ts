@@ -431,6 +431,22 @@ describe("checkConfig", () => {
     });
   });
 
+  test("query.org_wide accepts include and exclude and rejects anything else", async () => {
+    const base = "schema: 1\nname: acme\nfacet_prefixes: [service]\n";
+    await withScratch(demoBank, async (dir) => {
+      const path = join(dir, "memory-bank.yaml");
+      const findings = (yaml: string) => {
+        writeFileSync(path, yaml);
+        return checkConfig(dir).findings;
+      };
+      expect(findings(`${base}query:\n  org_wide: exclude\n`)).toEqual([]);
+      expect(findings(`${base}query:\n  org_wide: include\n`)).toEqual([]);
+      expect(findings(`${base}query:\n  org_wide: sometimes\n`)).toEqual([
+        expect.objectContaining({ file: "memory-bank.yaml", rule: "config-schema", key: "query", line: 4 }),
+      ]);
+    });
+  });
+
   test("unparseable YAML is one config-schema finding and no config", async () => {
     await withScratch(demoBank, async (dir) => {
       writeFileSync(join(dir, "memory-bank.yaml"), "name: [unclosed\n");

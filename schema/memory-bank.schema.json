@@ -104,7 +104,7 @@
       "additionalProperties": false
     },
     "query": {
-      "description": "Settings for how ltm query ranks --text through recall:. See Stage 0 in docs/retrieval-model.md.",
+      "description": "Settings for ltm query: how it ranks --text through recall: (see Stage 0 in docs/retrieval-model.md) and whether Org-wide Records match a --facet query.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -113,6 +113,11 @@
           "type": "number",
           "minimum": -1,
           "maximum": 1
+        },
+        "org_wide": {
+          "description": "Set to exclude so an Org-wide Record, one with no applies_to, matches no --facet query. It still matches key=value filters, --text, and a query with no Facet. Default include.",
+          "enum": ["include", "exclude"],
+          "default": "include"
         }
       }
     },
