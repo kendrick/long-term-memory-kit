@@ -127,7 +127,7 @@ describe("body search", () => {
     expect(search(records, "kafka", lexical, { body: true })).toEqual(search(records, "kafka"));
   });
 
-  test("body on, empty text: every Record, as today", () => {
+  test("body on, empty text: every Record, same as body off", () => {
     const records = [rec("z.md", { title: "a" }, "x"), rec("a.md", { title: "b" })];
     expect(search(records, "", lexical, { body: true })).toEqual(search(records, ""));
     expect(search(records, "", lexical, { body: true })).toHaveLength(2);

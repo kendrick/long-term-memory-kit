@@ -25,8 +25,7 @@ function countOccurrences(haystack: string, token: string): number {
   return n;
 }
 
-// Title and summary sit in the header, which closes early for a cheap read. The body is opt-in
-// per query, and only as a second tier, so a passing mention can't outrank a Record that's about the topic.
+// Title and summary sit in the header, which closes early for a cheap read. The body is opt-in per query, and only as a second tier, so a passing mention can't outrank a Record that's about the topic.
 function haystack(record: ParsedRecord): string {
   const { title, summary } = record.frontmatter;
   return [title, summary]
