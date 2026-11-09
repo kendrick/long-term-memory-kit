@@ -137,31 +137,35 @@ function parseFrontmatter(yaml: string): { data: Record<string, unknown> } | Ref
   return { data };
 }
 
+// Shared by fmt and amend so the two can't disagree on line endings or the closing
+// fence. `yaml` is null when the file has no frontmatter block.
+function splitForRewrite(
+  text: string,
+): { yaml: string | null; body: string; eol: "\n" | "\r\n"; closingEol: boolean } | Refusal {
+  const split = splitFrontmatter(text);
+  const { line, eol } = firstLineWithEol(text);
+  if (!split) {
+    if (isFenceLine(line)) return { reason: "unterminated frontmatter" };
+    return { yaml: null, body: text, eol, closingEol: true };
+  }
+  // `body` is empty both for `---\n` and for a bare `---` at EOF; only the text's
+  // last byte tells which one the closing fence was.
+  return { yaml: split.frontmatterLines.join("\n"), body: split.body, eol, closingEol: split.body !== "" || text.endsWith("\n") };
+}
+
 export function formatRecordText(text: string, ctx: FmtContext): FmtResult {
   // A BOM hides the opening fence from splitFrontmatter, so the file would read as
   // having none and get a second block stacked on top of the real one.
   if (text.startsWith("\uFEFF")) return { reason: "file starts with a byte order mark" };
 
-  const split = splitFrontmatter(text);
-  let data: Record<string, unknown>;
-  let body: string;
-  let eol: "\n" | "\r\n";
-  let closingEol: boolean;
-  if (split) {
-    const parsed = parseFrontmatter(split.frontmatterLines.join("\n"));
+  const split = splitForRewrite(text);
+  if ("reason" in split) return split;
+  const { body, eol, closingEol } = split;
+  let data: Record<string, unknown> = {};
+  if (split.yaml !== null) {
+    const parsed = parseFrontmatter(split.yaml);
     if ("reason" in parsed) return parsed;
     data = parsed.data;
-    body = split.body;
-    eol = firstLineWithEol(text).eol;
-    // `body` is empty both for `---\n` and for a bare `---` at EOF; only the text's
-    // last byte tells which one the closing fence was.
-    closingEol = body !== "" || text.endsWith("\n");
-  } else {
-    if (isFenceLine(firstLineWithEol(text).line)) return { reason: "unterminated frontmatter" };
-    data = {};
-    body = text;
-    eol = firstLineWithEol(text).eol;
-    closingEol = true;
   }
 
   const warnings: string[] = [];
@@ -189,4 +193,23 @@ export function formatRecordText(text: string, ctx: FmtContext): FmtResult {
 
   const out = `---${eol}${lines}---${closingEol ? eol : ""}${body}`;
   return { text: out, changed: out !== text, warnings };
+}
+
+export type Amendment = {
+  set: Record<string, string | number | boolean | (string | number | boolean)[]>;
+  unset: string[];
+};
+
+// amendRecord owns the id, schema and memory_type refusals; this function just rewrites.
+export function amendRecordText(text: string, change: Amendment): { text: string } | Refusal {
+  const split = splitForRewrite(text);
+  if ("reason" in split) return split;
+  if (split.yaml === null) return { reason: "no frontmatter block" };
+  const parsed = parseFrontmatter(split.yaml);
+  if ("reason" in parsed) return parsed;
+  const data = { ...parsed.data, ...change.set };
+  for (const key of change.unset) delete data[key];
+  const lines = canonicalFrontmatter(data, SCHEMA_KEY_ORDER, split.eol);
+  if (typeof lines !== "string") return lines;
+  return { text: `---${split.eol}${lines}---${split.closingEol ? split.eol : ""}${split.body}` };
 }

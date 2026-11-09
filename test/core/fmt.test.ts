@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parse } from "yaml";
-import { formatRecordText, liftStatus, newId, type FmtResult } from "../../src/core/fmt.ts";
+import { amendRecordText, formatRecordText, liftStatus, newId, type FmtResult } from "../../src/core/fmt.ts";
 import { splitFrontmatter } from "../../src/core/record.ts";
 
 const NYGARD_BODY =
@@ -322,4 +322,46 @@ describe("idempotence", () => {
       expect(twice.text).toBe(once.text);
     });
   }
+});
+
+describe("amendRecordText", () => {
+  const SRC = "---\nschema: 1\nid: aB3dE5fG7h\nmemory_type: Decision\ntitle: T\nstatus: accepted\ndate: 2026-01-01\n---\n\n## Context\n";
+  const none = { set: {}, unset: [] as string[] };
+
+  test("sets one key and changes only its line", () => {
+    const r = amendRecordText(SRC, { set: { last_confirmed: "2026-11-07" }, unset: [] });
+    expect(r).toEqual({ text: SRC.replace("date: 2026-01-01\n", "date: 2026-01-01\nlast_confirmed: 2026-11-07\n") });
+  });
+
+  test("removes a key", () => {
+    expect(amendRecordText(SRC, { set: {}, unset: ["date"] })).toEqual({ text: SRC.replace("date: 2026-01-01\n", "") });
+  });
+
+  test("keeps the body byte for byte", () => {
+    const body = "\n## Context  \n\n```yaml\n---\nx:   1\n```\ntrailing   \n\n\n";
+    const src = SRC.replace("\n## Context\n", body);
+    const r = amendRecordText(src, { set: { status: "superseded" }, unset: [] });
+    expect(r).toEqual({ text: src.replace("status: accepted", "status: superseded") });
+  });
+
+  test("keeps CRLF", () => {
+    const src = SRC.replaceAll("\n", "\r\n");
+    const r = amendRecordText(src, { set: { last_confirmed: "2026-11-07" }, unset: [] });
+    expect(r).toEqual({ text: src.replace("date: 2026-01-01\r\n", "date: 2026-01-01\r\nlast_confirmed: 2026-11-07\r\n") });
+  });
+
+  test("refuses a commented frontmatter", () => {
+    const r = amendRecordText(SRC.replace("title: T", "title: T # why"), none);
+    expect(r).toEqual({ reason: "frontmatter holds a YAML comment, which fmt can't keep" });
+  });
+
+  test("refuses a file with no frontmatter", () => {
+    expect(amendRecordText("## Context\n", none)).toEqual({ reason: "no frontmatter block" });
+  });
+
+  test("writes lists in canonical single-line form", () => {
+    const r = amendRecordText(SRC, { set: { related: ["a", "b"] }, unset: [] });
+    expect(r).toHaveProperty("text");
+    expect((r as { text: string }).text).toContain("\nrelated: [a, b]\n");
+  });
 });
