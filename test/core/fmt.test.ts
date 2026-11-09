@@ -333,6 +333,10 @@ describe("amendRecordText", () => {
     expect(r).toEqual({ text: SRC.replace("date: 2026-01-01\n", "date: 2026-01-01\nlast_confirmed: 2026-11-07\n") });
   });
 
+  test("refuses a leading byte order mark by name, not as a missing block", () => {
+    expect(amendRecordText("\uFEFF" + SRC, none)).toEqual({ reason: "file starts with a byte order mark" });
+  });
+
   test("removes a key", () => {
     expect(amendRecordText(SRC, { set: {}, unset: ["date"] })).toEqual({ text: SRC.replace("date: 2026-01-01\n", "") });
   });

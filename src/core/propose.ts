@@ -236,12 +236,12 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
       const abs = join(tmp, inTree);
       mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, text);
-      return { path, inTree, text };
+      return { path, inTree, text, title };
     },
     ({ path }) => {
       const summary = input.summary === undefined ? [] : [`Summary: ${input.summary}`];
       const body = [`Title: ${input.title}`, `Type: ${input.type}`, ...summary, `Path: ${path}`].join("\n") + "\n";
-      return { message: title, title, body };
+      return body;
     },
   );
   return "refusal" in opened ? opened : { dryRun: false, id, ...opened };
@@ -284,7 +284,6 @@ export async function amendRecord(input: AmendInput, deps: Omit<ProposeDeps, "dr
     warnings.push(line);
     deps.onWarning?.(line);
   });
-  let reviewTitle = "";
   const opened = await openReview(
     deps,
     `ltm/amend/${input.id}-${randomBytes(4).toString("hex")}`,
@@ -301,20 +300,19 @@ export async function amendRecord(input: AmendInput, deps: Omit<ProposeDeps, "dr
       if ("reason" in amended) return { refusal: amended.reason };
       if (amended.text === original) return { refusal: `the amendment changes nothing in ${record.path}` };
       writeFileSync(abs, amended.text);
-      reviewTitle = `Amend ${record.memoryType}: ${String(record.frontmatter.title)}`;
-      return { path: record.path, inTree: inTree(record.path), text: amended.text };
+      return { path: record.path, inTree: inTree(record.path), text: amended.text, title: `Amend ${record.memoryType}: ${String(record.frontmatter.title)}` };
     },
     ({ path }) => {
       const lines = [...setKeys.map((k) => `set ${k}: ${describeValue(change.set[k]!)}`), ...change.unset.map((k) => `unset ${k}`)];
-      return { message: reviewTitle, title: reviewTitle, body: [`Id: ${input.id}`, `Path: ${path}`, ...lines].join("\n") + "\n" };
+      return [`Id: ${input.id}`, `Path: ${path}`, ...lines].join("\n") + "\n";
     },
   );
   return "refusal" in opened ? opened : { id: input.id, ...opened, warnings };
 }
 
 type StageContext = { tmp: string; bankDir: string; fetched: BankConfig; base: string; inTree: (bankPath: string) => string };
-type Staged = { path: string; inTree: string; text: string };
-type Review = { message: string; title: string; body: string };
+// `title` sits on Staged because only stage knows the Record it names, and the title is both the commit message and the change-request title.
+type Staged = { path: string; inTree: string; text: string; title: string };
 type Opened = Omit<Proposed, "dryRun" | "id">;
 
 // Propose and amend share everything from the origin checks to the change request, so a fix to the fetch, worktree or push path can't land in one and miss the other.
@@ -323,7 +321,7 @@ async function openReview(
   branch: string,
   refusalOf: (findings: Finding[]) => ProposeRefusal | null,
   stage: (ctx: StageContext) => Staged | ProposeRefusal,
-  review: (staged: Staged) => Review,
+  review: (staged: Staged) => string,
 ): Promise<ProposeRefusal | Opened> {
   const root = deps.config.root;
   const remoteUrl = gitMaybe(root, ["config", "--get", "remote.origin.url"]);
@@ -359,7 +357,7 @@ async function openReview(
     const inBank = refusalOf(validateBank(bankDir, [staged.path], bankDir));
     if (inBank) return inBank;
     git(tmp, ["add", "--", staged.inTree]);
-    git(tmp, ["commit", "--quiet", "-m", review(staged).message]);
+    git(tmp, ["commit", "--quiet", "-m", staged.title]);
     const sha = git(tmp, ["rev-parse", "HEAD"]).trim();
     // A URL rather than the remote name, so a relative URL like ../bank.git resolves as written. Push from root, never tmp, because git resolves that URL against the -C dir. The worktree shares root's object store, so root already has the commit.
     const pushUrl = git(root, ["remote", "get-url", "--push", "origin"]).trim();
@@ -378,8 +376,8 @@ async function openReview(
   }
 
   const forge = deps.forge ?? chooseAdapter(forgeUrl, deps.env);
-  const { title, body } = review(staged);
-  const { path, text } = staged;
+  const body = review(staged);
+  const { path, text, title } = staged;
   try {
     const { url } = await forge.openChangeRequest({ remoteUrl: forgeUrl, base, head: branch, title, body });
     // Callers print this field. The adapter has already had the raw URL, so only the copy handed back loses its userinfo.

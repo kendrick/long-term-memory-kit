@@ -138,10 +138,13 @@ function parseFrontmatter(yaml: string): { data: Record<string, unknown> } | Ref
 }
 
 // Shared by fmt and amend so the two can't disagree on line endings or the closing
-// fence. `yaml` is null when the file has no frontmatter block.
+// fence.
 function splitForRewrite(
   text: string,
 ): { yaml: string | null; body: string; eol: "\n" | "\r\n"; closingEol: boolean } | Refusal {
+  // A BOM hides the opening fence from splitFrontmatter, so the file would read as
+  // having none and get a second block stacked on top of the real one.
+  if (text.startsWith("\uFEFF")) return { reason: "file starts with a byte order mark" };
   const split = splitFrontmatter(text);
   const { line, eol } = firstLineWithEol(text);
   if (!split) {
@@ -154,10 +157,6 @@ function splitForRewrite(
 }
 
 export function formatRecordText(text: string, ctx: FmtContext): FmtResult {
-  // A BOM hides the opening fence from splitFrontmatter, so the file would read as
-  // having none and get a second block stacked on top of the real one.
-  if (text.startsWith("\uFEFF")) return { reason: "file starts with a byte order mark" };
-
   const split = splitForRewrite(text);
   if ("reason" in split) return split;
   const { body, eol, closingEol } = split;
