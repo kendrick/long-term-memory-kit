@@ -32,7 +32,7 @@ export type TypedThresholdKey = "orphan_days" | "stale_confirmed_days";
 
 const TYPED_THRESHOLD_KEYS: readonly TypedThresholdKey[] = ["orphan_days", "stale_confirmed_days"];
 
-export function thresholdFor(t: Thresholds, r: ParsedRecord, key: TypedThresholdKey): number {
+function thresholdFor(t: Thresholds, r: ParsedRecord, key: TypedThresholdKey): number {
   return t.byType[r.memoryType]?.[key] ?? t[key];
 }
 

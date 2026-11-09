@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, type BankConfig } from "../../src/core/bank.ts";
+import { loadConfig, MEMORY_TYPES, type BankConfig } from "../../src/core/bank.ts";
 import {
   CHECKS,
   daysBetween,
@@ -458,9 +458,22 @@ describe("by_type", () => {
     // The folder sets memoryType, so a Decision-folder Record whose frontmatter says Context doesn't get the Context override.
     const moved = { ...ctx60, path: "_memory/decisions/ctx60.md", memoryType: "Decision" as const };
     expect(orphans([{ ...moved, frontmatter: { ...moved.frontmatter, memory_type: "Context" } }], t)).toEqual([moved.path]);
-    // Other frontmatter changes, and at 100 days old the Context override still applies.
+    // applies_to and age must not change which threshold applies; the next test covers status.
     const changed = rec(ctx60.path, "Context", { id: "ctx60", applies_to: ["service:x"], date: "2026-07-01" });
     expect(orphans([changed], t)).toEqual([]);
+  });
+
+  test("a different live status keeps the Context threshold", () => {
+    const old = rec("_memory/context/prop.md", "Context", { id: "prop", status: "proposed", date: "2025-09-04" });
+    const t = { ...DEFAULTS, byType: { Context: { orphan_days: 365 } } };
+    const msgs = runDoctor([old], TODAY, t).filter((f) => f.check === "orphan").map((f) => f.message);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toEndWith("threshold 365)");
+  });
+
+  test("the schema's by_type memory types match MEMORY_TYPES", async () => {
+    const schema = (await import("../../schema/memory-bank.schema.json")).default;
+    expect(schema.properties.doctor.properties.by_type.propertyNames.enum).toEqual([...MEMORY_TYPES]);
   });
 
   test("Bank-wide and by_type compose", () => {
@@ -501,12 +514,6 @@ describe("by_type", () => {
     expect(bad({ Context: 5 })).toEqual({ error: "doctor.by_type.Context is not a mapping" });
     expect(bad([])).toEqual({ error: "doctor.by_type is not a mapping" });
     expect(bad(null)).toEqual({ error: "doctor.by_type is not a mapping" });
-  });
-
-  test("the module loads with by_type in the schema's doctor block", async () => {
-    const schema = (await import("../../schema/memory-bank.schema.json")).default;
-    expect(Object.keys(schema.properties.doctor.properties)).toContain("by_type");
-    expect(loadThresholds(config({}))).toEqual(DEFAULTS);
   });
 });
 
