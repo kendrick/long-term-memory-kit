@@ -1,12 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { ConfigError, loadConfig, type BankConfig, type MemoryType } from "./bank.ts";
-import { canonicalFrontmatter, SCHEMA_KEY_ORDER } from "./canonical.ts";
-import { newId } from "./fmt.ts";
+import { canonicalFrontmatter, canonicalScalar, SCHEMA_KEY_ORDER } from "./canonical.ts";
+import { amendRecordText, newId, type Amendment } from "./fmt.ts";
 import { chooseAdapter, fallbackUrl, forgeRemote, type ForgeAdapter } from "./forge.ts";
-import { listRecordFiles } from "./query.ts";
+import { listRecordFiles, listRecords } from "./query.ts";
 import { parseRecordFile, RecordError } from "./record.ts";
 import type { Env } from "./resolve.ts";
 import { firstLine } from "./text.ts";
@@ -191,37 +192,145 @@ function checkInLocalCopy(config: BankConfig, path: string, text: string): Findi
   }
 }
 
-export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Promise<ProposeResult> {
-  const { config } = deps;
-  const built = buildRecord(input, config, deps.today);
-  if ("refusal" in built) return built;
-  const { id, text } = built;
-  let path = built.path;
-
-  // validateBank repeats checkRecordText's per-file findings, so each warning goes out once however many checks report it.
+// validateBank repeats checkRecordText's per-file findings, so each warning goes out once however many checks report it.
+function findingsGate(onWarning?: (line: string) => void): (findings: Finding[]) => ProposeRefusal | null {
   const warned = new Set<string>();
-  const refusalOf = (findings: Finding[]): ProposeRefusal | null => {
+  return (findings) => {
     const errors = findings.filter((f) => f.severity === "error");
     if (errors.length > 0) return { refusal: errors.map(formatFinding).join("\n") };
     for (const line of findings.map(formatFinding)) {
       if (warned.has(line)) continue;
       warned.add(line);
-      deps.onWarning?.(line);
+      onWarning?.(line);
     }
     return null;
   };
+}
 
-  const own = refusalOf(checkRecordText(path, input.type, text, facetPrefixesOf(config), config.folders[input.type]).findings);
+export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Promise<ProposeResult> {
+  const { config } = deps;
+  const built = buildRecord(input, config, deps.today);
+  if ("refusal" in built) return built;
+  const { id, text } = built;
+  const refusalOf = findingsGate(deps.onWarning);
+
+  const own = refusalOf(checkRecordText(built.path, input.type, text, facetPrefixesOf(config), config.folders[input.type]).findings);
   if (own) return own;
 
-  if (deps.dryRun) return refusalOf(checkInLocalCopy(config, path, text)) ?? { dryRun: true, id, path, text };
+  if (deps.dryRun) return refusalOf(checkInLocalCopy(config, built.path, text)) ?? { dryRun: true, id, path: built.path, text };
 
-  const root = config.root;
+  const title = `Propose ${input.type}: ${input.title}`;
+  const opened = await openReview(
+    deps,
+    proposalBranch(id),
+    refusalOf,
+    ({ tmp, fetched, base, inTree: inTreeOf }) => {
+      const path = posix.join(fetched.folders[input.type], posix.basename(built.path));
+      const recheck = checkRecordText(path, input.type, text, facetPrefixesOf(fetched), fetched.folders[input.type]);
+      const recheckErrors = recheck.findings.filter((f) => f.severity === "error");
+      if (recheckErrors.length > 0) return { refusal: recheckErrors.map(formatFinding).join("\n") };
+      if (takenIds(fetched).has(id)) return { refusal: `id ${id} is already used by a Record on ${base}; run ltm propose again` };
+      const inTree = inTreeOf(path);
+      const refused = destinationRefusal(tmp, inTree, base);
+      if (refused) return { refusal: refused };
+      const abs = join(tmp, inTree);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, text);
+      return { path, inTree, text };
+    },
+    ({ path }) => {
+      const summary = input.summary === undefined ? [] : [`Summary: ${input.summary}`];
+      const body = [`Title: ${input.title}`, `Type: ${input.type}`, ...summary, `Path: ${path}`].join("\n") + "\n";
+      return { message: title, title, body };
+    },
+  );
+  return "refusal" in opened ? opened : { dryRun: false, id, ...opened };
+}
+
+export type AmendInput = { id: string } & Partial<Amendment>;
+export type Amended = {
+  id: string;
+  path: string;
+  text: string;
+  branch: string;
+  url: string | null;
+  adapter: ForgeAdapter["name"];
+  remoteUrl: string;
+  warnings: string[];
+};
+
+const FIXED_KEYS = ["id", "schema", "memory_type"];
+
+function describeValue(v: string | number | boolean | (string | number | boolean)[]): string {
+  const one = (x: string | number | boolean, inFlow: boolean): string => {
+    const s = canonicalScalar(x, inFlow);
+    return typeof s === "string" ? s : String(x);
+  };
+  return Array.isArray(v) ? `[${v.map((x) => one(x, true)).join(", ")}]` : one(v, false);
+}
+
+export async function amendRecord(input: AmendInput, deps: Omit<ProposeDeps, "dryRun">): Promise<ProposeRefusal | Amended> {
+  const change: Amendment = { set: input.set ?? {}, unset: input.unset ?? [] };
+  const setKeys = Object.keys(change.set);
+  for (const key of [...setKeys, ...change.unset]) {
+    if (FIXED_KEYS.includes(key)) return { refusal: `amend can't change ${key}` };
+  }
+  if (setKeys.length === 0 && change.unset.length === 0) return { refusal: "nothing to amend" };
+  const both = change.unset.find((k) => Object.hasOwn(change.set, k));
+  if (both !== undefined) return { refusal: `${both} is in both set and unset` };
+
+  const warnings: string[] = [];
+  const refusalOf = findingsGate((line) => {
+    warnings.push(line);
+    deps.onWarning?.(line);
+  });
+  let reviewTitle = "";
+  const opened = await openReview(
+    deps,
+    `ltm/amend/${input.id}-${randomBytes(4).toString("hex")}`,
+    refusalOf,
+    ({ bankDir, fetched, base, inTree }) => {
+      // The fetched default branch is the one to search, because the caller's clone may be behind it or still hold a Record origin has dropped.
+      const holders = listRecords(fetched, () => {}).filter((r) => r.frontmatter.id === input.id);
+      if (holders.length === 0) return { refusal: `'${input.id}' matches no Record on ${base}` };
+      if (holders.length > 1) return { refusal: `'${input.id}' is held by ${holders.length} Records on ${base}` };
+      const record = holders[0]!;
+      const abs = join(bankDir, record.path);
+      const original = readFileSync(abs, "utf8");
+      const amended = amendRecordText(original, change);
+      if ("reason" in amended) return { refusal: amended.reason };
+      if (amended.text === original) return { refusal: `the amendment changes nothing in ${record.path}` };
+      writeFileSync(abs, amended.text);
+      reviewTitle = `Amend ${record.memoryType}: ${String(record.frontmatter.title)}`;
+      return { path: record.path, inTree: inTree(record.path), text: amended.text };
+    },
+    ({ path }) => {
+      const lines = [...setKeys.map((k) => `set ${k}: ${describeValue(change.set[k]!)}`), ...change.unset.map((k) => `unset ${k}`)];
+      return { message: reviewTitle, title: reviewTitle, body: [`Id: ${input.id}`, `Path: ${path}`, ...lines].join("\n") + "\n" };
+    },
+  );
+  return "refusal" in opened ? opened : { id: input.id, ...opened, warnings };
+}
+
+type StageContext = { tmp: string; bankDir: string; fetched: BankConfig; base: string; inTree: (bankPath: string) => string };
+type Staged = { path: string; inTree: string; text: string };
+type Review = { message: string; title: string; body: string };
+type Opened = Omit<Proposed, "dryRun" | "id">;
+
+// Propose and amend share everything from the origin checks to the change request, so a fix to the fetch, worktree or push path can't land in one and miss the other.
+async function openReview(
+  deps: Omit<ProposeDeps, "dryRun">,
+  branch: string,
+  refusalOf: (findings: Finding[]) => ProposeRefusal | null,
+  stage: (ctx: StageContext) => Staged | ProposeRefusal,
+  review: (staged: Staged) => Review,
+): Promise<ProposeRefusal | Opened> {
+  const root = deps.config.root;
   const remoteUrl = gitMaybe(root, ["config", "--get", "remote.origin.url"]);
   if (!remoteUrl) return { refusal: NO_ORIGIN };
 
-  const branch = proposalBranch(id);
   let base: string;
+  let staged: Staged;
   let tmp: string | null = null;
   let forgeUrl = remoteUrl;
   try {
@@ -242,22 +351,15 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
     // The caller's checkout can be behind origin, and a folder remapped there would put the file where that branch's validate and queries never look. The commit carries the fetched config, so path and checks follow it.
     const bankDir = bankInRepo === "" ? tmp : join(tmp, bankInRepo);
     const fetched = loadConfig(bankDir);
-    path = posix.join(fetched.folders[input.type], posix.basename(path));
-    const recheck = checkRecordText(path, input.type, text, facetPrefixesOf(fetched), fetched.folders[input.type]);
-    const recheckErrors = recheck.findings.filter((f) => f.severity === "error");
-    if (recheckErrors.length > 0) return { refusal: recheckErrors.map(formatFinding).join("\n") };
-    if (takenIds(fetched).has(id)) return { refusal: `id ${id} is already used by a Record on ${base}; run ltm propose again` };
-    const inTree = bankInRepo === "" ? path : join(bankInRepo, path).split(sep).join("/");
-    const refused = destinationRefusal(tmp, inTree, base);
-    if (refused) return { refusal: refused };
-    const abs = join(tmp, inTree);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, text);
+    const inTree = (p: string) => (bankInRepo === "" ? p : join(bankInRepo, p).split(sep).join("/"));
+    const result = stage({ tmp, bankDir, fetched, base, inTree });
+    if ("refusal" in result) return result;
+    staged = result;
     // checkRecordText sees one file, so rules that span Records, like supersession-facets, only show up once the file sits in the fetched Bank. Naming the file keeps errors already on the default branch from blocking every Proposal.
-    const inBank = refusalOf(validateBank(bankDir, [path], bankDir));
+    const inBank = refusalOf(validateBank(bankDir, [staged.path], bankDir));
     if (inBank) return inBank;
-    git(tmp, ["add", "--", inTree]);
-    git(tmp, ["commit", "--quiet", "-m", `Propose ${input.type}: ${input.title}`]);
+    git(tmp, ["add", "--", staged.inTree]);
+    git(tmp, ["commit", "--quiet", "-m", review(staged).message]);
     const sha = git(tmp, ["rev-parse", "HEAD"]).trim();
     // A URL rather than the remote name, so a relative URL like ../bank.git resolves as written. Push from root, never tmp, because git resolves that URL against the -C dir. The worktree shares root's object store, so root already has the commit.
     const pushUrl = git(root, ["remote", "get-url", "--push", "origin"]).trim();
@@ -276,12 +378,12 @@ export async function proposeRecord(input: ProposalInput, deps: ProposeDeps): Pr
   }
 
   const forge = deps.forge ?? chooseAdapter(forgeUrl, deps.env);
-  const summary = input.summary === undefined ? [] : [`Summary: ${input.summary}`];
-  const body = [`Title: ${input.title}`, `Type: ${input.type}`, ...summary, `Path: ${path}`].join("\n") + "\n";
+  const { title, body } = review(staged);
+  const { path, text } = staged;
   try {
-    const { url } = await forge.openChangeRequest({ remoteUrl: forgeUrl, base, head: branch, title: `Propose ${input.type}: ${input.title}`, body });
+    const { url } = await forge.openChangeRequest({ remoteUrl: forgeUrl, base, head: branch, title, body });
     // Callers print this field. The adapter has already had the raw URL, so only the copy handed back loses its userinfo.
-    return { dryRun: false, id, path, text, branch, url, adapter: forge.name, remoteUrl: redactRemote(remoteUrl) };
+    return { path, text, branch, url, adapter: forge.name, remoteUrl: redactRemote(remoteUrl) };
   } catch (e) {
     // The branch is already on origin, so the fallback link still gets a person to the review.
     const message = redactRemote(firstLine(e instanceof Error ? e.message : String(e)));
