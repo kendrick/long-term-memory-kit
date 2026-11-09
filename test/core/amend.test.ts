@@ -12,7 +12,7 @@ const ID = "cR7mT2vKb5";
 const PATH = `_memory/decisions/cursor-pagination-for-list-endpoints-${ID}.md`;
 
 // A file-path bare origin picks the fallback adapter, so nothing touches the network.
-const amend = (clone: string, input: AmendInput) => amendRecord(input, { config: loadConfig(clone), today: "2026-11-08", env: {} });
+const amend = (clone: string, input: AmendInput) => amendRecord(input, { config: loadConfig(clone), env: {} });
 
 const amendBranches = (bare: string) => git(bare, "for-each-ref", "--format=%(refname)", "refs/heads/ltm/amend/");
 

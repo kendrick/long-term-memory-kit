@@ -8,7 +8,6 @@ import { z } from "zod";
 import pkg from "../../package.json" with { type: "json" };
 import recordSchema from "../../schema/record.schema.json" with { type: "json" };
 import { ConfigError, findBank, isInside, loadConfig } from "../core/bank.ts";
-import { today } from "../core/clock.ts";
 import { amendRecord } from "../core/propose.ts";
 import { listRecords } from "../core/query.ts";
 import { splitFrontmatter } from "../core/record.ts";
@@ -445,7 +444,7 @@ export function createServer(env: Env, cwd: string): McpServer {
       const { root, notes } = at;
       let result;
       try {
-        result = await amendRecord(input, { config: loadConfig(root), today: today(env), env });
+        result = await amendRecord(input, { config: loadConfig(root), env });
       } catch (e) {
         if (!(e instanceof ConfigError)) throw e;
         return fail(configErrorLine("amend", e).trimEnd());

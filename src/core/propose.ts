@@ -269,7 +269,7 @@ function describeValue(v: string | number | boolean | (string | number | boolean
   return Array.isArray(v) ? `[${v.map((x) => one(x, true)).join(", ")}]` : one(v, false);
 }
 
-export async function amendRecord(input: AmendInput, deps: Omit<ProposeDeps, "dryRun">): Promise<ProposeRefusal | Amended> {
+export async function amendRecord(input: AmendInput, deps: Omit<ProposeDeps, "dryRun" | "today">): Promise<ProposeRefusal | Amended> {
   const change: Amendment = { set: input.set ?? {}, unset: input.unset ?? [] };
   const setKeys = Object.keys(change.set);
   for (const key of [...setKeys, ...change.unset]) {
@@ -317,7 +317,7 @@ type Opened = Omit<Proposed, "dryRun" | "id">;
 
 // Propose and amend share everything from the origin checks to the change request, so a fix to the fetch, worktree or push path can't land in one and miss the other.
 async function openReview(
-  deps: Omit<ProposeDeps, "dryRun">,
+  deps: Omit<ProposeDeps, "dryRun" | "today">,
   branch: string,
   refusalOf: (findings: Finding[]) => ProposeRefusal | null,
   stage: (ctx: StageContext) => Staged | ProposeRefusal,

@@ -31,10 +31,10 @@ const amendRefs = (bare: string): string[] =>
   git(bare, "for-each-ref", "--format=%(refname)", "refs/heads/ltm/amend/").split("\n").filter((l) => l !== "");
 
 // The server clones LTM_BANK_URL into $LTM_DATA_DIR/banks/<sha1(url)>; `clone` is that path, so tests can snapshot the server's own clone.
-async function withUrlServer<T>(bare: string, cwd: string, fn: (client: Client, clone: string) => Promise<T>): Promise<T> {
+async function withUrlServer<T>(bare: string, cwd: string, fn: (client: Client, clone: string) => Promise<T>, override: Record<string, string> = {}): Promise<T> {
   const dataDir = mkdtempSync(join(tmpdir(), "ltm-mcp-data-"));
   try {
-    const env = { ...process.env, ...BASE, LTM_BANK_URL: bare, LTM_DATA_DIR: dataDir };
+    const env = { ...process.env, ...BASE, ...override, LTM_BANK_URL: bare, LTM_DATA_DIR: dataDir };
     const clone = join(dataDir, "banks", createHash("sha1").update(bare).digest("hex"));
     return await withMcp(env, cwd, (client) => fn(client, clone));
   } finally {
@@ -43,6 +43,24 @@ async function withUrlServer<T>(bare: string, cwd: string, fn: (client: Client, 
 }
 
 describe("ltm mcp, amend", () => {
+  // amend stamps no date of its own, so a bad LTM_TODAY must not reach it.
+  test(
+    "amend ignores a malformed LTM_TODAY",
+    () =>
+      withGitBank(({ bare }) =>
+        withUrlServer(
+          bare,
+          tmpdir(),
+          async (client) => {
+            ok(await client.callTool({ name: "amend", arguments: { id: ID, set: { last_confirmed: "2026-11-07" } } }));
+            expect(amendRefs(bare)).toHaveLength(1);
+          },
+          { LTM_TODAY: "2026-13-45" },
+        ),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
   test(
     "amend sets last_confirmed on one ltm/amend branch",
     () =>
