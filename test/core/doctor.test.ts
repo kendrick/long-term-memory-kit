@@ -13,12 +13,13 @@ import {
   type Thresholds,
 } from "../../src/core/doctor.ts";
 import { listRecords } from "../../src/core/query.ts";
+import type { ParsedRecord } from "../../src/core/record.ts";
 import { tokenize, type RecallBackend } from "../../src/core/recall.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const demoBank = fileURLToPath(new URL("../../fixtures/demo-bank", import.meta.url));
 const TODAY = "2026-10-09";
-const DEFAULTS: Thresholds = { stale_confirmed_days: 90, proposal_age_days: 30, max_chain_length: 3, orphan_days: 30, near_duplicate_threshold: 0.85 };
+const DEFAULTS: Thresholds = { stale_confirmed_days: 90, proposal_age_days: 30, max_chain_length: 3, orphan_days: 30, near_duplicate_threshold: 0.85, byType: {} };
 
 const F = {
   glossary: "_memory/context/commerce-domain-glossary-xO4bV1cPi0.md",
@@ -414,6 +415,98 @@ describe("orphan", () => {
       await edit(dir, F.sftp, { related: "[relates_to::uH7rF3kWj6]" });
       expect(pick(doctor(dir), F.k8s, "orphan")).toEqual([]);
     });
+  });
+});
+
+describe("by_type", () => {
+  const rec = (path: string, memoryType: ParsedRecord["memoryType"], fm: Record<string, unknown>): ParsedRecord => ({
+    path,
+    memoryType,
+    frontmatter: { status: "accepted", ...fm },
+  });
+  const ctx60 = rec("_memory/context/ctx60.md", "Context", { id: "ctx60", date: "2026-08-10" });
+  const dec60 = rec("_memory/decisions/dec60.md", "Decision", { id: "dec60", date: "2026-08-10" });
+  const files = (fs: DoctorFinding[], check: CheckName) => fs.filter((f) => f.check === check).map((f) => f.file);
+  const orphans = (records: ParsedRecord[], t: Thresholds) => files(runDoctor(records, TODAY, t), "orphan");
+
+  test("a 60-day-old unlinked Context isn't orphan with Context orphan_days 365; a Decision is", () => {
+    expect(orphans([ctx60, dec60], { ...DEFAULTS, byType: { Context: { orphan_days: 365 } } })).toEqual([dec60.path]);
+  });
+
+  test("with no by_type both are orphan", () => {
+    expect(orphans([ctx60, dec60], DEFAULTS)).toEqual([ctx60.path, dec60.path]);
+  });
+
+  test("by_type applies to stale-confirmed too", () => {
+    const fm = { date: "2026-06-11", last_confirmed: "2026-06-11", related: "[relates_to::x]" };
+    const c = rec("_memory/context/c.md", "Context", { id: "c", ...fm });
+    const d = rec("_memory/decisions/d.md", "Decision", { id: "d", ...fm });
+    const t = { ...DEFAULTS, byType: { Context: { stale_confirmed_days: 365 } } };
+    expect(files(runDoctor([c, d], TODAY, t), "stale-confirmed")).toEqual([d.path]);
+  });
+
+  test("the report line names the threshold applied", () => {
+    const old = rec("_memory/context/old.md", "Context", { id: "old", date: "2025-09-04" });
+    const t = { ...DEFAULTS, byType: { Context: { orphan_days: 365 } } };
+    expect(runDoctor([old], TODAY, t).filter((f) => f.check === "orphan").map((f) => f.message)).toEqual([
+      "no related, supersedes, or superseded_by, and no Record relates to it (date 2025-09-04, 400 days old, threshold 365)",
+    ]);
+  });
+
+  test("the folder's type alone picks the threshold", () => {
+    const t = { ...DEFAULTS, byType: { Context: { orphan_days: 365 } } };
+    // The folder sets memoryType, so a Decision-folder Record whose frontmatter says Context doesn't get the Context override.
+    const moved = { ...ctx60, path: "_memory/decisions/ctx60.md", memoryType: "Decision" as const };
+    expect(orphans([{ ...moved, frontmatter: { ...moved.frontmatter, memory_type: "Context" } }], t)).toEqual([moved.path]);
+    // Other frontmatter changes, and at 100 days old the Context override still applies.
+    const changed = rec(ctx60.path, "Context", { id: "ctx60", applies_to: ["service:x"], date: "2026-07-01" });
+    expect(orphans([changed], t)).toEqual([]);
+  });
+
+  test("Bank-wide and by_type compose", () => {
+    const c = rec("_memory/context/c20.md", "Context", { id: "c20", date: "2026-09-19" });
+    const d = rec("_memory/decisions/d20.md", "Decision", { id: "d20", date: "2026-09-19" });
+    expect(orphans([c, d], { ...DEFAULTS, orphan_days: 10, byType: { Context: { orphan_days: 365 } } })).toEqual([d.path]);
+  });
+
+  test("an empty by_type, or an empty entry, means no override", () => {
+    expect(orphans([ctx60, dec60], { ...DEFAULTS, byType: { Context: {} } })).toEqual([ctx60.path, dec60.path]);
+  });
+
+  test("loadThresholds reads by_type", () => {
+    expect(loadThresholds(config({ doctor: { by_type: { Context: { orphan_days: 365 } } } }))).toEqual({
+      ...DEFAULTS,
+      byType: { Context: { orphan_days: 365 } },
+    });
+    expect(loadThresholds(config({ doctor: { orphan_days: 10, by_type: { Context: { stale_confirmed_days: 5 } } } }))).toEqual({
+      ...DEFAULTS,
+      orphan_days: 10,
+      byType: { Context: { stale_confirmed_days: 5 } },
+    });
+    expect(loadThresholds(config({}))).toMatchObject({ byType: {} });
+    expect(loadThresholds(config({ doctor: { by_type: {} } }))).toEqual(DEFAULTS);
+    expect(loadThresholds(config({ doctor: { by_type: { Context: {} } } }))).toEqual({ ...DEFAULTS, byType: { Context: {} } });
+  });
+
+  test("each bad by_type shape returns its error", () => {
+    const bad = (by_type: unknown) => loadThresholds(config({ doctor: { by_type } }));
+    expect(bad({ Project: { orphan_days: 1 } })).toEqual({ error: "doctor.by_type.Project: unknown memory type" });
+    expect(bad({ Context: { max_chain_length: 9 } })).toEqual({ error: "doctor.by_type.Context.max_chain_length: unknown key" });
+    expect(bad({ Context: { orphan_days: 0 } })).toEqual({
+      error: "doctor.by_type.Context.orphan_days must be an integer of 1 or more",
+    });
+    expect(bad({ Context: { stale_confirmed_days: 1.5 } })).toEqual({
+      error: "doctor.by_type.Context.stale_confirmed_days must be an integer of 1 or more",
+    });
+    expect(bad({ Context: 5 })).toEqual({ error: "doctor.by_type.Context is not a mapping" });
+    expect(bad([])).toEqual({ error: "doctor.by_type is not a mapping" });
+    expect(bad(null)).toEqual({ error: "doctor.by_type is not a mapping" });
+  });
+
+  test("the module loads with by_type in the schema's doctor block", async () => {
+    const schema = (await import("../../schema/memory-bank.schema.json")).default;
+    expect(Object.keys(schema.properties.doctor.properties)).toContain("by_type");
+    expect(loadThresholds(config({}))).toEqual(DEFAULTS);
   });
 });
 

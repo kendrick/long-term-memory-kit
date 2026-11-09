@@ -1,5 +1,5 @@
 import memoryBankSchema from "../../schema/memory-bank.schema.json" with { type: "json" };
-import { isMapping, MEMORY_TYPES, type BankConfig } from "./bank.ts";
+import { isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
 import { isCalendarDate } from "./clock.ts";
 import { RETIRED_STATUSES } from "./query.ts";
 import { tokenize, type RecallBackend } from "./recall.ts";
@@ -25,9 +25,20 @@ export type Thresholds = {
   max_chain_length: number;
   orphan_days: number;
   near_duplicate_threshold: number;
+  byType: Partial<Record<MemoryType, Partial<Record<TypedThresholdKey, number>>>>;
 };
 
-const THRESHOLD_KEYS: readonly (keyof Thresholds)[] = [
+export type TypedThresholdKey = "orphan_days" | "stale_confirmed_days";
+
+const TYPED_THRESHOLD_KEYS: readonly TypedThresholdKey[] = ["orphan_days", "stale_confirmed_days"];
+
+export function thresholdFor(t: Thresholds, r: ParsedRecord, key: TypedThresholdKey): number {
+  return t.byType[r.memoryType]?.[key] ?? t[key];
+}
+
+type FlatThresholdKey = Exclude<keyof Thresholds, "byType">;
+
+const THRESHOLD_KEYS: readonly FlatThresholdKey[] = [
   "stale_confirmed_days",
   "proposal_age_days",
   "max_chain_length",
@@ -38,14 +49,15 @@ const THRESHOLD_KEYS: readonly (keyof Thresholds)[] = [
 // Read from the config schema rather than copied in, so the defaults `ltm doctor` applies and the ones the
 // schema documents can't drift apart.
 const DEFAULT_THRESHOLDS: Readonly<Thresholds> = (() => {
-  const props: Record<string, { default?: unknown }> = memoryBankSchema.properties.doctor.properties;
-  const out = {} as Thresholds;
+  const props: Record<string, object & { default?: unknown }> = memoryBankSchema.properties.doctor.properties;
+  const out = { byType: {} } as Thresholds;
   for (const key of THRESHOLD_KEYS) {
     const v = props[key]?.default;
     if (!isValidThreshold(key, v)) throw new Error(`schema/memory-bank.schema.json: doctor.${key} has no usable default`);
     out[key] = v;
   }
-  if (Object.keys(props).some((k) => !(THRESHOLD_KEYS as readonly string[]).includes(k))) {
+  // by_type's entries override other thresholds and carry no default of their own.
+  if (Object.keys(props).some((k) => k !== "by_type" && !(THRESHOLD_KEYS as readonly string[]).includes(k))) {
     throw new Error("schema/memory-bank.schema.json: doctor lists a key the Thresholds type doesn't");
   }
   return Object.freeze(out);
@@ -59,19 +71,25 @@ function isScoreThreshold(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v) && v > 0 && v < 1;
 }
 
-function isValidThreshold(key: keyof Thresholds, v: unknown): v is number {
+function isValidThreshold(key: FlatThresholdKey, v: unknown): v is number {
   return key === "near_duplicate_threshold" ? isScoreThreshold(v) : isThreshold(v);
 }
 
 export function loadThresholds(config: BankConfig): Thresholds | { error: string } {
-  const out: Thresholds = { ...DEFAULT_THRESHOLDS };
+  const out: Thresholds = { ...DEFAULT_THRESHOLDS, byType: {} };
   const raw = config.raw.doctor;
   if (raw === undefined) return out;
   // `doctor:` with no value parses as null, which the schema rejects too, so it isn't read as "no overrides".
   if (!isMapping(raw)) return { error: "doctor is not a mapping" };
+  if (raw.by_type !== undefined) {
+    const byType = loadByType(raw.by_type);
+    if ("error" in byType) return byType;
+    out.byType = byType.value;
+  }
   for (const [key, v] of Object.entries(raw)) {
+    if (key === "by_type") continue;
     if (!(THRESHOLD_KEYS as readonly string[]).includes(key)) return { error: `doctor.${key}: unknown key` };
-    if (!isValidThreshold(key as keyof Thresholds, v)) {
+    if (!isValidThreshold(key as FlatThresholdKey, v)) {
       return {
         error:
           key === "near_duplicate_threshold"
@@ -79,9 +97,27 @@ export function loadThresholds(config: BankConfig): Thresholds | { error: string
             : `doctor.${key} must be an integer of 1 or more`,
       };
     }
-    out[key as keyof Thresholds] = v;
+    out[key as FlatThresholdKey] = v;
   }
   return out;
+}
+
+function loadByType(raw: unknown): { value: Thresholds["byType"] } | { error: string } {
+  if (!isMapping(raw)) return { error: "doctor.by_type is not a mapping" };
+  const value: Thresholds["byType"] = {};
+  for (const [type, entry] of Object.entries(raw)) {
+    if (!(MEMORY_TYPES as readonly string[]).includes(type)) return { error: `doctor.by_type.${type}: unknown memory type` };
+    const at = `doctor.by_type.${type}`;
+    if (!isMapping(entry)) return { error: `${at} is not a mapping` };
+    const keys: Partial<Record<TypedThresholdKey, number>> = {};
+    for (const [key, v] of Object.entries(entry)) {
+      if (!(TYPED_THRESHOLD_KEYS as readonly string[]).includes(key)) return { error: `${at}.${key}: unknown key` };
+      if (!isThreshold(v)) return { error: `${at}.${key} must be an integer of 1 or more` };
+      keys[key as TypedThresholdKey] = v;
+    }
+    value[type as MemoryType] = keys;
+  }
+  return { value };
 }
 
 // Howard Hinnant's days_from_civil, in integers. Date.UTC would read years 0-99 as 1900-1999.
@@ -144,9 +180,9 @@ const finding = (file: string, check: CheckName, message: string, related: strin
 });
 
 function staleConfirmed(ctx: DoctorContext): DoctorFinding[] {
-  const t = ctx.thresholds.stale_confirmed_days;
   const out: DoctorFinding[] = [];
   for (const r of ctx.records) {
+    const t = thresholdFor(ctx.thresholds, r, "stale_confirmed_days");
     // A Proposal hasn't been confirmed yet; `stale-proposal` covers its age.
     if (!isLive(r) || r.frontmatter.status === "proposed") continue;
     const hasConfirmed = !absent(r.frontmatter.last_confirmed);
@@ -244,9 +280,9 @@ function longChain(ctx: DoctorContext): DoctorFinding[] {
 }
 
 function orphan(ctx: DoctorContext): DoctorFinding[] {
-  const t = ctx.thresholds.orphan_days;
   const out: DoctorFinding[] = [];
   for (const r of ctx.records) {
+    const t = thresholdFor(ctx.thresholds, r, "orphan_days");
     if (!isLive(r)) continue;
     const v = dateField(r, "date");
     if (v === null) continue;

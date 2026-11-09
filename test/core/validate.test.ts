@@ -367,6 +367,40 @@ describe("checkConfig", () => {
     });
   });
 
+  describe("doctor.by_type", () => {
+    const findingsFor = (byType: string) =>
+      withScratch(demoBank, async (dir) => {
+        writeFileSync(
+          join(dir, "memory-bank.yaml"),
+          `schema: 1\nname: acme\nfacet_prefixes: [service]\ndoctor:\n  by_type:\n    ${byType}\n`,
+        );
+        return checkConfig(dir).findings;
+      });
+
+    test("config-schema rejects by_type naming an unknown memory type", async () => {
+      // Ajv reports a propertyNames miss twice, once for the enum and once for the name.
+      const findings = await findingsFor("Project: { orphan_days: 5 }");
+      expect(findings.length).toBeGreaterThan(0);
+      for (const f of findings) expect(f).toMatchObject({ rule: "config-schema", key: "doctor", line: 4 });
+    });
+
+    test("config-schema rejects an unknown threshold key under by_type", async () => {
+      expect(await findingsFor("Context: { proposal_age_days: 5 }")).toEqual([
+        expect.objectContaining({ rule: "config-schema", key: "doctor", line: 4 }),
+      ]);
+    });
+
+    test("config-schema rejects a by_type threshold under 1", async () => {
+      expect(await findingsFor("Context: { orphan_days: 0 }")).toEqual([
+        expect.objectContaining({ rule: "config-schema", key: "doctor", line: 4 }),
+      ]);
+    });
+
+    test("by_type with both covered keys is valid", async () => {
+      expect(await findingsFor("Context: { orphan_days: 365, stale_confirmed_days: 180 }")).toEqual([]);
+    });
+  });
+
   test("recall.mode vector needs doctor.near_duplicate_threshold; search keeps its default", async () => {
     const base = "schema: 1\nname: acme\nfacet_prefixes: [service]\n";
     const recall = (mode: string) => `recall: { backend: qmd, mode: ${mode}, collections: { Decision: decisions } }\n`;

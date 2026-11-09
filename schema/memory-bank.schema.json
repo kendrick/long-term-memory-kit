@@ -84,6 +84,19 @@
           "exclusiveMinimum": 0,
           "exclusiveMaximum": 1,
           "default": 0.85
+        },
+        "by_type": {
+          "description": "Override orphan_days or stale_confirmed_days for one memory type. A type with no entry uses the Bank-wide value.",
+          "type": "object",
+          "propertyNames": { "enum": ["Decision", "PolicyRule", "Exception", "Context"] },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "orphan_days": { "type": "integer", "minimum": 1 },
+              "stale_confirmed_days": { "type": "integer", "minimum": 1 }
+            }
+          }
         }
       }
     },
