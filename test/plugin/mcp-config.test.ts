@@ -28,7 +28,7 @@ function interpolate(s: string, userConfig: Record<string, string>, pluginData: 
 
 describe("plugin.json mcpServers.ltm", () => {
   test(
-    "starts through an `ltm` on PATH and serves the six tools from the configured Bank",
+    "starts through an `ltm` on PATH and serves the seven tools from the configured Bank",
     () =>
       withDemoGitBank(async (bank) => {
         const manifest = JSON.parse(readFileSync(join(repo, ".claude-plugin/plugin.json"), "utf8")) as Manifest;
@@ -57,7 +57,7 @@ describe("plugin.json mcpServers.ltm", () => {
           await client.connect(transport);
           try {
             const { tools } = await client.listTools();
-            expect(tools.map((t) => t.name).sort()).toEqual(["facets", "head", "propose", "query", "read", "validate"]);
+            expect(tools.map((t) => t.name).sort()).toEqual(["amend", "facets", "head", "propose", "query", "read", "validate"]);
             // cwd holds no Bank, so this commit can only come from the env the manifest mapped bank_path into.
             const r = await client.callTool({ name: "query", arguments: {} });
             expect(r.isError ?? false).toBe(false);

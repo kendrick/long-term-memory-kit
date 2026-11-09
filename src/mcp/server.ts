@@ -8,6 +8,8 @@ import { z } from "zod";
 import pkg from "../../package.json" with { type: "json" };
 import recordSchema from "../../schema/record.schema.json" with { type: "json" };
 import { ConfigError, findBank, isInside, loadConfig } from "../core/bank.ts";
+import { today } from "../core/clock.ts";
+import { amendRecord } from "../core/propose.ts";
 import { listRecords } from "../core/query.ts";
 import { splitFrontmatter } from "../core/record.ts";
 import { resolveBankFlag, resolveBanks, type Env } from "../core/resolve.ts";
@@ -418,6 +420,41 @@ export function createServer(env: Env, cwd: string): McpServer {
       } finally {
         if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
       }
+    },
+  );
+
+  const scalar = z.union([z.string(), z.number(), z.boolean()]);
+  server.registerTool(
+    "amend",
+    {
+      description:
+        "Change frontmatter keys on an existing Record, by id, through a new ltm/amend branch and change request, the same review path as propose. Never edits the body.",
+      inputSchema: z.object({
+        id: z.string().describe(schemaDesc("id")),
+        set: z
+          .record(z.string(), z.union([scalar, z.array(scalar)]))
+          .optional()
+          .describe("Frontmatter keys to set, each to a scalar or a flat list. Never id, schema, or memory_type."),
+        unset: z.array(z.string()).optional().describe("Frontmatter keys to remove. Never id, schema, or memory_type."),
+        bank: bankInput,
+      }),
+    },
+    async (input) => {
+      const at = await pickRoot("amend", input.bank, false);
+      if ("content" in at) return at;
+      const { root, notes } = at;
+      let result;
+      try {
+        result = await amendRecord(input, { config: loadConfig(root), today: today(env), env });
+      } catch (e) {
+        if (!(e instanceof ConfigError)) throw e;
+        return fail(configErrorLine("amend", e).trimEnd());
+      }
+      // When the branch was pushed but the adapter failed, the refusal carries a fallback review URL, which `ltm propose` also prints.
+      if ("refusal" in result) return fail(result.url === undefined ? result.refusal : `${result.refusal}\n${result.url}`);
+      const { id, path, branch, url, adapter, warnings } = result;
+      const structuredContent = withCommits({ id, path, branch, url, adapter, warnings }, bankCommits([namedRoot(root)]), notes);
+      return { structuredContent, content: [{ type: "text", text: JSON.stringify(structuredContent, null, 2) }] };
     },
   );
 

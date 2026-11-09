@@ -93,6 +93,8 @@ ltm deprecate cR7mT2vKb5
 
 Both commands accept only an accepted Record and write nothing if any Record you name is refused. Editing `last_confirmed` or `status` by hand does the same thing.
 
+An agent with the `ltm` MCP server connected can confirm a Record without a checkout of the Bank. It calls the `amend` tool with the Record's `id` and `set: { last_confirmed: "<today>" }`, where `<today>` is a `YYYY-MM-DD` date. `amend` pushes the change to a new `ltm/amend` branch and opens a change request, so the confirmation goes through the same review as a `propose`.
+
 To list the Records that have never been confirmed, run this from the Bank root:
 
 ```sh
