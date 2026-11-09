@@ -23,6 +23,12 @@ describe("docs/doctor.md", () => {
     expect([...sections.keys()].sort()).toEqual(CHECKS.map((c) => c.name).sort());
   });
 
+  test("names by_type and the two thresholds it covers", () => {
+    const para = doc.split(/\n\s*\n/).find((p) => p.includes("by_type")) ?? "";
+    expect(para).toContain("orphan_days");
+    expect(para).toContain("stale_confirmed_days");
+  });
+
   for (const { name } of CHECKS) {
     describe(name, () => {
       for (const label of LABELS) {

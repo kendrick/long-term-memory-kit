@@ -115,6 +115,36 @@ describe("ltm doctor", () => {
     });
   });
 
+  test("by_type: Context orphan_days 365 silences Context orphans only", async () => {
+    await withScratch(demo, async (dir) => {
+      const rec = (type: string, id: string) =>
+        `---\nschema: 1\nid: ${id}\nmemory_type: ${type}\ntitle: Lonely ${type}\nstatus: accepted\ndate: 2026-08-10\nsummary: An unlinked ${type} Record.\napplies_to: [domain:commerce]\nowners: [team:commerce-architecture]\n---\n\nBody.\n`;
+      const ctx = "_memory/context/lonely-context-zZ1aA2bB3c.md";
+      const dec = "_memory/decisions/lonely-decision-zZ4dD5eE6f.md";
+      writeFileSync(join(dir, ctx), rec("Context", "zZ1aA2bB3c"));
+      writeFileSync(join(dir, dec), rec("Decision", "zZ4dD5eE6f"));
+      const cfg = join(dir, "memory-bank.yaml");
+      writeFileSync(cfg, `${readFileSync(cfg, "utf8")}doctor:\n  by_type:\n    Context: { orphan_days: 365 }\n`);
+      const r = await ltm(dir, "doctor", "--json");
+      expect(r.exitCode).toBe(0);
+      const files = (JSON.parse(r.stdout) as { file: string; check: string }[])
+        .filter((f) => f.check === "orphan")
+        .map((f) => f.file);
+      expect(files).toContain(dec);
+      expect(files).not.toContain(ctx);
+    });
+  });
+
+  test("a bad by_type exits 1 naming the key", async () => {
+    await withScratch(demo, async (dir) => {
+      const cfg = join(dir, "memory-bank.yaml");
+      writeFileSync(cfg, `${readFileSync(cfg, "utf8")}doctor:\n  by_type: { Project: { orphan_days: 5 } }\n`);
+      const r = await ltm(dir, "doctor");
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toContain("doctor.by_type.Project: unknown memory type");
+    });
+  });
+
   describe("--bank", () => {
     // resolveBankFlag reads the user config under HOME; an empty one keeps the real config out.
     const withHome = async <T>(fn: (benv: Record<string, string>) => Promise<T>) => {

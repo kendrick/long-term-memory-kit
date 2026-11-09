@@ -8,6 +8,14 @@ Retired Records (`status` of `superseded`, `deprecated`, or `rejected`) are skip
 
 There is no suppression list. To clear a finding, edit the Record, or change a threshold under `doctor:` in `memory-bank.yaml`. The five thresholds are `stale_confirmed_days`, `proposal_age_days`, `max_chain_length`, `orphan_days`, and `near_duplicate_threshold`. The first four must be integers of 1 or more, and `near_duplicate_threshold` must be a number between 0 and 1, exclusive. Each default is read from `schema/memory-bank.schema.json`.
 
+`orphan_days` and `stale_confirmed_days` can also vary by memory type. `doctor.by_type` maps a memory type (`Decision`, `PolicyRule`, `Exception`, or `Context`) to its own value for either one, and a type without an entry uses the Bank-wide value. The other three thresholds have no per-type form. An unknown type or key under `by_type` fails `ltm validate` and `ltm doctor`.
+
+```yaml
+doctor:
+  by_type:
+    Context: { orphan_days: 365, stale_confirmed_days: 180 }
+```
+
 Every report line below except `near-duplicate`'s came from `ltm doctor` run with `LTM_TODAY=2026-10-09` on a scratch copy of `fixtures/demo-bank`. Where the demo Bank doesn't fire a check, the copy had a frontmatter edit that the section names.
 
 ## stale-confirmed
@@ -20,7 +28,7 @@ Every report line below except `near-duplicate`'s came from `ltm doctor` run wit
 
 **False positives:** A Record that is still correct but that nobody re-read. A reference Record about a stable system can sit past 90 days and stay accurate.
 
-**Dismissal:** Re-read the Record (`ltm show <id>` prints it). If it's still true, run `ltm confirm <id>` to set `last_confirmed` to today's date. If it's no longer true, run `ltm deprecate <id>` to set its `status` to `deprecated`. Both commands accept only an accepted Record, and editing the field by hand works too. If 90 days is too short for your Bank, raise `doctor.stale_confirmed_days`.
+**Dismissal:** Re-read the Record (`ltm show <id>` prints it). If it's still true, run `ltm confirm <id>` to set `last_confirmed` to today's date. If it's no longer true, run `ltm deprecate <id>` to set its `status` to `deprecated`. Both commands accept only an accepted Record, and editing the field by hand works too. If 90 days is too short for your Bank, raise `doctor.stale_confirmed_days`. A type whose Records are meant to sit untouched can get a longer threshold under `doctor.by_type`.
 
 ## review-due
 
@@ -68,7 +76,7 @@ Every report line below except `near-duplicate`'s came from `ltm doctor` run wit
 
 **False positives:** A standalone Record that has nothing to link to, such as a glossary of terms.
 
-**Dismissal:** Add a `related` entry to the Record, or add one pointing at it from another Record. Retire the Record if it no longer matters. To loosen the check, raise `doctor.orphan_days`.
+**Dismissal:** Add a `related` entry to the Record, or add one pointing at it from another Record. Retire the Record if it no longer matters. To loosen the check, raise `doctor.orphan_days`. A type whose Records are meant to sit untouched can get a longer threshold under `doctor.by_type`.
 
 ## broken-related
 
