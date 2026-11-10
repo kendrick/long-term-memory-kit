@@ -39,6 +39,6 @@ With the `ltm` MCP server connected, call its `propose` tool with `from` set to 
 ## Without `ltm`
 
 1. Create a branch in the Bank.
-2. Write a Record with `status: proposed` under the folder for its memory type, such as `_memory/decisions/`. Set `promoted_from` to `<org>/<repo>:<path>`, naming this repo and the file.
+2. Write a Record with `status: proposed` under the folder for its memory type, such as `_memory/decisions/`. Set `promoted_from` to `<org>/<repo>:<path>`, naming this repo and the file. For a decision-log entry, append `#<slug>` to name the entry: `<org>/<repo>:<path>#<slug>`. To build the slug, lowercase the full heading text, date prefix included, and replace each run of characters outside `a`–`z` and `0`–`9` with one `-`. Then drop any leading or trailing `-`. For example, `## 2026-10-02: Batch order events per partition` gives `#2026-10-02-batch-order-events-per-partition`.
 3. Open a pull request in the Bank.
-4. Add `promoted_to: <bank>:<id>` to the source file's frontmatter, where `<bank>` is the `name` in the Bank's `memory-bank.yaml`. Commit it in this repo.
+4. Add `promoted_to: <bank>:<id>` to the source file, where `<bank>` is the `name` in the Bank's `memory-bank.yaml`. For an ADR, put it in the frontmatter. For a decision-log entry, put it on its own line at the end of the entry's metadata block, the run of `status:`, `date:`, `superseded_by:`, and `promoted_to:` lines under the heading. When the entry has no block, put it directly under the heading. `guide/promotion.md` lists the line forms the block accepts. Commit it in this repo.

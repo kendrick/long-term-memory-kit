@@ -94,7 +94,7 @@ ltm promote docs/adr/0003-use-ioredis.md --bank ../acme-bank
 ltm promote _working-memory/decisionLog.md --entry "Cap retries at three per request" --bank ../acme-bank
 ```
 
-`--dry-run` prints the Proposal without writing anything. Without it, `ltm promote` pushes the Proposal to an `ltm/propose/<id>` branch on the Bank's origin and prints where to review it. It also adds a `promoted_to` line to the source file's frontmatter. Commit that line in your repo, so the next reader knows the decision now lives in the Bank. The Proposal binds agents only after Acceptance, when the Bank's merge review moves it to `accepted`. [Promotion](guide/promotion.md) covers each step.
+`--dry-run` prints the Proposal without writing anything. Without it, `ltm promote` pushes the Proposal to an `ltm/propose/<id>` branch on the Bank's origin and prints where to review it. It also stamps the source file with a `promoted_to` line. For an ADR, the line goes in the frontmatter. For a decision-log entry, it goes under the entry's heading, as the last line of the entry's metadata block when it has one. Commit that line in your repo, so the next reader knows the decision now lives in the Bank. The Proposal binds agents only after Acceptance, when the Bank's merge review moves it to `accepted`. [Promotion](guide/promotion.md) covers each step.
 
 ## Connect a Consumer Repo
 
