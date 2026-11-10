@@ -1,0 +1,2 @@
+decisionLog.md is a byte-identical copy of template/_working-memory/decisionLog.md from kendrick/working-memory-kit at commit 19a9a80a3c021b6b105bfa155b60fd60c3fb8ac2.
+Refresh it from a newer commit and update this SHA together; test/cli/promote.test.ts promotes against it.

@@ -174,6 +174,37 @@ describe("ltm promote", () => {
     });
   }, GIT_TEST_TIMEOUT);
 
+  test("--entry promotes from the pinned working-memory-kit template", async () => {
+    const template = readFileSync(join(import.meta.dir, "../../fixtures/working-memory-kit/decisionLog.md"), "utf8");
+    expect(template).toContain("_No decisions logged yet._");
+    await withConsumerRepo(async (repo) => {
+      await withGitBank(async ({ bare, clone }) => {
+        const log = "_working-memory/decisionLog.md";
+        // The template's only example sits in a fence, so it must not count as an entry.
+        writeFileSync(join(repo, log), template);
+        const refused = await ltm(repo, "promote", log, "--entry", "Short title", "--bank", clone);
+        expect(refused.exitCode).toBe(1);
+        expect(refused.stderr).toContain("has no '## Short title' heading");
+
+        const entry =
+          "## 2026-10-01: Cap retries at three per request\nstatus: accepted\ndate: 2026-10-01\n\n" +
+          "**Context:** Providers buckled under retry storms.\n**Decision:** Retry at most three times per request.\n**Alternatives considered:** Unbounded retries; rejected.";
+        writeFileSync(join(repo, log), template.replace("_No decisions logged yet._", entry));
+        const r = await ltm(repo, "promote", log, "--entry", "Cap retries at three per request", "--bank", clone, "--json");
+        expect(r.exitCode).toBe(0);
+        const out = JSON.parse(r.stdout);
+        const record = git(bare, "show", `${out.branch}:${out.path}`);
+        const closing = record.indexOf("\n---\n", 4);
+        const body = record.slice(closing + "\n---\n".length);
+        expect(record).toContain("**Decision:** Retry at most three times per request.");
+        expect(record).toContain(`promoted_from: acme/order-service:${log}#2026-10-01-cap-retries-at-three-per-request`);
+        expect(body).not.toContain("status: accepted");
+        expect(body).not.toContain("date: 2026-10-01");
+        expect(readFileSync(join(repo, log), "utf8")).toContain(`date: 2026-10-01\npromoted_to: acme:${out.id}\n\n**Context:**`);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
   test("--json carries the propose fields plus stamped.path and stamped.line", async () => {
     await withConsumerRepo(async (repo) => {
       await withGitBank(async ({ clone }) => {
