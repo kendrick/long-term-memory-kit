@@ -112,6 +112,15 @@ describe("ltm query from a Consumer repo", () => {
     expect(r.stderr).not.toContain("not mapped");
   });
 
+  // --bank bypasses the case-sensitive routing rules, so the Acme owner still reaches the consumers lookup.
+  test("an Acme/Order-Service origin finds the lowercase consumers key under --bank", async () => {
+    setOrigin("git@github.com:Acme/Order-Service.git");
+    const r = await ltm(repo, "query", "--bank", "acme", "--type", "Exception");
+    expect(r.exitCode).toBe(0);
+    expect(lines(r.stdout)).toContainEqual(expect.stringMatching(new RegExp(`^acme:${REDIS}  `)));
+    expect(r.stderr).not.toContain("not mapped");
+  });
+
   test("an unmapped repo gets the demo Bank's own org-wide Record, with the not-mapped note", async () => {
     setOrigin("https://github.com/acme/billing");
     const r = await ltm(repo, "query", "--json");
