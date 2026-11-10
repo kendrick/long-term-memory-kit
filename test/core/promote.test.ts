@@ -239,6 +239,12 @@ describe("readEntry", () => {
     expect(source(readEntry("log.md", "# Log\n\n## A\n\nText.\n\n## B\npromoted_to: acme:b\n", "A")).existing).toBeNull();
   });
 
+  test("a promoted_to line with no space after the colon, or no value, still gives existing", () => {
+    expect(source(readEntry("log.md", "# Log\n\n## A\npromoted_to:acme:x\n\nText.\n", "A")).existing).toBe("acme:x");
+    expect(source(readEntry("log.md", "# Log\n\n## A\npromoted_to:\n\nText.\n", "A")).existing).toBe("");
+    expect(source(readEntry("log.md", "# Log\n\n## A\n\nowner:x\nText.\n", "A")).existing).toBeNull();
+  });
+
   test("CRLF entries stamp with CRLF and match their heading without the \\r", () => {
     const text = "# Log\r\n\r\n## A\r\nText.\r\n## B\r\nMore.\r\n";
     const s = source(readEntry("log.md", text, "A"));

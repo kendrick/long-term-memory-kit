@@ -105,8 +105,8 @@ function datedTitle(text: string): string | null {
   return m && isCalendarDate(m[1]!) ? m[2]! : null;
 }
 
-// Metadata block shared with working-memory-kit: consecutive key lines straight under the heading. The key set is closed so `owner: x` stays body text; plain, list and bold forms all count so a styled stamp can't end the block before it's seen.
-const META_LINE = /^(?:(?:- )?(status|date|superseded_by|promoted_to): |\*\*(status|date|superseded_by|promoted_to):\*\* )/;
+// Metadata block shared with working-memory-kit: key lines straight under the heading. The key set is closed, so `owner: x` stays body text. Plain, list and bold forms all count, so a styled stamp can't end the block before it's seen. Plain and list forms don't need a space after the colon, so a hand-typed `promoted_to:acme:x` still blocks a second Promotion.
+const META_LINE = /^(?:(?:- )?(status|date|superseded_by|promoted_to):|\*\*(status|date|superseded_by|promoted_to):\*\* )/;
 
 export function readEntry(rel: string, text: string, heading: string): PromoteSource | { refusal: string } {
   const lines = scanLines(text);
@@ -119,7 +119,7 @@ export function readEntry(rel: string, text: string, heading: string): PromoteSo
   const match = matches[0]!;
   const end = headings.find((l) => l.start > match.start)?.start ?? text.length;
   const fullHeading = match.content.slice(3);
-  // A fence opener isn't a block line, so a fenced yaml sample under the heading yields an empty block and its promoted_to stays ignored.
+  // A fence opener doesn't match META_LINE, so a fenced yaml sample under the heading gives an empty block and its promoted_to is ignored.
   const block: Line[] = [];
   for (let i = lines.indexOf(match) + 1; i < lines.length && lines[i]!.start < end && META_LINE.test(lines[i]!.content); i++) block.push(lines[i]!);
   const last = block.at(-1) ?? match;
