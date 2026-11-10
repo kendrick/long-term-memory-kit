@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Runs a compiled ltm against a copy of fixtures/demo-bank where neither node nor bun exists, proving the binary stands alone.
 # Linux binaries run in debian:bookworm-slim under Docker. Darwin binaries can't run in a container, so they run on the host under `env -i` with a PATH that holds no node or bun.
+# macOS 27 kills a darwin binary whose signature doesn't verify, but macos-15 runners don't, so the smoke checks it explicitly (#183).
 set -euo pipefail
 
 bin="${1:?usage: smoke-binary.sh <dist/ltm-os-arch>}"
@@ -101,6 +102,9 @@ if [ -n "$platform" ]; then
     -v "$bin:/usr/local/bin/ltm:ro" -v "$tmp:/smoke" -e TMPDIR=/smoke/t -e HOST_ID="$(id -u):$(id -g)" \
     debian:bookworm-slim sh -c 'sh /smoke/steps.sh "$@"; rc=$?; chown -R "$HOST_ID" /smoke; exit $rc' sh /usr/local/bin/ltm /smoke/bank
 else
+  # Runs on the host, outside `env -i`, so codesign resolves whatever PATH the caller has; a missing codesign fails too.
+  codesign --verify --strict "$bin" || { echo "smoke: FAIL codesign: $bin doesn't pass codesign --verify --strict" >&2; exit 1; }
+  echo "smoke: ok codesign"
   mkdir "$tmp/home" "$tmp/t"
   env -i PATH=/usr/bin:/bin HOME="$tmp/home" TMPDIR="$tmp/t" sh "$tmp/steps.sh" "$bin" "$tmp/bank"
 fi
