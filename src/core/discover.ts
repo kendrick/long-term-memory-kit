@@ -5,6 +5,7 @@ import { isMapping, type BankConfig } from "./bank.ts";
 import { fenceTracker } from "./markdown.ts";
 import { listRecords } from "./query.ts";
 import { splitFrontmatter, type ParsedRecord } from "./record.ts";
+import { repoIdentity } from "./resolve.ts";
 import { byCodeUnit, firstLine } from "./text.ts";
 
 export type Kind = "adr" | "pr" | "transcript" | "prd" | "document" | "binary-doc";
@@ -124,21 +125,28 @@ export function citedBy(
   repoRelPath: string | null,
   records: ParsedRecord[],
   remoteRef?: string,
+  repoRef?: string,
 ): string[] {
   const ids: string[] = [];
   for (const r of records) {
     const refs = r.frontmatter.source_refs;
+    const pf = r.frontmatter.promoted_from;
     const id = r.frontmatter.id;
-    if (!Array.isArray(refs) || typeof id !== "string") continue;
-    const hit = refs.some(
-      (ref) =>
-        typeof ref === "string" &&
-        (ref === entryPath ||
-          ref === remoteRef ||
-          (repoRelPath !== null &&
-            (ref === repoRelPath || (URL_SCHEME.test(ref) && ref.endsWith(`/${repoRelPath}`))))),
-    );
-    if (hit) ids.push(id);
+    if (typeof id !== "string") continue;
+    const viaRefs =
+      Array.isArray(refs) &&
+      refs.some(
+        (ref) =>
+          typeof ref === "string" &&
+          (ref === entryPath ||
+            ref === remoteRef ||
+            (repoRelPath !== null &&
+              (ref === repoRelPath || (URL_SCHEME.test(ref) && ref.endsWith(`/${repoRelPath}`))))),
+      );
+    // `promote` appends `#<anchor>` for decision-log entries; the anchor is irrelevant to whether the file is covered.
+    const viaPromoted =
+      repoRef !== undefined && typeof pf === "string" && (pf === repoRef || pf.startsWith(`${repoRef}#`));
+    if (viaRefs || viaPromoted) ids.push(id);
   }
   return ids.sort(byCodeUnit);
 }
@@ -229,6 +237,7 @@ export function discover(
 
   const records = bank ? listRecords(bank, onSkip) : null;
   const repoRoots = new Map<string, string | null>();
+  const slugs = new Map<string, string | null>();
   const seen = new Set<string>();
   const entries: Entry[] = [];
   for (const { abs, base } of files) {
@@ -257,7 +266,16 @@ export function discover(
     if (kind === null) continue;
     const remoteRef =
       sourceRefPrefix === undefined ? undefined : sourceRefPrefix + relative(base, abs).split(sep).join("/");
-    const cited = records ? citedBy(rel, repoRel, records, remoteRef) : null;
+    let slug: string | null = null;
+    if (records && root !== null) {
+      if (!slugs.has(root)) {
+        const remote = repoIdentity(root).remote;
+        slugs.set(root, remote ? `${remote.org}/${remote.repo}` : null);
+      }
+      slug = slugs.get(root)!;
+    }
+    const repoRef = slug && repoRel !== null ? `${slug}:${repoRel}` : undefined;
+    const cited = records ? citedBy(rel, repoRel, records, remoteRef, repoRef) : null;
     const title = isBinaryDoc ? basename(rel, extname(rel)) : titleOf(rel, kind, text);
     entries.push({ path: rel, kind, title, bytes, cited_by: cited });
   }

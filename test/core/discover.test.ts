@@ -131,6 +131,28 @@ describe("titleOf", () => {
 });
 
 describe("citedBy", () => {
+  const ADR = "docs/adr/0003-use-postgres.md";
+  const LOG = "_working-memory/decisionLog.md";
+  test("promoted_from naming repo and path cites, with or without an anchor", () => {
+    const r = rec("r1", { promoted_from: `acme/order-service:${ADR}` });
+    expect(citedBy(ADR, ADR, [r], undefined, `acme/order-service:${ADR}`)).toEqual(["r1"]);
+    const e = rec("r2", { promoted_from: `acme/order-service:${LOG}#2026-10-02-batch-order-events-per-partition` });
+    expect(citedBy(LOG, LOG, [e], undefined, `acme/order-service:${LOG}`)).toEqual(["r2"]);
+    const other = rec("r2", { promoted_from: `acme/order-service:${LOG}#some-other-entry` });
+    expect(citedBy(LOG, LOG, [other], undefined, `acme/order-service:${LOG}`)).toEqual(["r2"]);
+  });
+  test("falsifier: another repo, a longer path, or no repoRef doesn't cite", () => {
+    const r = rec("r1", { promoted_from: `acme/billing:${ADR}` });
+    expect(citedBy(ADR, ADR, [r], undefined, `acme/order-service:${ADR}`)).toEqual([]);
+    const bak = rec("r1", { promoted_from: `acme/order-service:${ADR}.bak` });
+    expect(citedBy(ADR, ADR, [bak], undefined, `acme/order-service:${ADR}`)).toEqual([]);
+    expect(citedBy(ADR, ADR, [rec("r1", { promoted_from: `acme/order-service:${ADR}` })])).toEqual([]);
+    expect(citedBy(ADR, ADR, [rec("r1", { promoted_from: [`acme/order-service:${ADR}`] })], undefined, `acme/order-service:${ADR}`)).toEqual([]);
+  });
+  test("a Record citing through both fields is listed once", () => {
+    const r = rec("r1", { source_refs: [ADR], promoted_from: `acme/order-service:${ADR}` });
+    expect(citedBy(ADR, ADR, [r], undefined, `acme/order-service:${ADR}`)).toEqual(["r1"]);
+  });
   test("source_refs cites the entry path", () => {
     expect(citedBy("a/b.md", null, [rec("r1", { source_refs: ["a/b.md"] })])).toEqual(["r1"]);
   });
