@@ -27,13 +27,13 @@ describe.skipIf(process.platform !== "darwin")("sign-darwin.sh", () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  const expectSignedAndSummed = (linuxLine: string) => {
+  const expectSignedAndSummed = (linuxBefore: string) => {
     expect(verifies("ltm-darwin-arm64")).toBe(true);
     expect(verifies("ltm-darwin-x64")).toBe(true);
     expect(run("shasum", ["-a", "256", "-c", "SHA256SUMS"]).status).toBe(0);
     const lines = sums().trim().split("\n");
     expect(lines.map((l) => l.split(/\s+/)[1]).sort()).toEqual(["ltm-darwin-arm64", "ltm-darwin-x64", "ltm-linux-x64"]);
-    expect(lines).toContain(linuxLine);
+    expect(lines).toContain(linuxBefore);
   };
   const linuxLine = () => sums().split("\n").find((l) => l.endsWith("ltm-linux-x64"))!;
 

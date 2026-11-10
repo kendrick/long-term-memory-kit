@@ -47,6 +47,7 @@ describe("release.yml", () => {
     expect(last.if).toContain("always()");
     expect(last.with.path).not.toContain("*");
   });
+
   test("sign-macos re-signs the darwin binaries on a Mac after build", () => {
     const job = wf.jobs["sign-macos"];
     expect([job.needs].flat()).toContain("build");
