@@ -96,7 +96,7 @@ export function renderAgentsRegion(
   });
 }
 
-type Span =
+export type Span =
   | { beginStart: number; beginEnd: number; endStart: number }
   | { beginStart: number; endStart: null }
   | { malformed: string };
@@ -104,28 +104,28 @@ type Span =
 // Slices by offset so everything outside the markers comes back byte for byte.
 // Scans the whole file: stopping at the first end marker would let a second block, left
 // by a merge, survive every rewrite and every --check.
-function findMarkers(text: string): Span | null {
+export function findMarkers(text: string, begin: RegExp, end: RegExp, label: string): Span | null {
   const begins: { start: number; end: number }[] = [];
   const ends: number[] = [];
   let start = 0;
   while (start < text.length) {
     const nl = text.indexOf("\n", start);
     const line = text.slice(start, nl === -1 ? text.length : nl);
-    if (BEGIN_LINE.test(line)) begins.push({ start, end: nl === -1 ? text.length : nl + 1 });
-    else if (END_LINE.test(line)) ends.push(start);
+    if (begin.test(line)) begins.push({ start, end: nl === -1 ? text.length : nl + 1 });
+    else if (end.test(line)) ends.push(start);
     if (nl === -1) break;
     start = nl + 1;
   }
   if (begins.length === 0 && ends.length === 0) return null;
   const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   if (begins.length > 1 || ends.length > 1) {
-    return { malformed: `${count(begins.length, "ltm:generated begin marker")} and ${count(ends.length, "end marker")}; leave one block` };
+    return { malformed: `${count(begins.length, `${label} begin marker`)} and ${count(ends.length, "end marker")}; leave one block` };
   }
-  const begin = begins[0];
-  if (begin === undefined) return { malformed: "an ltm:generated end marker with no begin marker" };
-  if (ends.length === 0) return { beginStart: begin.start, endStart: null };
-  if (ends[0]! < begin.end) return { malformed: "an ltm:generated end marker before the begin marker" };
-  return { beginStart: begin.start, beginEnd: begin.end, endStart: ends[0]! };
+  const first = begins[0];
+  if (first === undefined) return { malformed: `an ${label} end marker with no begin marker` };
+  if (ends.length === 0) return { beginStart: first.start, endStart: null };
+  if (ends[0]! < first.end) return { malformed: `an ${label} end marker before the begin marker` };
+  return { beginStart: first.start, beginEnd: first.end, endStart: ends[0]! };
 }
 
 // Prettier and oxfmt both pad the markers with a blank line, and a hand edit can drop it.
@@ -136,9 +136,14 @@ export function normalizeRegion(region: string): string {
 }
 
 export function readRegion(fileText: string): string | null {
-  const span = findMarkers(fileText);
+  const span = findMarkers(fileText, BEGIN_LINE, END_LINE, "ltm:generated");
   if (span === null || "malformed" in span || span.endStart === null) return null;
   return normalizeRegion(fileText.slice(span.beginEnd, span.endStart));
+}
+
+// Blank-line separator so an appended region sits one blank line below existing text.
+export function appendGap(fileText: string): string {
+  return fileText.endsWith("\n\n") ? "" : fileText.endsWith("\n") ? "\n" : "\n\n";
 }
 
 export function replaceRegion(fileText: string | null, region: string, version: string): string {
@@ -147,11 +152,8 @@ export function replaceRegion(fileText: string | null, region: string, version: 
   const inner = body === "" ? "\n" : `\n${body}\n`;
   const block = `${BEGIN(version)}\n${inner}${END}\n`;
   if (fileText === null || fileText === "") return block;
-  const span = findMarkers(fileText);
-  if (span === null) {
-    const gap = fileText.endsWith("\n\n") ? "" : fileText.endsWith("\n") ? "\n" : "\n\n";
-    return `${fileText}${gap}${block}`;
-  }
+  const span = findMarkers(fileText, BEGIN_LINE, END_LINE, "ltm:generated");
+  if (span === null) return `${fileText}${appendGap(fileText)}${block}`;
   if ("malformed" in span) throw new Error(span.malformed);
   // Appending here would leave two begin markers, and readRegion would pair the stray one with the new end.
   if (span.endStart === null) throw new Error("the ltm:generated begin marker has no matching end marker");
