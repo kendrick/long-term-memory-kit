@@ -11,6 +11,7 @@ on:
       - '.github/workflows/release.yml'
       - 'scripts/build-binaries.sh'
       - 'scripts/smoke-binary.sh'
+      - 'scripts/sign-darwin.sh'
       - 'scripts/build-npm.ts'
       - 'scripts/publish-npm.sh'
       - 'npm/**'
@@ -50,7 +51,8 @@ jobs:
       - run: chmod +x dist/ltm-*
       - run: bash scripts/smoke-binary.sh dist/ltm-linux-x64
 
-  smoke-macos:
+  # bun's cross-compiled darwin binaries carry a signature that fails codesign, and macOS kills them at launch (#183), so a Mac re-signs them. It uploads a second artifact because smoke-linux and bench-gate read `dist` in parallel, and overwriting it under them would race.
+  sign-macos:
     needs: build
     runs-on: macos-15
     steps:
@@ -60,7 +62,28 @@ jobs:
           name: dist
           path: dist
       - run: chmod +x dist/ltm-*
+      - run: bash scripts/sign-darwin.sh dist
+      - run: shasum -a 256 -c SHA256SUMS
+        working-directory: dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-signed
+          path: dist/
+          if-no-files-found: error
+
+  smoke-macos:
+    needs: sign-macos
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-signed
+          path: dist
+      - run: chmod +x dist/ltm-*
       - run: bash scripts/smoke-binary.sh dist/ltm-darwin-arm64
+      # The runner is arm64 and Rosetta isn't guaranteed, so x64 gets the signature check only.
+      - run: codesign --verify --strict -v dist/ltm-darwin-x64
 
   # No `if:` on purpose: the dispatch dry run has to exercise the gate against the committed baseline too.
   bench-gate:
@@ -140,14 +163,14 @@ jobs:
   # Only tag pushes trigger `push`, so this gate means "real release". Gating on github.ref would let a dispatch run on a tag ref publish. `release` doesn't wait on `npm`, which is optional: every other install method downloads these binaries, so a failed or skipped publish mustn't hold them back. It lists bench-gate itself, since it used to reach bench-gate only through `npm`.
   release:
     if: github.event_name == 'push'
-    needs: [smoke-linux, smoke-macos, bench-gate]
+    needs: [sign-macos, smoke-linux, smoke-macos, bench-gate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: dist
+          name: dist-signed
           path: dist
       - run: chmod +x dist/ltm-*
       - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes dist/ltm-* dist/SHA256SUMS
@@ -156,7 +179,7 @@ jobs:
 
   npm:
     # Nothing publishes unsmoked or below the committed bench hit rate.
-    needs: [smoke-linux, smoke-macos, bench-gate]
+    needs: [sign-macos, smoke-linux, smoke-macos, bench-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -170,7 +193,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - uses: actions/download-artifact@v8
         with:
-          name: dist
+          name: dist-signed
           path: dist
       - run: chmod +x dist/ltm-*
       - run: bun scripts/build-npm.ts

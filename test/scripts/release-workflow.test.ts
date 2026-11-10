@@ -47,4 +47,33 @@ describe("release.yml", () => {
     expect(last.if).toContain("always()");
     expect(last.with.path).not.toContain("*");
   });
+  test("sign-macos re-signs the darwin binaries on a Mac after build", () => {
+    const job = wf.jobs["sign-macos"];
+    expect([job.needs].flat()).toContain("build");
+    expect(job["runs-on"]).toStartWith("macos-");
+    expect(job.steps.some((s: { run?: string }) => s.run?.includes("scripts/sign-darwin.sh"))).toBe(true);
+    const last = job.steps[job.steps.length - 1];
+    expect(last.uses).toStartWith("actions/upload-artifact@");
+    expect(last.with.name).toBe("dist-signed");
+  });
+
+  test("smoke-macos, release and npm read the signed artifact", () => {
+    for (const name of ["smoke-macos", "release", "npm"]) {
+      const job = wf.jobs[name];
+      expect([job.needs].flat()).toContain("sign-macos");
+      const downloads = job.steps.filter((s: { uses?: string }) => s.uses?.startsWith("actions/download-artifact@"));
+      expect(downloads.length).toBeGreaterThan(0);
+      for (const d of downloads) expect(d.with.name).toBe("dist-signed");
+    }
+  });
+
+  test("smoke-macos checks both darwin signatures", () => {
+    const runs = wf.jobs["smoke-macos"].steps.map((s: { run?: string }) => s.run ?? "");
+    expect(runs.some((r: string) => r.includes("scripts/smoke-binary.sh dist/ltm-darwin-arm64"))).toBe(true);
+    expect(runs.some((r: string) => r.includes("codesign --verify --strict") && r.includes("dist/ltm-darwin-x64"))).toBe(true);
+  });
+
+  test("PRs touching sign-darwin.sh trigger the dry run", () => {
+    expect(wf.on.pull_request.paths).toContain("scripts/sign-darwin.sh");
+  });
 });
