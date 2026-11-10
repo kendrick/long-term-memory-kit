@@ -61,14 +61,24 @@ A working-memory-kit decision log holds many decisions, each under its own `## `
 ltm promote _working-memory/decisionLog.md --entry "Cap retries at three per request" --bank ../acme-bank --dry-run
 ```
 
-The heading becomes the title, and the text under it becomes the body. `promoted_from` adds an anchor for the entry, such as `acme/order-service:_working-memory/decisionLog.md#cap-retries-at-three-per-request`. Without `--dry-run`, the stamp goes on its own line just below the heading:
+The heading becomes the title, and the text under it becomes the body. `promoted_from` adds an anchor for the entry, such as `acme/order-service:_working-memory/decisionLog.md#cap-retries-at-three-per-request`.
+
+Lines straight under the heading can form a metadata block. The block is the run of lines that each start with `status`, `date`, `superseded_by`, or `promoted_to` followed by a colon, and it ends at the first line that doesn't. Each line takes one of three forms: `key: value`, `- key: value`, or `**key:** value`. No other key counts, so a line like `owner: x` ends the block and stays in the body.
+
+The block never reaches the Proposal, so the body starts at the first line after it. Without `--dry-run`, the stamp goes in as the block's last line, and the blank line between the block and the prose stays where it was. An entry with no block gets the stamp directly under the heading.
 
 ```markdown
-## Cap retries at three per request
+## 2026-10-01: Cap retries at three per request
+status: accepted
+date: 2026-10-01
 promoted_to: acme:Hs7kD2pVn5
+
+Outbound calls retry at most three times per request…
 ```
 
-The working-memory-kit template dates each heading, as in `## 2026-10-01: Cap retries at three per request`. When a heading opens with a calendar date and `: `, `--entry` also takes the text after the date. The title leaves the date out, and the anchor keeps it: `#2026-10-01-cap-retries-at-three-per-request`. A heading that matches exactly always wins, so an undated `## Cap retries` stays reachable beside a dated one with the same title.
+A `promoted_to` counts as a stamp only inside the block. The same line in the prose, below the blank line, is ordinary text and doesn't stop a Promotion.
+
+A heading of the form `## YYYY-MM-DD: Title`, with a colon after a calendar date, is the dated form that `--entry` can match by its bare title, as in `--entry "Cap retries at three per request"`. The title leaves the date out, and the anchor keeps it: `#2026-10-01-cap-retries-at-three-per-request`. Any other heading matches only verbatim. A heading that matches exactly always wins, so an undated `## Cap retries` stays reachable beside a dated one with the same title.
 
 `ltm promote` may print a `body-sections` warning, because a short entry has no Context or Consequences heading. The Proposal still opens. A reviewer can ask for those sections before accepting it.
 
@@ -81,7 +91,7 @@ git add docs/adr/0004-retry-budget.md
 git commit -m "Promote the retry budget ADR to the acme Bank"
 ```
 
-The stamp tells the next reader that the decision now lives in the Bank too. It also stops a second Promotion: `ltm promote` refuses a file or entry that already has a `promoted_to`.
+The stamp tells the next reader that the decision now lives in the Bank too. It also stops a second Promotion: `ltm promote` refuses a file that already has a `promoted_to`, and an entry that has one in its metadata block.
 
 If the Proposal opened but the stamp couldn't be written, `ltm promote` prints the exact line to add by hand. Add it, then commit it the same way.
 
