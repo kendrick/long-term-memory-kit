@@ -105,6 +105,9 @@ function datedTitle(text: string): string | null {
   return m && isCalendarDate(m[1]!) ? m[2]! : null;
 }
 
+// Metadata block shared with working-memory-kit: consecutive key lines straight under the heading. The key set is closed so `owner: x` stays body text; plain, list and bold forms all count so a styled stamp can't end the block before it's seen.
+const META_LINE = /^(?:(?:- )?(status|date|superseded_by|promoted_to): |\*\*(status|date|superseded_by|promoted_to):\*\* )/;
+
 export function readEntry(rel: string, text: string, heading: string): PromoteSource | { refusal: string } {
   const lines = scanLines(text);
   const headings = outsideFences(lines).filter((l) => l.content.startsWith("## "));
@@ -116,21 +119,24 @@ export function readEntry(rel: string, text: string, heading: string): PromoteSo
   const match = matches[0]!;
   const end = headings.find((l) => l.start > match.start)?.start ?? text.length;
   const fullHeading = match.content.slice(3);
-  const body = text.slice(match.next, end);
-  // Fence state comes from the whole file, so a fenced yaml sample in the entry never reads as a stamp.
-  const stamped = outsideFences(lines).find((l) => l.start >= match.next && l.start < end && l.content.startsWith("promoted_to:"));
+  // A fence opener isn't a block line, so a fenced yaml sample under the heading yields an empty block and its promoted_to stays ignored.
+  const block: Line[] = [];
+  for (let i = lines.indexOf(match) + 1; i < lines.length && lines[i]!.start < end && META_LINE.test(lines[i]!.content); i++) block.push(lines[i]!);
+  const last = block.at(-1) ?? match;
+  const body = text.slice(last.next, end);
+  const stampLine = block.find((l) => (META_LINE.exec(l.content)![1] ?? META_LINE.exec(l.content)![2]) === "promoted_to");
   const eol = eolOf(text);
-  const lineNo = lines.indexOf(match) + 2;
+  const lineNo = lines.indexOf(last) + 2;
   return {
     kind: "entry",
     // Slug and title come from the matched heading, so both spellings stamp the same anchor.
     slug: entrySlug(fullHeading),
     title: datedTitle(fullHeading) ?? fullHeading,
     body,
-    existing: stamped ? stamped.content.slice("promoted_to:".length).trim() : null,
-    // A heading on the last line has no terminator to insert after, so the stamp brings its own leading one and the file keeps its missing final newline.
+    existing: stampLine ? stampLine.content.slice(META_LINE.exec(stampLine.content)![0].length).trim() : null,
+    // The last line of the file has no terminator to insert after, so the stamp brings its own leading one and the file keeps its missing final newline.
     stamp: (line) => ({
-      text: match.newline ? text.slice(0, match.next) + line + eol + text.slice(match.next) : text + eol + line,
+      text: last.newline ? text.slice(0, last.next) + line + eol + text.slice(last.next) : text + eol + line,
       line: lineNo,
     }),
   };
