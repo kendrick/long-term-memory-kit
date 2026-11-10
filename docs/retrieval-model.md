@@ -80,7 +80,7 @@ That code sits in two layers.
 `ltm query` adds three behaviors of its own around `selectRecords`.
 
 - It labels Proposals. The text output marks them `(proposal)`, and the JSON output sets `is_proposal`. A reader can show one as context without presenting it as a rule.
-- It reads Facets from the Bank. Outside a Bank, or with `--bank`, `ltm query` looks up the current repo's origin in the Bank's `consumers` map in `memory-bank.yaml` and uses the Facets listed there. An explicit `--facet` overrides the map.
+- It reads Facets from the Bank. Outside a Bank, or with `--bank`, `ltm query` looks up the current repo's origin in the Bank's `consumers` map in `memory-bank.yaml` and uses the Facets listed there. The lookup ignores case, so the key `acme/order-service` matches an origin whose `org/repo` is `acme/Order-Service`. `ltm validate` reports two keys that differ only by case. An explicit `--facet` overrides the map.
 - It narrows an unmapped repo to org-wide Records. When the map doesn't list the repo, or the repo has no git origin, `ltm query` shows org-wide Records only and adds a note. The text output prints the note on stderr. Under `--json` the note goes into the `notes` array.
 
 ## More Than One Bank

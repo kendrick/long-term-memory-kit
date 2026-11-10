@@ -53,6 +53,14 @@ promoted_to: acme:Qm4rT8wLz2
 
 `acme` is the `name` in the Bank's `memory-bank.yaml`. The id after it is the new Record's id, and it doesn't change at Acceptance.
 
+The `consumers` lookup ignores case, so the key `acme/order-service` also matches the origin `git@github.com:acme/Order-Service.git`. If no key matches and you pass no `--applies-to`, the Proposal has no `applies_to`, which makes it Org-wide. In that case `ltm promote` prints a note on stderr. When Bank `acme` doesn't map `acme/billing`, the note reads:
+
+```text
+ltm promote: acme/billing is not mapped in Bank "acme"; the Proposal is Org-wide. Pass --applies-to to scope it.
+```
+
+Under `--json`, the note goes into the `notes` array without the `ltm promote: ` prefix. A reviewer who accepts an Org-wide Proposal binds every repo to it, so map the repo or pass `--applies-to` before you promote.
+
 ## Promote a Decision-Log Entry
 
 A working-memory-kit decision log holds many decisions, each under its own `## ` heading. Pick one with `--entry` and the heading text, exactly as written:
