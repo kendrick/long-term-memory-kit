@@ -1,6 +1,6 @@
 {
   "name": "long-term-memory-kit",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Org-level memory for coding agents: shared decisions and policies in a git repo, with a CLI and MCP server.",
   "keywords": [
     "coding-agents",
