@@ -33,10 +33,10 @@ Each line shows a source's kind (`adr`, `pr`, `transcript`, `prd`, `document`, o
 Without `ltm`, glob for the files yourself, such as `docs/adr/*.md`. Then, from the Bank root, grep for Records that already cite each one:
 
 ```sh
-grep -rl '^source_refs: .*0001-postgres.md' _memory
+grep -rlE '^(source_refs|promoted_from): .*0001-postgres.md' _memory
 ```
 
-A match means a Record cites that source, so skip it.
+A match means a Record cites that source, or was promoted from it, so skip it.
 
 ## SharePoint
 
