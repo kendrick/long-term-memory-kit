@@ -34,11 +34,11 @@ With the `ltm` MCP server connected, call its `propose` tool with `from` set to 
 
 ## Commit the Stamp
 
-`ltm promote` edits the source file but doesn't commit it. Commit the `promoted_to` line in this repo, so the next reader can see that the decision now lives in the Bank too. A rerun of `ltm promote` on the same file reads the stamp and refuses to promote it twice.
+`ltm promote` edits the source file but doesn't commit it. Commit the `promoted_to` line in this repo, so the next reader can see that the decision now lives in the Bank too. A rerun of `ltm promote` on the same decision reads the stamp and refuses to promote it twice.
 
 ## Without `ltm`
 
 1. Create a branch in the Bank.
 2. Write a Record with `status: proposed` under the folder for its memory type, such as `_memory/decisions/`. Set `promoted_from` to `<org>/<repo>:<path>`, naming this repo and the file. For a decision-log entry, append `#<slug>` to name the entry: `<org>/<repo>:<path>#<slug>`. To build the slug, lowercase the full heading text, date prefix included, and replace each run of characters outside `a`–`z` and `0`–`9` with one `-`. Then drop any leading or trailing `-`. For example, `## 2026-10-02: Batch order events per partition` gives `#2026-10-02-batch-order-events-per-partition`.
 3. Open a pull request in the Bank.
-4. Add `promoted_to: <bank>:<id>` to the source file, where `<bank>` is the `name` in the Bank's `memory-bank.yaml`. For an ADR, put it in the frontmatter. For a decision-log entry, put it on its own line at the end of the entry's metadata block, the run of `status:`, `date:`, `superseded_by:`, and `promoted_to:` lines under the heading. When the entry has no block, put it directly under the heading. `guide/promotion.md` lists the line forms the block accepts. Commit it in this repo.
+4. Add `promoted_to: <bank>:<id>` to the source file, where `<bank>` is the `name` in the Bank's `memory-bank.yaml`. For an ADR, put it in the frontmatter, adding a frontmatter block that holds it when the file has none. For a decision-log entry, the metadata block is the run of lines straight under the heading that start with `status`, `date`, `superseded_by`, or `promoted_to` and a colon. Each line takes one of three forms: `key: value`, `- key: value`, or `**key:** value`. Write the stamp in the plain `key: value` form, on its own line after the last of them, which is where `ltm promote` puts it. When the entry has no block, put it directly under the heading. Commit it in this repo.
