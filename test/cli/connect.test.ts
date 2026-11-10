@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,14 +68,108 @@ describe("ltm connect", () => {
     expect(r.stderr).toBe("");
     expect(r.stdout).toBe(
       [
+        "<!-- ltm:connect:begin -->",
+        "",
         "## Org memory",
         "Org-level decisions, policies, and exceptions live in the acme Bank at git@github.com:acme/memory-bank.git.",
         `Org-level decisions, policies, and exceptions live in the personal Bank at ${join(home, "banks", "personal")}.`,
         "Before making an architectural choice, follow that Bank's AGENTS.md to query it, or run `ltm query` from this repo.",
         "",
+        "<!-- ltm:connect:end -->",
+        "",
       ].join("\n"),
     );
     expect(git(repo, "status", "--porcelain")).toBe("");
+  });
+
+  test("stdout starts with the begin marker and ends with the end marker", async () => {
+    const r = await connect();
+    expect(r.stdout).toStartWith("<!-- ltm:connect:begin -->\n");
+    expect(r.stdout.trimEnd().endsWith("<!-- ltm:connect:end -->")).toBe(true);
+  });
+
+  describe("--write", () => {
+    const heading = (t: string) => t.match(/^## Org memory$/gm)?.length ?? 0;
+    const file = () => join(repo, "AGENTS.md");
+
+    test("twice on a file with no region leaves one heading and prints nothing", async () => {
+      writeFileSync(file(), "# Agents\n\nHand text.\n");
+      for (let i = 0; i < 2; i++) {
+        const r = await connect("--write", "AGENTS.md");
+        expect(r.exitCode).toBe(0);
+        expect(r.stdout).toBe("");
+      }
+      const text = readFileSync(file(), "utf8");
+      expect(heading(text)).toBe(1);
+      expect(text).toStartWith("# Agents\n\nHand text.\n");
+    });
+
+    test("adding a second Bank rewrites one region and keeps outside bytes", async () => {
+      writeFileSync(join(repo, ".ltm.yaml"), "banks: [personal]\n");
+      await connect("--write", "AGENTS.md");
+      writeFileSync(file(), readFileSync(file(), "utf8") + "\n## Later\n\nTail.\n");
+      const outside = (t: string): [string, string] => {
+        const b = t.indexOf("<!-- ltm:connect:begin -->");
+        const eMark = "<!-- ltm:connect:end -->\n";
+        return [t.slice(0, b), t.slice(t.indexOf(eMark) + eMark.length)];
+      };
+      const [pre, post] = outside(readFileSync(file(), "utf8"));
+      writeFileSync(join(repo, ".ltm.yaml"), "banks: [acme, personal]\n");
+      expect((await connect("--write", "AGENTS.md")).exitCode).toBe(0);
+      const text = readFileSync(file(), "utf8");
+      expect(heading(text)).toBe(1);
+      expect(text).toContain("the acme Bank at");
+      expect(text).toContain("the personal Bank at");
+      expect(outside(text)).toEqual([pre, post]);
+    });
+
+    test("a hand-written heading outside markers is left alone and a region is appended", async () => {
+      const hand = "## Org memory\nHand-written.\n";
+      writeFileSync(file(), hand);
+      await connect("--write", "AGENTS.md");
+      const text = readFileSync(file(), "utf8");
+      expect(text).toStartWith(hand);
+      expect(heading(text)).toBe(2);
+    });
+
+    test("a begin marker with no end exits 1, names the file, and writes nothing", async () => {
+      const bad = "x\n<!-- ltm:connect:begin -->\n## Org memory\n";
+      writeFileSync(file(), bad);
+      const r = await connect("--write", "AGENTS.md");
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toStartWith("ltm connect: AGENTS.md: ");
+      expect(r.stderr).toContain("no matching end marker");
+      expect(r.stderr).toContain("nothing written");
+      expect(readFileSync(file(), "utf8")).toBe(bad);
+    });
+
+    test("a missing file is created holding just the region", async () => {
+      const plain = await connect();
+      const r = await connect("--write", "NEW.md");
+      expect(r.exitCode).toBe(0);
+      expect(readFileSync(join(repo, "NEW.md"), "utf8")).toBe(plain.stdout);
+    });
+
+    test("a directory path exits 1 naming the file, one line, no stack", async () => {
+      mkdirSync(file());
+      const r = await connect("--write", "AGENTS.md");
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toStartWith("ltm connect: AGENTS.md: ");
+      expect(r.stderr.trimEnd().split("\n")).toHaveLength(1);
+    });
+
+    test("no resolvable Bank exits 1 before touching the file", async () => {
+      writeFileSync(configPath, `banks:\n  personal: { path: ~/banks/personal }\n`);
+      writeFileSync(file(), "keep\n");
+      const r = await connect("--write", "AGENTS.md");
+      expect(r.exitCode).toBe(1);
+      expect(readFileSync(file(), "utf8")).toBe("keep\n");
+      const r2 = await connect("--write", "NEW.md");
+      expect(r2.exitCode).toBe(1);
+      expect(existsSync(join(repo, "NEW.md"))).toBe(false);
+    });
   });
 
   test("a single Bank prints the same shape with one line", async () => {
