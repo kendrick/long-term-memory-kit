@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { run } from "../../src/cli/run.ts";
 import { withConsumerRepo } from "../helpers/consumer-repo.ts";
+import { git } from "../helpers/git-bank.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const repo = fileURLToPath(new URL("../..", import.meta.url));
@@ -112,6 +113,21 @@ describe("ltm discover", () => {
         expect(await cited(log)).toEqual(["kQ7vN2xLp4"]);
         setPf(`acme/order-service:${log}#cap-retries-at-three-per-request`);
         expect(await cited(log)).toEqual(["kQ7vN2xLp4"]);
+      });
+    });
+  });
+
+  test("promoted_from does not cite when the Consumer repo has no origin to name it", async () => {
+    await withConsumerRepo(async (dir) => {
+      git(dir, "remote", "remove", "origin");
+      const adr = "docs/adr/0003-use-postgres.md";
+      writeFileSync(join(dir, adr), "# Use Postgres\n\n## Context\n\nx\n\n## Decision\n\ny\n");
+      await withScratch(demo, async (bank) => {
+        const file = join(bank, RECORD);
+        const line = `source_refs: [${POSTGRES}]\n`;
+        writeFileSync(file, readFileSync(file, "utf8").replace(line, `promoted_from: acme/order-service:${adr}\n`));
+        const out = rows((await ltm(dir, "discover", ".", "--json", "--bank", bank)).stdout);
+        expect(out.find((r) => r.path === adr)?.cited_by).toEqual([]);
       });
     });
   });
