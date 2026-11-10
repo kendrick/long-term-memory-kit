@@ -67,7 +67,7 @@ The CLI is the implementation; `ltm mcp` is a thin wrapper over the same functio
 | `supersede` | The explicit two-record supersession edit. |
 | `promote` | From inside a consumer repo, convert a repo ADR or WMK `decisionLog.md` entry into a bank proposal (same path as `propose`). On acceptance ownership transfers to the bank; the local item gets `promoted_to: <bank>:<id>`. |
 | `discover` | Inventory hydration sources (mechanical half of the hydration discover phase). |
-| `connect` | Print the consumer-repo `AGENTS.md` snippet: "Org memory lives at <path/URL>; follow its AGENTS.md to query it." A person pastes it; no tool writes into consumer repos. |
+| `connect` | Print the consumer-repo `AGENTS.md` snippet: "Org memory lives at <path/URL>; follow its AGENTS.md to query it." `--write <file>` writes it into the named file when a person runs it, the same kind of explicit write as `promote`'s `promoted_to` stamp; no tool writes into consumer repos on its own. |
 | `mcp` | Run the MCP server. |
 
 Downstream contract: the plan's `fm fmt|query|head` become `ltm fmt|query|head` with the same semantics, so I2M-8 and WMK-5 only swap the command prefix.

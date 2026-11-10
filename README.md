@@ -98,13 +98,13 @@ ltm promote _working-memory/decisionLog.md --entry "Cap retries at three per req
 
 ## Connect a Consumer Repo
 
-A Consumer repo is any repo whose agents should read a Bank. Name the Bank in your user config, list it in the repo's `.ltm.yaml`, and append the snippet `ltm connect` prints to the repo's `AGENTS.md`:
+A Consumer repo is any repo whose agents should read a Bank. Name the Bank in your user config, list it in the repo's `.ltm.yaml`, and run `ltm connect --write` to add its section to the repo's `AGENTS.md`. The section sits between `<!-- ltm:connect:begin -->` and `<!-- ltm:connect:end -->` markers, and later runs replace it in place, for example after you add a Bank to `.ltm.yaml`. Plain `ltm connect` still prints it:
 
 ```sh
 cat > .ltm.yaml <<'EOF'
 banks: [acme]
 EOF
-ltm connect >> AGENTS.md
+ltm connect --write AGENTS.md
 ltm query
 ```
 
