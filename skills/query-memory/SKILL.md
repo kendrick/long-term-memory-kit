@@ -3,7 +3,7 @@ name: query-memory
 description: Use before making or reviewing a choice that a PolicyRule or Decision in the Bank might govern, such as a datastore, a logging format, a deployment practice, or a service boundary, or when someone asks what the Bank says about a topic. Finds the Records that apply to this repo and cites them.
 ---
 <!-- VENDORED-FROM: kendrick/long-term-memory-kit skills/query-memory -->
-<!-- VERSION: 0.1.0 -->
+<!-- VERSION: 0.1.1 -->
 
 # Query Memory
 

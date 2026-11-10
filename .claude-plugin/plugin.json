@@ -1,6 +1,6 @@
 {
   "name": "ltm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Org-level memory for coding agents: query a Bank, hydrate Proposals, and promote decisions.",
   "author": { "name": "Kendrick Arnett" },
   "userConfig": {

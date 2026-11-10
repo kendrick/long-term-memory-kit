@@ -3,7 +3,7 @@ name: hydrate
 description: Use when someone wants Bank Proposals drafted from existing material, such as ADRs, PRDs, meeting transcripts, pull requests, or notes. Covers Hydration end to end, from finding the sources to opening the Proposals for review.
 ---
 <!-- VENDORED-FROM: kendrick/long-term-memory-kit skills/hydrate -->
-<!-- VERSION: 0.1.0 -->
+<!-- VERSION: 0.1.1 -->
 
 # Hydrate
 
