@@ -634,6 +634,22 @@ describe("promoteSource", () => {
     });
   }, GIT_TEST_TIMEOUT);
 
+  test("only an unmapped repo with no applies_to gets the Org-wide note; the consumers key matches in any case", async () => {
+    const NOTE = 'acme/billing is not mapped in Bank "acme"; the Proposal is Org-wide. Pass --applies-to to scope it.';
+    await withGitBank(async ({ clone }) => {
+      await withConsumerRepo(async (repo) => {
+        const notesFor = async (extra: Partial<PromoteRequest>) => {
+          const r = await promote(clone, repo, ADR_3, fakeAdapter(), extra, true);
+          if ("refusal" in r) throw new Error(`refused: ${r.refusal}`);
+          return r.notes;
+        };
+        expect(await notesFor({ repo: "acme/billing" })).toEqual([NOTE]);
+        expect(await notesFor({ repo: "Acme/Order-Service" })).toEqual([]);
+        expect(await notesFor({ repo: "acme/billing", applies_to: ["service:billing"] })).toEqual([]);
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
   test("a source reader refusal passes through", async () => {
     await withGitBank(async ({ clone }) => {
       await withConsumerRepo(async (repo) => {

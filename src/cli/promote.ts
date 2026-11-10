@@ -91,13 +91,14 @@ export const promote: Command = {
       if (result.url) ctx.err(`${result.url}\n`);
       return 1;
     }
+    if (ctx.values.json !== true) for (const note of result.notes) ctx.err(`ltm promote: ${note}\n`);
     if (result.dryRun) {
       ctx.out(result.text);
       return 0;
     }
     if (ctx.values.json === true) {
       const { id, path, branch, url, adapter, stamped } = result;
-      ctx.out(`${JSON.stringify({ id, path, branch, url, adapter, stamped }, null, 2)}\n`);
+      ctx.out(`${JSON.stringify({ id, path, branch, url, adapter, stamped, ...(result.notes.length > 0 ? { notes: result.notes } : {}) }, null, 2)}\n`);
       return 0;
     }
     ctx.out(`path: ${result.path}\nbranch: ${result.branch}\n`);

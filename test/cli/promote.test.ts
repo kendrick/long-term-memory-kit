@@ -271,6 +271,54 @@ describe("ltm promote", () => {
     });
   }, GIT_TEST_TIMEOUT);
 
+  const NOTE = 'acme/billing is not mapped in Bank "acme"; the Proposal is Org-wide. Pass --applies-to to scope it.';
+
+  test("an origin in another case gets the mapped Facets", async () => {
+    await withConsumerRepo(async (repo) => {
+      await withGitBank(async ({ clone }) => {
+        git(repo, "remote", "set-url", "origin", "git@github.com:Acme/Order-Service.git");
+        const r = await ltm(repo, "promote", ADR, "--bank", clone, "--dry-run");
+        expect(r.exitCode).toBe(0);
+        expect(r.stderr).toBe("");
+        expect(r.stdout).toContain("applies_to: [service:order-service, domain:commerce]");
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("an unmapped repo with no --applies-to warns, and the Proposal is Org-wide", async () => {
+    await withConsumerRepo(async (repo) => {
+      await withGitBank(async ({ clone }) => {
+        git(repo, "remote", "set-url", "origin", "https://github.com/acme/billing.git");
+        const dry = await ltm(repo, "promote", ADR, "--bank", clone, "--dry-run");
+        expect(dry.exitCode).toBe(0);
+        expect(dry.stderr).toBe(`ltm promote: ${NOTE}\n`);
+        expect(dry.stdout).not.toContain("applies_to:");
+        const r = await ltm(repo, "promote", ADR, "--bank", clone, "--json");
+        expect(r.exitCode).toBe(0);
+        expect(JSON.parse(r.stdout).notes).toEqual([NOTE]);
+        expect(r.stderr).not.toContain("not mapped");
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
+  test("falsifier: --applies-to, or a mapped repo, prints no note", async () => {
+    await withConsumerRepo(async (repo) => {
+      await withGitBank(async ({ clone }) => {
+        const mapped = await ltm(repo, "promote", ADR, "--bank", clone, "--dry-run");
+        expect(mapped.exitCode).toBe(0);
+        expect(mapped.stderr).toBe("");
+        git(repo, "remote", "set-url", "origin", "https://github.com/acme/billing.git");
+        const flagged = await ltm(repo, "promote", ADR, "--bank", clone, "--applies-to", "service:order-service", "--dry-run");
+        expect(flagged.exitCode).toBe(0);
+        // A lone service: Facet trips the bright-line schema warning; that line is expected, the not-mapped note isn't.
+        expect(flagged.stderr.split("\n").filter((l) => l !== "" && !l.includes("warning bright-line"))).toEqual([]);
+        const json = await ltm(repo, "promote", ADR, "--bank", clone, "--applies-to", "service:order-service", "--json");
+        expect(json.exitCode).toBe(0);
+        expect(Object.keys(JSON.parse(json.stdout))).not.toContain("notes");
+      });
+    });
+  }, GIT_TEST_TIMEOUT);
+
   test("the issue's repro: a log with only a dated heading gives the bare title for both spellings", async () => {
     const scratch = realpathSync(mkdtempSync(join(tmpdir(), "ltm-dated-")));
     try {

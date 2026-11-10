@@ -120,6 +120,21 @@ describe("ltm mcp, propose", () => {
   );
 
   test(
+    "from in an unmapped repo returns the Org-wide note in notes",
+    () =>
+      withConsumerRepo((repo) => {
+        git(repo, "remote", "set-url", "origin", "https://github.com/acme/billing.git");
+        return withGitBank(({ bare }) =>
+          withUrlServer(bare, repo, async (client) => {
+            const sc = ok(await client.callTool({ name: "propose", arguments: { type: "Decision", from: ADR } }));
+            expect(sc.notes).toEqual(['acme/billing is not mapped in Bank "acme"; the Proposal is Org-wide. Pass --applies-to to scope it.']);
+          }),
+        );
+      }),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
     "from combined with owners is an error naming owners, and pushes nothing",
     () =>
       withGitBank(({ bare }) =>

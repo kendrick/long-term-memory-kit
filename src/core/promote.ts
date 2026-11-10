@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { readFileSync, writeFileSync } from "node:fs";
 import { parse } from "yaml";
-import { isMapping, type MemoryType } from "./bank.ts";
+import { consumerEntry, isMapping, type MemoryType } from "./bank.ts";
 import { isCalendarDate } from "./clock.ts";
 import { fenceTracker } from "./markdown.ts";
 import { proposeRecord, type ProposalInput, type ProposeDeps, type ProposeDryRun, type ProposeRefusal, type Proposed } from "./propose.ts";
@@ -160,11 +160,10 @@ export type PromoteRequest = {
   summary?: string;
   applies_to?: string[];
 };
-export type PromoteResult = ProposeRefusal | ProposeDryRun | (Proposed & { stamped: { path: string; line: number } });
+export type PromoteResult = ProposeRefusal | (ProposeDryRun & { notes: string[] }) | (Proposed & { stamped: { path: string; line: number }; notes: string[] });
 
 const consumersOf = (raw: Record<string, unknown>, repo: string): string[] | undefined => {
-  const consumers = raw.consumers;
-  const list = isMapping(consumers) ? consumers[repo] : undefined;
+  const list = consumerEntry(raw.consumers, repo);
   return Array.isArray(list) && list.every((x) => typeof x === "string") ? (list as string[]) : undefined;
 };
 
@@ -199,6 +198,11 @@ export async function promoteSource(req: PromoteRequest, deps: ProposeDeps): Pro
   if (title === undefined) return { refusal: `${rel} has no title; pass --title` };
 
   const appliesTo = req.applies_to ?? consumersOf(deps.config.raw, req.repo);
+  // An unscoped Proposal is allowed, since some decisions are Org-wide, but an unmapped repo makes one silently, so say so.
+  const notes =
+    req.applies_to === undefined && appliesTo === undefined
+      ? [`${req.repo} is not mapped in Bank "${bank}"; the Proposal is Org-wide. Pass --applies-to to scope it.`]
+      : [];
   const input: ProposalInput = {
     type: req.type,
     title,
@@ -208,7 +212,8 @@ export async function promoteSource(req: PromoteRequest, deps: ProposeDeps): Pro
     ...(appliesTo ? { applies_to: appliesTo } : {}),
   };
   const result = await proposeRecord(input, deps);
-  if ("refusal" in result || result.dryRun) return result;
+  if ("refusal" in result) return result;
+  if (result.dryRun) return { ...result, notes };
 
   // The branch is already pushed, so a failure from here on can't undo it; the caller gets the line to add by hand.
   const stampLine = `promoted_to: ${bank}:${result.id}`;
@@ -220,7 +225,7 @@ export async function promoteSource(req: PromoteRequest, deps: ProposeDeps): Pro
     }
     const stamped = source.stamp(stampLine);
     writeFileSync(req.abs, stamped.text);
-    return { ...result, stamped: { path: rel, line: stamped.line } };
+    return { ...result, stamped: { path: rel, line: stamped.line }, notes };
   } catch (e) {
     return { refusal: `pushed ${result.branch}, but stamping ${rel} failed: ${firstLine((e as Error).message)}; ${byHand}` };
   }
