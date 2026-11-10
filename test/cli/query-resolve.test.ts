@@ -104,6 +104,14 @@ describe("ltm query from a Consumer repo", () => {
     expect(json.stderr).toBe("");
   });
 
+  test("an origin spelled in another case still finds its consumers entry", async () => {
+    setOrigin("git@github.com:acme/Order-Service.git");
+    const r = await ltm(repo, "query", "--type", "Exception");
+    expect(r.exitCode).toBe(0);
+    expect(lines(r.stdout)).toContainEqual(expect.stringMatching(new RegExp(`^acme:${REDIS}  `)));
+    expect(r.stderr).not.toContain("not mapped");
+  });
+
   test("an unmapped repo gets the demo Bank's own org-wide Record, with the not-mapped note", async () => {
     setOrigin("https://github.com/acme/billing");
     const r = await ltm(repo, "query", "--json");

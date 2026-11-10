@@ -4,7 +4,7 @@ import { chmodSync, lstatSync, mkdirSync, readFileSync, symlinkSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ConfigError, customKeys, DEFAULT_FOLDERS, findBank, loadConfig, type BankConfig } from "../../src/core/bank.ts";
+import { ConfigError, consumerEntry, customKeys, DEFAULT_FOLDERS, findBank, loadConfig, type BankConfig } from "../../src/core/bank.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const demoBank = fileURLToPath(new URL("../../fixtures/demo-bank", import.meta.url));
@@ -280,5 +280,19 @@ describe("customKeys", () => {
     expect([...m.keys()]).toEqual(["tier"]);
     expect(m.get("tier")).toEqual({ type: "string", enum: ["platform"] });
     expect(customKeys(cfg({})).size).toBe(0);
+  });
+});
+
+describe("consumerEntry", () => {
+  test("matches a key without regard to case", () => {
+    expect(consumerEntry({ "acme/order-service": ["service:order-service"] }, "Acme/Order-Service")).toEqual(["service:order-service"]);
+  });
+  test("an exact key wins over a case-insensitive one", () => {
+    expect(consumerEntry({ "Acme/Order-Service": ["a:x"], "acme/order-service": ["b:y"] }, "acme/order-service")).toEqual(["b:y"]);
+  });
+  test("no consumers map, or no matching key, is undefined", () => {
+    expect(consumerEntry(undefined, "acme/x")).toBeUndefined();
+    expect(consumerEntry(["acme/x"], "acme/x")).toBeUndefined();
+    expect(consumerEntry({ "acme/y": [] }, "acme/x")).toBeUndefined();
   });
 });

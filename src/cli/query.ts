@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { ConfigError, isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
+import { ConfigError, consumerEntry, isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
 import { loadRecall, qmdBackend, type QmdBackend, type Recall } from "../core/qmd.ts";
 import { qmdVectorBackend } from "../core/qmd-vector.ts";
 import { tokenize } from "../core/recall.ts";
@@ -104,9 +104,8 @@ function selectForBank(
 // has no entry for the repo, or there's no origin to look one up by.
 function consumerFacets(bank: ResolvedBank, key: string | null): string[] | null {
   if (key === null) return null;
-  const consumers = bank.config.raw.consumers;
-  if (!isMapping(consumers) || !Object.hasOwn(consumers, key)) return null;
-  const v = consumers[key];
+  const v = consumerEntry(bank.config.raw.consumers, key);
+  if (v === undefined) return null;
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
 }
 

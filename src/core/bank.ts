@@ -76,6 +76,15 @@ export function findBank(cwd: string): string | null {
 export const isMapping = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
+// Forges treat owner and repo names case-insensitively, and the origin URL keeps whatever case the user cloned with.
+export function consumerEntry(consumers: unknown, repo: string): unknown {
+  if (!isMapping(consumers)) return undefined;
+  if (Object.hasOwn(consumers, repo)) return consumers[repo];
+  const lower = repo.toLowerCase();
+  const key = Object.keys(consumers).find((k) => k.toLowerCase() === lower);
+  return key === undefined ? undefined : consumers[key];
+}
+
 export function isInside(root: string, target: string): boolean {
   const rel = relative(root, target);
   return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
