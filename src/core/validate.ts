@@ -632,6 +632,19 @@ export function checkConfig(root: string): { findings: Finding[]; config: BankCo
       findings.push(finding(CONFIG_FILE, lineOfKey("custom_keys"), "config-schema", "custom_keys", message));
     }
   }
+  // consumers lookup is case-insensitive, so two keys folding together make the match ambiguous.
+  if (isMapping(config.raw.consumers)) {
+    const firstSeen = new Map<string, string>();
+    for (const name of Object.keys(config.raw.consumers)) {
+      const first = firstSeen.get(name.toLowerCase());
+      if (first === undefined) {
+        firstSeen.set(name.toLowerCase(), name);
+        continue;
+      }
+      const message = `'${first}' and '${name}' differ only by case`;
+      findings.push(finding(CONFIG_FILE, lineOfKey("consumers"), "config-schema", "consumers", message));
+    }
+  }
   return { findings, config };
 }
 

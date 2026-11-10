@@ -73,6 +73,29 @@ describe("ltm validate", () => {
     });
   });
 
+  test("consumers keys that differ only by case are a config error", async () => {
+    await withScratch(demo, async (dir) => {
+      const cfg = edit(join(dir, "memory-bank.yaml"), (t) =>
+        t.replace(
+          "  acme/order-service: [service:order-service, domain:commerce]\n",
+          "  acme/order-service: [service:order-service, domain:commerce]\n  Acme/Order-Service: [service:order-service]\n",
+        ),
+      );
+      expect(cfg).toContain("Acme/Order-Service");
+      const r = await ltm(dir, "validate", dir);
+      expect(r.exitCode).toBe(1);
+      expect(lines(r.stdout)).toContain(
+        `memory-bank.yaml:${lineOf(cfg, "consumers:")}: error config-schema: consumers: 'acme/order-service' and 'Acme/Order-Service' differ only by case`,
+      );
+    });
+  });
+
+  test("a clean demo Bank reports no case-collision finding", async () => {
+    await withScratch(demo, async (dir) => {
+      expect((await ltm(dir, "validate", dir)).stdout).not.toContain("differ only by case");
+    });
+  });
+
   test("2: removing status fails schema on that file and key", async () => {
     await withScratch(demo, async (dir) => {
       const after = edit(join(dir, PG), (t) => replaceLine(t, "status:", null));
