@@ -1,10 +1,10 @@
-import { appendGap, findMarkers } from "./init.js";
+import { appendGap, findMarkers } from "./init.ts";
 
 export const CONNECT_BEGIN = "<!-- ltm:connect:begin -->";
 export const CONNECT_END = "<!-- ltm:connect:end -->";
 
-const BEGIN_LINE = /^<!-- ltm:connect:begin -->\r?$/;
-const END_LINE = /^<!-- ltm:connect:end -->\r?$/;
+const BEGIN_LINE = new RegExp(`^${CONNECT_BEGIN}\\r?$`);
+const END_LINE = new RegExp(`^${CONNECT_END}\\r?$`);
 const LABEL = "ltm:connect";
 
 /** `section` is the Org memory lines joined with "\n", ending in "\n". */

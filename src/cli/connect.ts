@@ -1,9 +1,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { ConfigError } from "../core/bank.ts";
-import { noBankMessage, resolveBankFlag, resolveBanks, type ResolvedBank } from "../core/resolve.ts";
-import { configErrorLine } from "./bank.ts";
 import { connectRegion, spliceConnectRegion } from "../core/connect.ts";
+import { noBankMessage, resolveBankFlag, resolveBanks, type ResolvedBank } from "../core/resolve.ts";
+import { firstLine } from "../core/text.ts";
+import { configErrorLine } from "./bank.ts";
 import type { Command } from "./run.ts";
 
 const bankLine = (b: ResolvedBank): string =>
@@ -58,7 +59,7 @@ export const connect: Command = {
       }
       writeFileSync(abs, spliceConnectRegion(current, region));
     } catch (e) {
-      const msg = e instanceof Error ? e.message.split("\n")[0] : String(e);
+      const msg = e instanceof Error ? firstLine(e.message) : String(e);
       ctx.err(`ltm connect: ${file}: ${msg}; nothing written\n`);
       return 1;
     }

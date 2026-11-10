@@ -140,7 +140,7 @@ banks: [acme]
 EOF
 ```
 
-`ltm connect` prints a short Markdown section that tells the repo's agents where the Bank is and how to query it. To add it to the repo's `AGENTS.md`, run `ltm connect --write`. It puts the section between `<!-- ltm:connect:begin -->` and `<!-- ltm:connect:end -->` markers and replaces it in place on later runs, for example after you add a Bank to `.ltm.yaml`. Plain `ltm connect` still prints it.
+`ltm connect` prints a short Markdown section that tells the repo's agents where the Bank is and how to query it. To add it to the repo's `AGENTS.md`, run `ltm connect --write <file>` with that path. It puts the section between `<!-- ltm:connect:begin -->` and `<!-- ltm:connect:end -->` markers and replaces it in place on later runs, for example after you add a Bank to `.ltm.yaml`. Plain `ltm connect` still prints it.
 
 ```sh
 ltm connect --write AGENTS.md

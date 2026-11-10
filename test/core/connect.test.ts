@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { connectRegion, spliceConnectRegion } from "../../src/core/connect.js";
+import { connectRegion, spliceConnectRegion } from "../../src/core/connect.ts";
 
 const R = connectRegion("## Org memory\nx\n");
 const R2 = connectRegion("## Org memory\ny\n");
