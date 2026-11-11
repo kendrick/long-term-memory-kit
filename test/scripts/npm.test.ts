@@ -97,7 +97,7 @@ describe("npm packages", () => {
     dist = mkdtempSync(join(tmpdir(), "ltm-npm-dist-"));
     const build = spawnSync("bun", ["build", "--compile", join(ROOT, "src/cli/bin.ts"), "--outfile", join(dist, hostBinary)], {
       encoding: "utf8",
-      // Bun stages a .bun-build copy of the runtime in its cwd and keeps it; afterAll removes dist. build-npm reads dist by exact name, so the dotfile is inert.
+      // Bun stages a .bun-build copy of the runtime in its cwd and keeps it; afterAll removes dist.
       cwd: dist,
     });
     if (build.status !== 0) throw new Error(`bun build failed: ${build.stderr}`);
