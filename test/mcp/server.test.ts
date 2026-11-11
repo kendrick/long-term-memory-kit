@@ -98,11 +98,9 @@ describe("ltm mcp, read-only tools", () => {
   );
 
   test(
-    "query with facets follows query.org_wide: exclude",
+    "query with facets under query.org_wide: exclude drops only the Org-wide Record",
     async () => {
-      const TAGGED = "_memory/context/order-service-overview-gN5yD9sMe2.md";
-      const ORG_WIDE = "_memory/policy-rules/services-have-codeowners-aW7kC3oRf2.md";
-      const pathsUnder = (orgWide: "include" | "exclude") =>
+      const pathsUnder = (orgWide: query.OrgWide) =>
         withServer(
           async ({ client }) => (ok(await call(client, "query", { facets: ["service:order-service"] })).results as { path: string }[]).map((r) => r.path),
           (root) => {
@@ -113,7 +111,7 @@ describe("ltm mcp, read-only tools", () => {
       const included = await pathsUnder("include");
       const excluded = await pathsUnder("exclude");
       expect(included).toContain(ORG_WIDE);
-      expect(excluded).toContain(TAGGED);
+      expect(excluded).toContain(OVERVIEW);
       expect(excluded).not.toContain(ORG_WIDE);
       // Sorted because results are ranked; the sets must match, not the order.
       expect([...excluded].sort()).toEqual(included.filter((p) => p !== ORG_WIDE).sort());
@@ -442,6 +440,7 @@ describe("ltm mcp, an env-selected path that is not a Bank root", () => {
 
 const MOVED = "_memory/decisions/postgres-moved-kQ7vN2xLp4.md";
 const OVERVIEW = "_memory/context/order-service-overview-gN5yD9sMe2.md";
+const ORG_WIDE = "_memory/policy-rules/services-have-codeowners-aW7kC3oRf2.md";
 const idOf = (text: unknown): string | undefined => String(text).match(/^id: (\S+)$/m)?.[1];
 
 // The swap issue #111 names: kQ7vN2xLp4 leaves POSTGRES and gN5yD9sMe2 takes its old path, in one commit.

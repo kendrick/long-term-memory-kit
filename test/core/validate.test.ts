@@ -481,7 +481,7 @@ describe("checkConfig", () => {
       // Bare words: YAML hands the schema a boolean or null, not a string.
       for (const v of ["true", "false", "~"]) {
         expect(findings(`${base}query:\n  org_wide: ${v}\n`)).toEqual([
-          expect.objectContaining({ file: "memory-bank.yaml", rule: "config-schema", key: "query" }),
+          expect.objectContaining({ file: "memory-bank.yaml", rule: "config-schema", key: "query", line: 4 }),
         ]);
       }
     });
