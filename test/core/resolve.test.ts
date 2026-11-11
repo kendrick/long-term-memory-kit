@@ -86,6 +86,15 @@ describe("matchRule", () => {
     expect(matchRule("github.com/acme/*", "github.com/acme/x/y")).toBe(false);
   });
 
+  test("segments match without regard to case, but a different letter still misses (#196)", () => {
+    expect(matchRule("github.com/acme/*", "github.com/Acme/x")).toBe(true);
+    expect(matchRule("github.com/acme/order-service", "github.com/ACME/Order-Service")).toBe(true);
+    expect(matchRule("GitHub.com/acme/*", "github.com/acme/x")).toBe(true);
+    expect(matchRule("gitlab.com/grp/*/*", "gitlab.com/Grp/Sub/Repo")).toBe(true);
+    expect(matchRule("github.com/acme/*", "github.com/acmf/x")).toBe(false);
+    expect(matchRule("github.com/acme/order-service", "github.com/acme/Order-Servicf")).toBe(false);
+  });
+
   test("a lone * matches everything", () => {
     expect(matchRule("*", "github.com/acme/x")).toBe(true);
     expect(matchRule("*", "gitlab.example.com/a/b")).toBe(true);

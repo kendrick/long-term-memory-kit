@@ -112,7 +112,24 @@ describe("ltm query from a Consumer repo", () => {
     expect(r.stderr).not.toContain("not mapped");
   });
 
-  // --bank bypasses the case-sensitive routing rules, so the Acme owner still reaches the consumers lookup.
+  // The `*` rule would answer this with `personal`, so the acme: row can only come from the acme rule matching.
+  test("an Acme/Order-Service origin routes to the acme Bank and its consumers facets with no --bank (#196)", async () => {
+    setOrigin("git@github.com:Acme/Order-Service.git");
+    const r = await ltm(repo, "query", "--type", "Exception");
+    expect(r.exitCode).toBe(0);
+    expect(lines(r.stdout)).toContainEqual(expect.stringMatching(new RegExp(`^acme:${REDIS}  `)));
+    expect(r.stderr).not.toContain("not mapped");
+  });
+
+  test("an origin one letter off the rule's owner doesn't route to the acme Bank (#196)", async () => {
+    setOrigin("git@github.com:Acmf/Order-Service.git");
+    const r = await ltm(repo, "query");
+    expect(r.exitCode).toBe(0);
+    expect(lines(r.stdout).some((l) => l.startsWith("acme:"))).toBe(false);
+    expect(lines(r.stdout).some((l) => l.startsWith("personal:"))).toBe(true);
+  });
+
+  // --bank skips the routing rules entirely, so the Acme owner still reaches the consumers lookup.
   test("an Acme/Order-Service origin finds the lowercase consumers key under --bank", async () => {
     setOrigin("git@github.com:Acme/Order-Service.git");
     const r = await ltm(repo, "query", "--bank", "acme", "--type", "Exception");
