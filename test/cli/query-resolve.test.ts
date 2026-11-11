@@ -123,8 +123,10 @@ describe("ltm query from a Consumer repo", () => {
 
   test("an origin one letter off the rule's owner doesn't route to the acme Bank (#196)", async () => {
     setOrigin("git@github.com:Acmf/Order-Service.git");
-    const r = await ltm(repo, "query", "--type", "Exception");
+    const r = await ltm(repo, "query");
+    expect(r.exitCode).toBe(0);
     expect(lines(r.stdout).some((l) => l.startsWith("acme:"))).toBe(false);
+    expect(lines(r.stdout).some((l) => l.startsWith("personal:"))).toBe(true);
   });
 
   // --bank skips the routing rules entirely, so the Acme owner still reaches the consumers lookup.

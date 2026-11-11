@@ -72,13 +72,10 @@ export function identityString(id: RemoteIdentity): string {
 
 export function matchRule(match: string, identity: string): boolean {
   if (match === "*") return true;
-  const want = match.split("/");
-  const have = identity.split("/");
   // Forges treat host, owner, and repo as case-insensitive, so fold here, not in parseRemote.
-  return (
-    want.length === have.length &&
-    want.every((seg, i) => seg === "*" || seg.toLowerCase() === have[i]?.toLowerCase())
-  );
+  const want = match.toLowerCase().split("/");
+  const have = identity.toLowerCase().split("/");
+  return want.length === have.length && want.every((seg, i) => seg === "*" || seg === have[i]);
 }
 
 function locateUserConfig(env: Env, platform: string): string | null {
