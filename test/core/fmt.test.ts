@@ -354,6 +354,13 @@ describe("amendRecordText", () => {
     expect(r).toEqual({ text: src.replace("date: 2026-01-01\r\n", "date: 2026-01-01\r\nlast_confirmed: 2026-11-07\r\n") });
   });
 
+  test("keeps a closing --- at end of file without adding a newline (#181)", () => {
+    const src = "---\nschema: 1\nid: aB3dE5fG7h\nmemory_type: Decision\ntitle: T\nstatus: accepted\ndate: 2026-01-01\n---";
+    const r = amendRecordText(src, { set: { last_confirmed: "2026-11-07" }, unset: [] });
+    expect(r).toEqual({ text: src.replace("date: 2026-01-01\n", "date: 2026-01-01\nlast_confirmed: 2026-11-07\n") });
+    expect("text" in r && r.text.endsWith("---")).toBe(true);
+  });
+
   test("refuses a commented frontmatter", () => {
     const r = amendRecordText(SRC.replace("title: T", "title: T # why"), none);
     expect(r).toEqual({ reason: "frontmatter holds a YAML comment, which fmt can't keep" });

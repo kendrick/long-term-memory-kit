@@ -423,6 +423,11 @@ export function createServer(env: Env, cwd: string): McpServer {
   );
 
   const scalar = z.union([z.string(), z.number(), z.boolean()]);
+  // Mirrors the custom_keys propertyNames pattern in schema/memory-bank.schema.json.
+  const FRONTMATTER_KEY = /^[a-z][a-z0-9_]*$/;
+  const refuseKey = (key: string, ctx: { addIssue: z.RefinementCtx["addIssue"] }): void => {
+    if (!FRONTMATTER_KEY.test(key)) ctx.addIssue({ code: "custom", message: `amend can't use key '${key}': a frontmatter key matches ^[a-z][a-z0-9_]*$` });
+  };
   server.registerTool(
     "amend",
     {
@@ -430,11 +435,18 @@ export function createServer(env: Env, cwd: string): McpServer {
         "Change frontmatter keys on an existing Record, by id, through a new ltm/amend branch and change request, the same review path as propose. Never edits the body.",
       inputSchema: z.object({
         id: z.string().describe(schemaDesc("id")),
+        // z.record drops a `__proto__` key before any key schema sees it, so the check reads the raw object. z.preprocess keeps `set` listed as an object in tools/list, where z.unknown().pipe() lists it as {}.
         set: z
-          .record(z.string(), z.union([scalar, z.array(scalar)]))
+          .preprocess((v, ctx) => {
+            if (typeof v === "object" && v !== null) for (const k of Object.keys(v)) refuseKey(k, ctx);
+            return v;
+          }, z.record(z.string(), z.union([scalar, z.array(scalar)])))
           .optional()
-          .describe("Frontmatter keys to set, each to a scalar or a flat list. Never id, schema, or memory_type."),
-        unset: z.array(z.string()).optional().describe("Frontmatter keys to remove. Never id, schema, or memory_type."),
+          .describe("Frontmatter keys to set, each to a scalar or a flat list. Keys match ^[a-z][a-z0-9_]*$. Never id, schema, or memory_type."),
+        unset: z
+          .array(z.string().superRefine(refuseKey))
+          .optional()
+          .describe("Frontmatter keys to remove. Keys match ^[a-z][a-z0-9_]*$. Never id, schema, or memory_type."),
         bank: bankInput,
       }),
     },

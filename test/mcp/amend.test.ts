@@ -104,6 +104,29 @@ describe("ltm mcp, amend", () => {
     MCP_TEST_TIMEOUT,
   );
 
+  // Built with JSON.parse because a literal `{ __proto__: "x" }` sets the prototype, and the client would then send no such key.
+  const badKeys: [string, Record<string, unknown>, string][] = [
+    ["an empty set key", { set: JSON.parse('{"": "e"}') }, "''"],
+    ["a __proto__ set key", { set: JSON.parse('{"__proto__": "x", "last_confirmed": "2026-11-09"}') }, "'__proto__'"],
+    ["an uppercase set key", { set: { Kind: "x" } }, "'Kind'"],
+    ["an empty unset key", { unset: [""] }, "''"],
+  ];
+  for (const [what, args, quoted] of badKeys) {
+    test(
+      `amend refuses ${what} by name (#181)`,
+      () =>
+        withGitBank(({ bare }) =>
+          withUrlServer(bare, tmpdir(), async (client) => {
+            const r = await client.callTool({ name: "amend", arguments: { id: ID, ...args } });
+            expect(r.isError).toBe(true);
+            expect(textOf(r)).toContain(quoted);
+            expect(amendRefs(bare)).toEqual([]);
+          }),
+        ),
+      MCP_TEST_TIMEOUT,
+    );
+  }
+
   test(
     "amend refuses an unknown status",
     () =>
