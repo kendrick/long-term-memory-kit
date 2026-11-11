@@ -74,7 +74,11 @@ export function matchRule(match: string, identity: string): boolean {
   if (match === "*") return true;
   const want = match.split("/");
   const have = identity.split("/");
-  return want.length === have.length && want.every((seg, i) => seg === "*" || seg === have[i]);
+  // Forges treat host, owner, and repo as case-insensitive, so fold here, not in parseRemote.
+  return (
+    want.length === have.length &&
+    want.every((seg, i) => seg === "*" || seg.toLowerCase() === have[i]?.toLowerCase())
+  );
 }
 
 function locateUserConfig(env: Env, platform: string): string | null {
