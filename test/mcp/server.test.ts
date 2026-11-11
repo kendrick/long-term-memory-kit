@@ -99,19 +99,26 @@ describe("ltm mcp, read-only tools", () => {
 
   test(
     "query with facets follows query.org_wide: exclude",
-    () =>
-      withServer(
-        async ({ client }) => {
-          const results = ok(await call(client, "query", { facets: ["service:order-service"] })).results as { path: string }[];
-          expect(results.length).toBeGreaterThan(0);
-          expect(results.map((r) => r.path)).not.toContain("_memory/policy-rules/services-have-codeowners-aW7kC3oRf2.md");
-        },
-        (root) => {
-          const cfg = join(root, "memory-bank.yaml");
-          writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\nquery:\n  org_wide: exclude\n`);
-        },
-      ),
-    MCP_TEST_TIMEOUT,
+    async () => {
+      const TAGGED = "_memory/context/order-service-overview-gN5yD9sMe2.md";
+      const ORG_WIDE = "_memory/policy-rules/services-have-codeowners-aW7kC3oRf2.md";
+      const pathsUnder = (orgWide: "include" | "exclude") =>
+        withServer(
+          async ({ client }) => (ok(await call(client, "query", { facets: ["service:order-service"] })).results as { path: string }[]).map((r) => r.path),
+          (root) => {
+            const cfg = join(root, "memory-bank.yaml");
+            writeFileSync(cfg, `${readFileSync(cfg, "utf8").trimEnd()}\nquery:\n  org_wide: ${orgWide}\n`);
+          },
+        );
+      const included = await pathsUnder("include");
+      const excluded = await pathsUnder("exclude");
+      expect(included).toContain(ORG_WIDE);
+      expect(excluded).toContain(TAGGED);
+      expect(excluded).not.toContain(ORG_WIDE);
+      // Sorted because results are ranked; the sets must match, not the order.
+      expect([...excluded].sort()).toEqual(included.filter((p) => p !== ORG_WIDE).sort());
+    },
+    MCP_TEST_TIMEOUT * 2,
   );
 
   test(
