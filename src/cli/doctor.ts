@@ -4,7 +4,7 @@ import { loadRecall, qmdBackend, RecallError, type QmdBackend } from "../core/qm
 import { qmdVectorBackend } from "../core/qmd-vector.ts";
 import { listRecords } from "../core/query.ts";
 import { firstLine } from "../core/text.ts";
-import { ConfigError } from "../core/bank.ts";
+import { ConfigError, isMapping } from "../core/bank.ts";
 import { resolveBankFlag } from "../core/resolve.ts";
 import { configErrorLine, openBank } from "./bank.ts";
 import type { Command } from "./run.ts";
@@ -48,6 +48,13 @@ export const doctor: Command = {
     const recall = loadRecall(config);
     if (recall !== null && "error" in recall) {
       ctx.err(`ltm doctor: memory-bank.yaml: ${recall.error}\n`);
+      return 1;
+    }
+    // Vector scores don't sit on search's scale, so the schema default would be meaningless (ADR 0004).
+    // Only doctor reads the threshold, so ltm query must not demand it (#150).
+    const doctorCfg = config.raw.doctor;
+    if (recall?.mode === "vector" && !(isMapping(doctorCfg) && doctorCfg.near_duplicate_threshold !== undefined)) {
+      ctx.err("ltm doctor: memory-bank.yaml: doctor.near_duplicate_threshold is required when recall.mode is vector\n");
       return 1;
     }
     const warn = (line: string) => ctx.err(`ltm doctor: qmd: ${line}\n`);

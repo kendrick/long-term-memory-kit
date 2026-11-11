@@ -845,6 +845,50 @@ describe("ltm query Stage 0 (#134)", () => {
     });
   });
 
+  // #150: loadRecall used to demand doctor.near_duplicate_threshold, a key query never reads.
+  test("vector with query.min_score and no doctor key ranks by qmd vector (#150)", async () => {
+    await withScratch(demo, async (dir) => {
+      setRecall(dir, "recall: { backend: qmd, mode: vector, collections: { Decision: decisions } }\nquery: { min_score: 0.5 }");
+      const bin = mkdtempSync(join(tmpdir(), "ltm-fakeqmd-vec-"));
+      try {
+        // The fake's `skills path` points at the fake package; its worker reads vectors and status from env.
+        writeFileSync(
+          join(bin, "qmd"),
+          `#!/bin/sh
+if [ "$1" = skills ]; then printf '%s/skills\\n' "$FAKE_PKG"; exit 0; fi
+if [ "$1" = collection ]; then printf 'Collection: %s\\n  Path:     %s\\n' "$3" "$FAKE_ROOT"; exit 0; fi
+if [ "$1" = ls ]; then printf '%s' "$QMD_LS"; exit 0; fi
+exit 1
+`,
+        );
+        chmodSync(join(bin, "qmd"), 0o755);
+        const r = await run({
+          argv: ["query", "--json", "--text", "postgres"],
+          cwd: dir,
+          env: {
+            PATH: bin,
+            FAKE_PKG: fileURLToPath(new URL("../fixtures/fake-qmd-package", import.meta.url)),
+            FAKE_ROOT: join(dir, "_memory/decisions"),
+            QMD_LS: readdirSync(join(dir, "_memory/decisions"))
+              .map((f) => `   1.2 KB  Nov  5 10:00  qmd://decisions/${f}\n`)
+              .join(""),
+            FAKE_STATUS: JSON.stringify({ decisions: { active: 9, pending: 0 } }),
+            FAKE_VEC: JSON.stringify({
+              decisions: { postgres: [{ filepath: `qmd://decisions/${PG.slice("_memory/decisions/".length)}`, score: 0.9 }] },
+            }),
+            // Keeps the worker off the user's ~/.config/qmd.
+            XDG_CONFIG_HOME: join(bin, "config"),
+          },
+        });
+        expect(r.exitCode).toBe(0);
+        const rows = JSON.parse(r.stdout) as { path: string; ranked_by: string }[];
+        expect(rows.find((x) => x.path === PG)?.ranked_by).toBe("qmd vector");
+      } finally {
+        rmSync(bin, { recursive: true, force: true });
+      }
+    });
+  });
+
   test("query.min_score drops a hit below it and keeps one at it; out of range exits 1", async () => {
     await withScratch(demo, async (dir) => {
       setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }\nquery: { min_score: 0.5 }");

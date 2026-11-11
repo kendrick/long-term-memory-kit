@@ -82,11 +82,9 @@ describe("loadRecall", () => {
     });
   });
 
-  test("mode vector without doctor.near_duplicate_threshold is an error naming the key", () => {
+  test("mode vector parses without doctor.near_duplicate_threshold (#150)", () => {
     const recall = { backend: "qmd", mode: "vector", collections: { Decision: "decisions" } };
-    expect(loadRecall(config({ recall }))).toEqual({
-      error: "doctor.near_duplicate_threshold is required when recall.mode is vector",
-    });
+    expect(loadRecall(config({ recall }))).toEqual({ backend: "qmd", mode: "vector", collections: { Decision: "decisions" } });
   });
 
   const errors: [string, unknown, string][] = [

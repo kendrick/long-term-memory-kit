@@ -44,11 +44,6 @@ export function loadRecall(config: BankConfig): Recall | null | { error: string 
   for (const [key, name] of Object.entries(collections)) {
     if (typeof name !== "string" || name === "") return { error: `recall.collections.${key} must be a collection name` };
   }
-  // Vector scores don't sit on search's scale, so the schema default would be meaningless (ADR 0004).
-  const doctor = config.raw.doctor;
-  if (mode === "vector" && !(isMapping(doctor) && doctor.near_duplicate_threshold !== undefined)) {
-    return { error: "doctor.near_duplicate_threshold is required when recall.mode is vector" };
-  }
   return { backend: "qmd", mode, collections: { ...(collections as Partial<Record<MemoryType, string>>) } };
 }
 
