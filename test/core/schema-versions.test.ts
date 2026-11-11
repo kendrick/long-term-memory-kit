@@ -106,6 +106,8 @@ test(
       const out = join(bin, "ltm");
       const build = spawnSync("bun", ["build", "--compile", join(ROOT, "src/cli/bin.ts"), "--outfile", out], {
         encoding: "utf8",
+        // Bun stages a .bun-build copy of the runtime in its cwd and keeps it; bin is removed below.
+        cwd: bin,
       });
       expect(build.stderr).not.toContain("error");
       expect(build.status).toBe(0);
