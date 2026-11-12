@@ -156,7 +156,7 @@
     "required": ["recall"]
   },
   "then": {
-    "$comment": "Vector mode scores on a cosine scale, so near_duplicate_threshold's search default doesn't apply and ltm query has no sensible cutoff to assume: the Bank must set both. loadRecall in src/core/qmd.ts enforces the threshold for ltm doctor, and ltm query's loader enforces min_score. Keep this the schema's only if/then; checkConfig in src/core/validate.ts relies on it.",
+    "$comment": "Vector mode scores on a cosine scale, so near_duplicate_threshold's search default doesn't apply and ltm query has no sensible cutoff to assume: the Bank must set both. ltm doctor enforces the threshold in src/cli/doctor.ts, and ltm query's loader enforces min_score. Keep this the schema's only if/then; checkConfig in src/core/validate.ts relies on it.",
     "properties": {
       "doctor": { "type": "object", "required": ["near_duplicate_threshold"] },
       "query": { "type": "object", "required": ["min_score"] }
