@@ -155,9 +155,8 @@ describe("digest", () => {
       edit(dir, RULE, "status: accepted", "status: deprecated");
       const { config, all } = load(dir);
       const md = renderDigest({ config, all, picked: digestRecords(all, "2026-11-05"), scope: "x" });
-      const [line] = departs(md);
-      expect(line).toContain("That PolicyRule is no longer in force.");
-      expect(line).toContain(`(${RULE})`);
+      const title = readFileSync(pathOf(dir, RULE), "utf8").match(/^title: (.*)$/m)![1];
+      expect(departs(md)).toEqual([`- Departs from PolicyRule: ${title} (${RULE}). That PolicyRule is no longer in force.`]);
     });
   });
 
@@ -168,11 +167,11 @@ describe("digest", () => {
         const t = readFileSync(pathOf(dir, RULE), "utf8").match(/^title: .*$/m)![0];
         edit(dir, RULE, t, `title: ${title}`);
         const { config, all } = load(dir);
-        return departs(renderDigest({ config, all, picked: digestRecords(all, "2026-11-05"), scope: "x" }));
+        return renderDigest({ config, all, picked: digestRecords(all, "2026-11-05"), scope: "x" });
       });
     const a = await render("DRAFT-SECRET");
-    expect(a).toEqual(await render("Something else"));
-    expect(a.join("\n")).not.toContain("DRAFT-SECRET");
+    expect(a).toBe(await render("Something else"));
+    expect(a).not.toContain("DRAFT-SECRET");
   });
 
   test("6: bodies appear in full and no markdown table survives outside a fence", async () => {

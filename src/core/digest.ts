@@ -99,6 +99,10 @@ export function renderDigest(opts: {
     const r = byId.get(id);
     return r?.memoryType === "PolicyRule" && r.frontmatter.status === "accepted";
   };
+  const wasAccepted = (id: string): boolean => {
+    const r = byId.get(id);
+    return r?.memoryType === "PolicyRule" && ["accepted", "superseded", "deprecated"].includes(String(r.frontmatter.status));
+  };
   const lines = [`# ${name} Digest`, "", commit, `Scope: ${scope}.`];
   for (const section of SECTIONS) {
     const entries = rendered.filter((r) => r.memoryType === section).sort((a, b) => byCodeUnit(idOf(a), idOf(b)));
@@ -113,15 +117,15 @@ export function renderDigest(opts: {
         if (fm.effective_to != null) lines.push(`- effective_to: ${String(fm.effective_to)}`);
         for (const id of ruleIdsOf(r)) {
           const rule = byId.get(id);
-          // A Proposal's title must not reach Digest readers through an Exception (#145).
-          if (!(rule?.memoryType === "PolicyRule" && ["accepted", "superseded", "deprecated"].includes(String(rule.frontmatter.status)))) {
+          // A rule never accepted (proposed, rejected, unknown id) must not leak its title through an Exception (#145).
+          if (!wasAccepted(id)) {
             lines.push(`- Departs from PolicyRule ${id}, which is not accepted.`);
             continue;
           }
-          const title = str(rule.frontmatter.title);
+          const title = str(rule!.frontmatter.title);
           lines.push(
             inForce(id)
-              ? `- Departs from PolicyRule: ${title} (${id}). ${str(rule.frontmatter.summary)}`
+              ? `- Departs from PolicyRule: ${title} (${id}). ${str(rule!.frontmatter.summary)}`
               : `- Departs from PolicyRule: ${title} (${id}). That PolicyRule is no longer in force.`,
           );
         }
