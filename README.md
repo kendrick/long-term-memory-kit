@@ -30,6 +30,16 @@ brew install kendrick/tap/ltm
 
 Each release updates the formula, so `brew upgrade` picks up new versions.
 
+### Install Script
+
+On macOS or Linux, the install script uses Homebrew when `brew` is on your `PATH`. Without `brew`, it downloads the Release binary, checks it against `SHA256SUMS`, and puts it in `~/.local/bin`:
+
+```sh
+curl -fsSL https://github.com/kendrick/long-term-memory-kit/releases/latest/download/install.sh | sh
+```
+
+Set `LTM_INSTALL_DIR` to install somewhere else, or `LTM_VERSION` (for example `v1.2.3`) to pick a release other than the one the script came from.
+
 ### Fallback: Download a Release Binary
 
 Download your platform's binary and `SHA256SUMS`, check the binary against it, and move it onto your `PATH`. On an Apple silicon Mac:

@@ -84,6 +84,17 @@ describe("release.yml", () => {
     expect(wf.on.pull_request.paths).toContain("scripts/sign-darwin.sh");
   });
 
+  test("the Release attaches an install.sh built for its own tag", () => {
+    const steps: { uses?: string; run?: string }[] = wf.jobs.release.steps;
+    const checkout = steps.findIndex((s) => s.uses === "actions/checkout@v7");
+    const build = steps.findIndex((s) => s.run === 'sh scripts/build-install.sh "$GITHUB_REF_NAME" > dist/install.sh');
+    const create = steps.findIndex((s) => s.run?.includes("gh release create"));
+    expect(checkout).toBeGreaterThanOrEqual(0);
+    expect(build).toBeGreaterThan(checkout);
+    expect(create).toBeGreaterThan(build);
+    expect(steps[create]!.run).toContain("dist/install.sh");
+  });
+
   test("homebrew waits on the Release and runs on tag pushes only", () => {
     expect([wf.jobs.homebrew.needs].flat()).toContain("release");
     expect(wf.jobs.homebrew.if).toBe("github.event_name == 'push'");

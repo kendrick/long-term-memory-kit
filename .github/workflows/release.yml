@@ -168,12 +168,14 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: dist-signed
           path: dist
       - run: chmod +x dist/ltm-*
-      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes dist/ltm-* dist/SHA256SUMS
+      - run: sh scripts/build-install.sh "$GITHUB_REF_NAME" > dist/install.sh
+      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes dist/ltm-* dist/SHA256SUMS dist/install.sh
         env:
           GH_TOKEN: ${{ github.token }}
 
