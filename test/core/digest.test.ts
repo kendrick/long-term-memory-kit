@@ -196,6 +196,40 @@ describe("digest", () => {
     });
   });
 
+  describe("6a: fenceTables edge shapes", () => {
+    const body = async (extra: string): Promise<string> =>
+      withScratch(DEMO, async (dir) => {
+        const p = pathOf(dir, RULE);
+        writeFileSync(p, `${readFileSync(p, "utf8")}\n${extra}\n`);
+        const { config, all } = load(dir);
+        return renderDigest({ config, all, picked: digestRecords(all, "2026-11-05"), scope: "x" });
+      });
+
+    test("a blockquoted pipe table lands in one text fence, markers kept", async () => {
+      const t = "> | a | b |\n> |---|---|\n> | 1 | 2 |";
+      expect(await body(t)).toContain(`\`\`\`text\n${t}\n\`\`\``);
+    });
+
+    test("a grid table lands in one fence holding all five lines", async () => {
+      const t = "+---+\n| a |\n+===+\n| 1 |\n+---+";
+      expect(await body(t)).toContain(`\`\`\`text\n${t}\n\`\`\``);
+    });
+
+    test("a + list stays unfenced", async () => {
+      const t = "+ one\n+ two\n+ three";
+      const md = await body(t);
+      expect(md).toContain(t);
+      expect(md).not.toContain(`\`\`\`text\n+ one`);
+    });
+
+    test("a blockquote of prose with a pipe but no delimiter row stays unfenced", async () => {
+      const t = "> either a | b\n> or c";
+      const md = await body(t);
+      expect(md).toContain(t);
+      expect(md).not.toContain(`\`\`\`text\n> either`);
+    });
+  });
+
   test("6b: a foreign .md in the out dir survives; split always writes org-wide.md", async () => {
     await withScratch(DEMO, async (dir) => {
       const out = join(dir, "out");

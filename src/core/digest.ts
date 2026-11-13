@@ -60,12 +60,22 @@ function fenceTables(body: string): string {
     }
     inFence.push(fenced);
   }
-  const isTable = lines.map((l, i) => !inFence[i] && l.trimStart().startsWith("|"));
-  lines.forEach((l, i) => {
-    if (inFence[i] || i === 0 || inFence[i - 1] || !DELIMITER_ROW.test(l) || !lines[i - 1]!.includes("|")) return;
+  const uq = lines.map((l) => l.replace(/^\s*(?:>\s?)+/, ""));
+  const isTable = lines.map((_, i) => !inFence[i] && uq[i]!.trimStart().startsWith("|"));
+  lines.forEach((_, i) => {
+    if (inFence[i] || i === 0 || inFence[i - 1] || !DELIMITER_ROW.test(uq[i]!) || !uq[i - 1]!.includes("|")) return;
     isTable[i - 1] = true;
-    for (let j = i; j < lines.length && !inFence[j] && lines[j]!.includes("|"); j++) isTable[j] = true;
+    for (let j = i; j < lines.length && !inFence[j] && uq[j]!.includes("|"); j++) isTable[j] = true;
   });
+  // A bare `+ item` bullet must not look like a grid border, so a border needs `+-`, `+=` or `+:`.
+  const border = (i: number) => !inFence[i] && /^\+[-=:]/.test(uq[i]!);
+  for (let i = 0; i < lines.length; i++) {
+    if (!border(i)) continue;
+    let j = i + 1;
+    while (j < lines.length && !inFence[j] && (border(j) || uq[j]!.startsWith("|"))) j++;
+    if (j - i > 1) for (let k = i; k < j; k++) isTable[k] = true;
+    i = j - 1;
+  }
   const out: string[] = [];
   lines.forEach((l, i) => {
     if (isTable[i] && !isTable[i - 1]) out.push("```text");
