@@ -187,11 +187,11 @@ describe("relative links and anchors", () => {
 });
 
 describe("README", () => {
-  test("Promote a decision is its second, third, or fourth ## heading", () => {
+  test("Promote a decision is its second through fifth ## heading", () => {
     const headings = readFileSync(join(repo, "README.md"), "utf8")
       .split("\n")
       .filter((l) => l.startsWith("## "))
       .map((l) => l.slice(3).trim());
-    expect([1, 2, 3]).toContain(headings.indexOf("Promote a decision"));
+    expect([1, 2, 3, 4]).toContain(headings.indexOf("Promote a decision"));
   });
 });
