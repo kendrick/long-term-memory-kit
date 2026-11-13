@@ -1,11 +1,17 @@
-import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
+import { homebrewFormula } from "../../scripts/homebrew-formula.ts";
 
 const ROOT = new URL("../..", import.meta.url).pathname;
 const text = readFileSync(join(ROOT, ".github/workflows/release.yml"), "utf8");
 const wf = parse(text, { logLevel: "error" });
+const tmp = mkdtempSync(join(tmpdir(), "release-workflow-"));
+afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+let runs = 0;
 
 describe("release.yml", () => {
   test("the GitHub Release needs the smokes and bench-gate but not npm, so a failed or skipped publish can't hold back the binaries", () => {
@@ -76,5 +82,77 @@ describe("release.yml", () => {
 
   test("PRs touching sign-darwin.sh trigger the dry run", () => {
     expect(wf.on.pull_request.paths).toContain("scripts/sign-darwin.sh");
+  });
+
+  test("homebrew waits on the Release and runs on tag pushes only", () => {
+    expect([wf.jobs.homebrew.needs].flat()).toContain("release");
+    expect(wf.jobs.homebrew.if).toBe("github.event_name == 'push'");
+  });
+
+  test("nothing needs homebrew, so a failed tap update can't hold back the Release or npm", () => {
+    for (const job of Object.values(wf.jobs) as { needs?: string | string[] }[]) {
+      expect([job.needs ?? []].flat()).not.toContain("homebrew");
+    }
+  });
+
+  // Runs the step's own script, since a notice in the text proves nothing about what bash does with it.
+  test("the homebrew token step exits 0 with a notice when HOMEBREW_TAP_TOKEN is empty, and flags it present otherwise", () => {
+    const step = wf.jobs.homebrew.steps.find((s: { id?: string }) => s.id === "token");
+    expect(step.run).toContain("::notice::");
+    expect(step.run).toContain("exit 0");
+    const run = (token: string) => {
+      const out = join(tmp, `token-${runs++}`);
+      writeFileSync(out, "");
+      const r = spawnSync("bash", ["-eo", "pipefail", "-c", step.run], {
+        env: { PATH: process.env.PATH, HOMEBREW_TAP_TOKEN: token, GITHUB_OUTPUT: out },
+        encoding: "utf8",
+      });
+      return { status: r.status, stdout: r.stdout, output: readFileSync(out, "utf8") };
+    };
+    const empty = run("");
+    expect(empty.status).toBe(0);
+    expect(empty.stdout).toContain("::notice::HOMEBREW_TAP_TOKEN is empty");
+    expect(empty.output).not.toContain("present=true");
+    const set = run("x");
+    expect(set.status).toBe(0);
+    expect(set.output).toContain("present=true");
+  });
+
+  // Runs the tap step's real bash against a stub git, which tests the guard as written without network access or a push.
+  test("the tap step never replaces a newer or equal formula, and installs over an older one or none", () => {
+    const step = wf.jobs.homebrew.steps.find((s: { run?: string }) => s.run?.includes("git push"));
+    const sha = ["ltm-darwin-arm64", "ltm-darwin-x64", "ltm-linux-arm64", "ltm-linux-x64"].map((a) => `${"a".repeat(64)}  ${a}`).join("\n");
+    const bin = join(tmp, "bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, "git"),
+      `#!/bin/bash\ncase "$1" in\n  clone) cp -R "$TAP" "$3" ;;\n  status) echo " M Formula/ltm.rb" ;;\n  push) echo pushed >> "$RUNNER_TEMP/log" ;;\nesac\n`,
+    );
+    chmodSync(join(bin, "git"), 0o755);
+    const release = (tag: string, tapVersion?: string) => {
+      const temp = join(tmp, `tap-${runs++}`);
+      const tap = join(temp, "fixture");
+      mkdirSync(join(tap, "Formula"), { recursive: true });
+      if (tapVersion) writeFileSync(join(tap, "Formula/ltm.rb"), homebrewFormula(tapVersion, sha));
+      writeFileSync(join(temp, "ltm.rb"), homebrewFormula(tag, sha));
+      const r = spawnSync("bash", ["-eo", "pipefail", "-c", step.run], {
+        env: { PATH: `${bin}:${process.env.PATH}`, GITHUB_REF_NAME: tag, RUNNER_TEMP: temp, TAP: tap, HOMEBREW_TAP_TOKEN: "x" },
+        encoding: "utf8",
+      });
+      const log = join(temp, "log");
+      return { status: r.status, stdout: r.stdout, stderr: r.stderr, pushed: existsSync(log) };
+    };
+
+    for (const [tag, tapVersion] of [["v0.1.1", "0.2.0"], ["v0.2.0", "0.2.0"], ["v0.9.0", "0.10.0"]]) {
+      const r = release(tag!, tapVersion);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain(`::notice::The tap already has ltm ${tapVersion}`);
+      expect(r.pushed).toBe(false);
+    }
+    for (const [tag, tapVersion] of [["v0.2.1", "0.2.0"], ["v0.10.0", "0.9.0"], ["v0.1.0", undefined]]) {
+      const r = release(tag!, tapVersion);
+      expect({ status: r.status, stderr: r.stderr }).toEqual({ status: 0, stderr: "" });
+      expect(r.pushed).toBe(true);
+    }
   });
 });

@@ -207,3 +207,62 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Nothing needs this: the tap is one more install path, so a failed or skipped update mustn't hold back the Release or npm.
+  homebrew:
+    needs: release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # `if:` can't read secrets, so check through env; a fork or rotated token then skips instead of failing.
+      - id: token
+        run: |
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN is empty; skipping the Homebrew tap update."
+            exit 0
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v7
+      - if: steps.token.outputs.present == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      # The published SHA256SUMS, not the build artifact, so the formula pins exactly what users download.
+      - if: steps.token.outputs.present == 'true'
+        run: gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" -p SHA256SUMS -D "$RUNNER_TEMP"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      # Written to a file before the tap is touched, so a SHA256SUMS missing an asset fails here and nothing reaches the tap.
+      - if: steps.token.outputs.present == 'true'
+        run: bun scripts/homebrew-formula.ts "${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/SHA256SUMS" > "$RUNNER_TEMP/ltm.rb"
+      - if: steps.token.outputs.present == 'true'
+        run: |
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/kendrick/homebrew-tap.git" "$RUNNER_TEMP/tap"
+          cd "$RUNNER_TEMP/tap"
+          # A re-run of an old tag, or an older tag's run finishing last, would otherwise roll the tap back to an older ltm, and `brew upgrade` would then offer nothing newer.
+          new="${GITHUB_REF_NAME#v}"
+          if [ -f Formula/ltm.rb ]; then
+            cur="$(sed -n 's/^  version "\(.*\)"$/\1/p' Formula/ltm.rb)"
+            if [ -n "$cur" ] && [ "$(printf '%s\n' "$new" "$cur" | sort -V | tail -n 1)" = "$cur" ]; then
+              echo "::notice::The tap already has ltm $cur; not replacing it with $new."
+              exit 0
+            fi
+          fi
+          mkdir -p Formula
+          cp "$RUNNER_TEMP/ltm.rb" Formula/ltm.rb
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "::notice::Formula/ltm.rb is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/ltm.rb
+          git commit -m "ltm $new"
+          git push origin HEAD
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
