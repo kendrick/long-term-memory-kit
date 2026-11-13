@@ -101,7 +101,7 @@ describe("homebrew-formula CLI", () => {
 
 const ruby = Bun.which("ruby");
 // ruby ships with macOS but not every CI image; the syntax check is only meaningful where it exists.
-(ruby ? test : test.skip)("generated formula passes ruby -c (skipped: ruby not on PATH)", () => {
+(ruby ? test : test.skip)(ruby ? "generated formula passes ruby -c" : "ruby -c check skipped: ruby not on PATH", () => {
   const p = join(dir, "ltm.rb");
   writeFileSync(p, homebrewFormula("1.2.3", sums()));
   const r = spawnSync(ruby!, ["-c", p], { encoding: "utf8" });

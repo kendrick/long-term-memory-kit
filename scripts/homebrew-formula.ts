@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const REPO = "https://github.com/kendrick/long-term-memory-kit";
 
-// Brew os/arch blocks mapped to the release asset each one installs.
+// Asset names must match build-binaries.sh's uploads exactly, because the SHA256SUMS lookup keys on them.
 const PLATFORMS = [
   { os: "macos", arch: "arm", asset: "ltm-darwin-arm64" },
   { os: "macos", arch: "intel", asset: "ltm-darwin-x64" },
@@ -23,7 +23,7 @@ function parseSums(text: string): Map<string, string> {
 }
 
 export function homebrewFormula(version: string, sha256sums: string): string {
-  const v = version.replace(/^v/, "");
+  const bare = version.replace(/^v/, "");
   const sums = parseSums(sha256sums);
   const missing = PLATFORMS.filter((p) => !sums.has(p.asset)).map((p) => p.asset);
   // An empty sha256 would make brew fail at install time on users' machines, so fail here instead.
@@ -33,7 +33,7 @@ export function homebrewFormula(version: string, sha256sums: string): string {
     PLATFORMS.filter((p) => p.os === os)
       .map(
         (p) => `    on_${p.arch} do
-      url "${REPO}/releases/download/v${v}/${p.asset}"
+      url "${REPO}/releases/download/v${bare}/${p.asset}"
       sha256 "${sums.get(p.asset)}"
     end`,
       )
@@ -42,7 +42,7 @@ export function homebrewFormula(version: string, sha256sums: string): string {
   return `class Ltm < Formula
   desc "Org-level memory for coding agents: query a Bank, hydrate Proposals, and promote decisions"
   homepage "${REPO}"
-  version "${v}"
+  version "${bare}"
   license "MIT"
 
   on_macos do

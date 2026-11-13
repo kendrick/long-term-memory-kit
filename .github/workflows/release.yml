@@ -244,6 +244,15 @@ jobs:
         run: |
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/kendrick/homebrew-tap.git" "$RUNNER_TEMP/tap"
           cd "$RUNNER_TEMP/tap"
+          # A re-run of an old tag, or an older tag's run finishing last, would otherwise roll the tap back to an older ltm, and `brew upgrade` would then offer nothing newer.
+          new="${GITHUB_REF_NAME#v}"
+          if [ -f Formula/ltm.rb ]; then
+            cur="$(sed -n 's/^  version "\(.*\)"$/\1/p' Formula/ltm.rb)"
+            if [ -n "$cur" ] && [ "$(printf '%s\n' "$new" "$cur" | sort -V | tail -n 1)" = "$cur" ]; then
+              echo "::notice::The tap already has ltm $cur; not replacing it with $new."
+              exit 0
+            fi
+          fi
           mkdir -p Formula
           cp "$RUNNER_TEMP/ltm.rb" Formula/ltm.rb
           if [ -z "$(git status --porcelain)" ]; then
@@ -253,7 +262,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/ltm.rb
-          git commit -m "ltm ${GITHUB_REF_NAME#v}"
+          git commit -m "ltm $new"
           git push origin HEAD
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
