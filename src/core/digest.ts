@@ -49,30 +49,35 @@ const DELIMITER_ROW = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/;
 
 function fenceTables(body: string): string {
   const lines = body.split("\n");
+  // Strip blockquote markers for every test; the fence still wraps the original lines.
+  const unquoted = lines.map((l) => l.replace(/^\s*(?:>\s?)+/, ""));
   const inFence: boolean[] = [];
   let fence: string | null = null;
-  for (const line of lines) {
-    const mark = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+  let fenceQuoted = false;
+  lines.forEach((line, i) => {
+    // An unclosed fence inside a quote ends with the quote, so it can't swallow tables after it.
+    if (fence !== null && fenceQuoted && unquoted[i] === line) fence = null;
+    const mark = /^\s*(`{3,}|~{3,})/.exec(unquoted[i]!)?.[1];
     let fenced = fence !== null;
     if (mark && (fence === null || (mark[0] === fence[0] && mark.length >= fence.length))) {
+      fenceQuoted = fence === null && unquoted[i] !== line;
       fence = fence === null ? mark : null;
       fenced = true;
     }
     inFence.push(fenced);
-  }
-  const uq = lines.map((l) => l.replace(/^\s*(?:>\s?)+/, ""));
-  const isTable = lines.map((_, i) => !inFence[i] && uq[i]!.trimStart().startsWith("|"));
+  });
+  const isTable = lines.map((_, i) => !inFence[i] && unquoted[i]!.trimStart().startsWith("|"));
   lines.forEach((_, i) => {
-    if (inFence[i] || i === 0 || inFence[i - 1] || !DELIMITER_ROW.test(uq[i]!) || !uq[i - 1]!.includes("|")) return;
+    if (inFence[i] || i === 0 || inFence[i - 1] || !DELIMITER_ROW.test(unquoted[i]!) || !unquoted[i - 1]!.includes("|")) return;
     isTable[i - 1] = true;
-    for (let j = i; j < lines.length && !inFence[j] && uq[j]!.includes("|"); j++) isTable[j] = true;
+    for (let j = i; j < lines.length && !inFence[j] && unquoted[j]!.includes("|"); j++) isTable[j] = true;
   });
   // A bare `+ item` bullet must not look like a grid border, so a border needs `+-`, `+=` or `+:`.
-  const border = (i: number) => !inFence[i] && /^\+[-=:]/.test(uq[i]!);
+  const isGridBorder = (i: number) => !inFence[i] && /^\+[-=:]/.test(unquoted[i]!.trimStart());
   for (let i = 0; i < lines.length; i++) {
-    if (!border(i)) continue;
+    if (!isGridBorder(i)) continue;
     let j = i + 1;
-    while (j < lines.length && !inFence[j] && (border(j) || uq[j]!.startsWith("|"))) j++;
+    while (j < lines.length && !inFence[j] && (isGridBorder(j) || unquoted[j]!.trimStart().startsWith("|"))) j++;
     if (j - i > 1) for (let k = i; k < j; k++) isTable[k] = true;
     i = j - 1;
   }

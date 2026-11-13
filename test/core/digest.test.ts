@@ -215,6 +215,23 @@ describe("digest", () => {
       expect(await body(t)).toContain(`\`\`\`text\n${t}\n\`\`\``);
     });
 
+    test("an indented grid table lands in one fence", async () => {
+      const t = "  +---+\n  | a |\n  +===+\n  | 1 |\n  +---+";
+      expect(await body(t)).toContain(`\`\`\`text\n${t}\n\`\`\``);
+    });
+
+    test("a pipe line inside a quoted code block gets no fence of its own", async () => {
+      const t = "> ```sh\n> | grep x\n> ```";
+      const md = await body(t);
+      expect(md).toContain(t);
+      expect(md).not.toContain("```text\n> | grep x");
+    });
+
+    test("an unclosed quoted fence ends with the quote, so a later table is still fenced", async () => {
+      const t = "> ```sh\n> echo hi\n\n| a | b |\n|---|---|\n| 1 | 2 |";
+      expect(await body(t)).toContain("```text\n| a | b |\n|---|---|\n| 1 | 2 |\n```");
+    });
+
     test("a + list stays unfenced", async () => {
       const t = "+ one\n+ two\n+ three";
       const md = await body(t);
