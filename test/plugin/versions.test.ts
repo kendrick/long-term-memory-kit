@@ -72,3 +72,26 @@ describe("the version rule's falsifier", () => {
     expect(versionsAgree(pkgVersion, files)).toBe(false);
   });
 });
+
+// release-please bumps only the files its config names, and in a Markdown file only the lines inside its markers.
+describe("release-please config", () => {
+  const config = JSON.parse(readFileSync(join(repo, "release-please-config.json"), "utf8"));
+  const extra: { type: string; path: string; jsonpath?: string }[] = config.packages["."]["extra-files"];
+
+  test("names every versioned file, so a release PR bumps them all with package.json", () => {
+    expect(extra.map((e) => e.path).sort()).toEqual(realFiles().map((f) => f.path).sort());
+    expect(extra.find((e) => e.path.endsWith(".json"))).toMatchObject({ type: "json", jsonpath: "$.version" });
+  });
+
+  // The start marker is a YAML comment closing the frontmatter, because vendored.test.ts pins VENDORED-FROM and VERSION as the two lines right under it. Neither `---` nor VENDORED-FROM holds an x.y.z, so the VERSION line is the only one the block rewrites.
+  test("each skill's VERSION line is the only versioned line inside the release-please markers", () => {
+    for (const f of realFiles().filter((f) => f.path.endsWith("SKILL.md"))) {
+      expect(f.text).toMatch(/^# x-release-please-start-version\n---\n<!-- VENDORED-FROM: [^\n\d]+ -->\n<!-- VERSION: \S+ -->\n<!-- x-release-please-end -->$/m);
+    }
+  });
+
+  test("the manifest's version is package.json's", () => {
+    expect(JSON.parse(readFileSync(join(repo, ".release-please-manifest.json"), "utf8"))["."]).toBe(pkgVersion);
+  });
+});
+
