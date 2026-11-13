@@ -61,8 +61,8 @@ function fenceTables(body: string): string {
     if (fence !== null && depth[i]! < fenceDepth) fence = null;
     const mark = /^\s*(`{3,}|~{3,})/.exec(unquoted[i]!)?.[1];
     let fenced = fence !== null;
-    // Inside a quoted fence, a mark at another depth is content (pandoc keeps the block open).
-    const sameDepth = fenceDepth === 0 || depth[i] === fenceDepth;
+    // Inside a fence, a mark at another quote depth is content (pandoc keeps the block open).
+    const sameDepth = depth[i] === fenceDepth;
     if (mark && (fence === null || (sameDepth && mark[0] === fence[0] && mark.length >= fence.length))) {
       if (fence === null) fenceDepth = depth[i]!;
       fence = fence === null ? mark : null;

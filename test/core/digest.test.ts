@@ -205,6 +205,13 @@ describe("digest", () => {
         return renderDigest({ config, all, picked: digestRecords(all, "2026-11-05"), scope: "x" });
       });
 
+    test("an unquoted fence is not closed by a quoted mark (pandoc keeps it one CodeBlock)", async () => {
+      const t = "```\n| a |\n> ```\n| x | y |\n|---|---|\n| 1 | 2 |\n```";
+      const out = await body(t);
+      expect(out).toContain(t);
+      expect(out).not.toContain("```text");
+    });
+
     test("a blockquoted pipe table lands in one text fence, markers kept", async () => {
       const t = "> | a | b |\n> |---|---|\n> | 1 | 2 |";
       expect(await body(t)).toContain(`\`\`\`text\n${t}\n\`\`\``);
