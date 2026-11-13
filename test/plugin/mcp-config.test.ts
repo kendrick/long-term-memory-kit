@@ -21,14 +21,15 @@ function interpolate(s: string, userConfig: Record<string, string>, pluginData: 
       if (!(key in userConfig)) throw new Error(`${s} names user_config.${key}, which userConfig doesn't declare`);
       return userConfig[key]!;
     })
-    .replaceAll("${CLAUDE_PLUGIN_DATA}", pluginData);
+    .replaceAll("${CLAUDE_PLUGIN_DATA}", pluginData)
+    .replaceAll("${CLAUDE_PLUGIN_ROOT}", repo);
   if (out.includes("${")) throw new Error(`unsubstituted placeholder left in ${JSON.stringify(out)}`);
   return out;
 }
 
 describe("plugin.json mcpServers.ltm", () => {
   test(
-    "starts through an `ltm` on PATH and serves the seven tools from the configured Bank",
+    "starts through bin/ltm-launch (taking its `ltm`-on-PATH branch) and serves the seven tools from the configured Bank",
     () =>
       withDemoGitBank(async (bank) => {
         const manifest = JSON.parse(readFileSync(join(repo, ".claude-plugin/plugin.json"), "utf8")) as Manifest;

@@ -26,8 +26,8 @@
   },
   "mcpServers": {
     "ltm": {
-      "command": "ltm",
-      "args": ["mcp"],
+      "command": "bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/ltm-launch", "mcp"],
       "env": {
         "LTM_BANK_URL": "${user_config.bank_url}",
         "LTM_BANK_PATH": "${user_config.bank_path}",
