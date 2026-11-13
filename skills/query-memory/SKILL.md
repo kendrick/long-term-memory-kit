@@ -4,7 +4,7 @@ description: Use before making or reviewing a choice that a PolicyRule or Decisi
 # x-release-please-start-version
 ---
 <!-- VENDORED-FROM: kendrick/long-term-memory-kit skills/query-memory -->
-<!-- VERSION: 0.2.0 -->
+<!-- VERSION: 0.3.0 -->
 <!-- x-release-please-end -->
 
 # Query Memory
