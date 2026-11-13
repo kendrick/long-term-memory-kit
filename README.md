@@ -7,6 +7,7 @@ A Bank is a git repository of Records. Each Record is one Markdown file with fla
 ## Contents
 
 - [Install](#install)
+- [Claude Code Plugin](#claude-code-plugin)
 - [Quickstart](#quickstart)
 - [Promote a decision](#promote-a-decision)
 - [Connect a Consumer Repo](#connect-a-consumer-repo)
@@ -55,7 +56,7 @@ ltm --version
 
 On Linux, use `ltm-linux-x64` or `ltm-linux-arm64` and check it with `sha256sum -c` in place of `shasum -a 256 -c`. On Windows, download `ltm-windows-x64.exe`, compare `Get-FileHash ltm-windows-x64.exe` with its line in `SHA256SUMS`, and put it in a folder on your `PATH` as `ltm.exe`.
 
-### Claude Code Plugin
+## Claude Code Plugin
 
 To give Claude Code the Bank, install the plugin from this repo's marketplace. When it asks for `bank_url`, enter your Bank's git URL. The plugin runs the `ltm` on your `PATH` if there is one. Otherwise it downloads the matching Release binary into its data folder and checks it against `SHA256SUMS` before running it. It starts `ltm` through `bash`. On Windows, Claude Code gets `bash` from Git for Windows, and `ltm` still has to be on your `PATH`.
 
