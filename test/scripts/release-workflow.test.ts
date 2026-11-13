@@ -112,6 +112,35 @@ describe("release.yml", () => {
     for (const c of checkouts) expect(c.with?.ref).toBe("${{ inputs.tag }}");
   });
 
+  // Runs the step's real bash against a stub gh, so the version comparison is checked as bash executes it.
+  test("the Release step marks a tag latest only when no newer Release is latest", () => {
+    const step = wf.jobs.release.steps.find((s: { run?: string }) => s.run?.includes("gh release upload"));
+    const publish = (tag: string, latest: string, exists: boolean) => {
+      const temp = join(tmp, `gh-${runs++}`);
+      const bin = join(temp, "bin");
+      mkdirSync(bin, { recursive: true });
+      // `gh release view` with no tag prints the latest Release; with a tag it succeeds only when that Release exists.
+      writeFileSync(
+        join(bin, "gh"),
+        `#!/bin/bash\necho "$*" >> "$LOG"\nif [ "$1 $2" = "release view" ]; then\n  if [ "$3" = --repo ]; then [ -n "$LATEST" ] && echo "$LATEST"; exit 0; fi\n  [ "$EXISTS" = 1 ]; exit $?\nfi\n`,
+      );
+      chmodSync(join(bin, "gh"), 0o755);
+      const log = join(temp, "log");
+      const r = spawnSync("bash", ["-eo", "pipefail", "-c", step.run], {
+        env: { PATH: `${bin}:${process.env.PATH}`, TAG: tag, LATEST: latest, EXISTS: exists ? "1" : "0", LOG: log, GITHUB_REPOSITORY: "o/r" },
+        encoding: "utf8",
+      });
+      expect(r.status).toBe(0);
+      return readFileSync(log, "utf8").split("\n").find((l) => l.startsWith(exists ? "release edit" : "release create"))!;
+    };
+    expect(publish("v0.3.0", "v0.2.0", true)).toMatch(/ --latest$/);
+    expect(publish("v0.3.0", "v0.3.0", true)).toMatch(/ --latest$/);
+    expect(publish("v0.3.0", "", true)).toMatch(/ --latest$/);
+    expect(publish("v0.2.0", "v0.10.0", true)).toMatch(/ --latest=false$/);
+    expect(publish("v0.2.1", "v0.3.0", false)).toContain(" --latest=false ");
+    expect(publish("v0.4.0", "v0.3.0", false)).toContain(" --latest ");
+  });
+
   test("homebrew waits on the Release and runs on tag pushes only", () => {
     expect([wf.jobs.homebrew.needs].flat()).toContain("release");
     expect(wf.jobs.homebrew.if).toBe("github.event_name == 'push'");

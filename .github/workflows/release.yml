@@ -199,13 +199,15 @@ jobs:
           path: dist
       - run: chmod +x dist/ltm-*
       - run: sh scripts/build-install.sh "$TAG" > dist/install.sh
-      # release-please leaves a draft Release with its changelog; a hand-pushed tag has none yet.
+      # release-please leaves a draft Release with its changelog; a hand-pushed tag has none yet. Latest is set explicitly because GitHub otherwise makes the Release it publishes latest, and a rerun of an old tag would move the README's latest/download URLs back to it.
       - run: |
+          latest="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2> /dev/null || true)"
+          if [ -z "$latest" ] || [ "$(printf '%s\n' "${latest#v}" "${TAG#v}" | sort -V | tail -n 1)" = "${TAG#v}" ]; then mark=--latest; else mark=--latest=false; fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/ltm-* dist/SHA256SUMS dist/install.sh
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false "$mark"
           else
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes dist/ltm-* dist/SHA256SUMS dist/install.sh
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes "$mark" dist/ltm-* dist/SHA256SUMS dist/install.sh
           fi
         env:
           GH_TOKEN: ${{ github.token }}
