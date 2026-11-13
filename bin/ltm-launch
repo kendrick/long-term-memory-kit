@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Starts the plugin's ltm: the one on PATH if there is one, else a copy
+# fetched and checksum-verified into CLAUDE_PLUGIN_DATA on first use.
+set -u
+
+# No version check against PATH's ltm: a user who installed one chose it.
+if command -v ltm >/dev/null 2>&1; then exec ltm "$@"; fi
+
+here=$(cd "$(dirname "$0")" && pwd)
+manifest="$here/../.claude-plugin/plugin.json"
+# sed, not jq, so the launcher needs nothing Claude Code's hosts lack.
+version=$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" | head -n 1)
+if [ -z "$version" ]; then
+  echo "ltm: no version found in $manifest" >&2
+  exit 1
+fi
+if [ -z "${CLAUDE_PLUGIN_DATA:-}" ]; then
+  echo "ltm: CLAUDE_PLUGIN_DATA is unset, so there's nowhere to cache the ltm binary" >&2
+  exit 1
+fi
+
+cache="$CLAUDE_PLUGIN_DATA/bin/ltm-$version"
+if [ ! -e "$cache" ]; then
+  mkdir -p "$CLAUDE_PLUGIN_DATA/bin" || exit 1
+  # shellcheck source=bin/ltm-fetch.sh
+  . "$here/ltm-fetch.sh"
+  ltm_fetch "v$version" "$cache" || exit 1
+fi
+exec "$cache" "$@"
