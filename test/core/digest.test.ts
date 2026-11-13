@@ -227,6 +227,13 @@ describe("digest", () => {
       expect(md).not.toContain("```text\n> | grep x");
     });
 
+    test("a fence mark at a deeper quote level stays fenced content", async () => {
+      const t = "> ```\n> | a |\n>> ```\n> | b |\n> ```";
+      const md = await body(t);
+      expect(md).toContain(t);
+      expect(md).not.toContain("```text");
+    });
+
     test("an unclosed quoted fence ends with the quote, so a later table is still fenced", async () => {
       const t = "> ```sh\n> echo hi\n\n| a | b |\n|---|---|\n| 1 | 2 |";
       expect(await body(t)).toContain("```text\n| a | b |\n|---|---|\n| 1 | 2 |\n```");

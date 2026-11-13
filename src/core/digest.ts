@@ -50,17 +50,21 @@ const DELIMITER_ROW = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/;
 function fenceTables(body: string): string {
   const lines = body.split("\n");
   // Strip blockquote markers for every test; the fence still wraps the original lines.
-  const unquoted = lines.map((l) => l.replace(/^\s*(?:>\s?)+/, ""));
+  const quote = lines.map((l) => /^\s*(?:>\s?)+/.exec(l)?.[0] ?? "");
+  const unquoted = lines.map((l, i) => l.slice(quote[i]!.length));
+  const depth = quote.map((q) => q.split(">").length - 1);
   const inFence: boolean[] = [];
   let fence: string | null = null;
-  let fenceQuoted = false;
-  lines.forEach((line, i) => {
-    // An unclosed fence inside a quote ends with the quote, so it can't swallow tables after it.
-    if (fence !== null && fenceQuoted && unquoted[i] === line) fence = null;
+  let fenceDepth = 0;
+  lines.forEach((_, i) => {
+    // A fence opened in a quote ends when the quote gets shallower, so it can't swallow tables after it.
+    if (fence !== null && depth[i]! < fenceDepth) fence = null;
     const mark = /^\s*(`{3,}|~{3,})/.exec(unquoted[i]!)?.[1];
     let fenced = fence !== null;
-    if (mark && (fence === null || (mark[0] === fence[0] && mark.length >= fence.length))) {
-      fenceQuoted = fence === null && unquoted[i] !== line;
+    // Inside a quoted fence, a mark at another depth is content (pandoc keeps the block open).
+    const sameDepth = fenceDepth === 0 || depth[i] === fenceDepth;
+    if (mark && (fence === null || (sameDepth && mark[0] === fence[0] && mark.length >= fence.length))) {
+      if (fence === null) fenceDepth = depth[i]!;
       fence = fence === null ? mark : null;
       fenced = true;
     }
