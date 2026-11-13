@@ -61,9 +61,33 @@ function didYouMean(typed: string, names: string[]): string {
 
 const visible = (commands: Command[]) => commands.filter((c) => !c.hidden);
 
+const HELP_GROUPS: [string, string[]][] = [
+  ["Look around", ["show", "query", "facets", "head"]],
+  ["Change Records", ["propose", "accept", "supersede", "confirm", "deprecate", "promote"]],
+  ["Keep it tidy", ["validate", "fmt", "doctor"]],
+  ["Set up", ["init", "connect", "discover"]],
+  ["Share it", ["mcp", "digest", "publish"]],
+];
+
 function helpText(commands: Command[]): string {
-  const lines = visible(commands).map((c) => `  ${c.name}  ${c.summary}`);
-  return ["Usage: ltm <command> [options]", ...lines].join("\n") + "\n";
+  const shown = visible(commands);
+  const width = Math.max(...shown.map((c) => c.name.length)) + 2;
+  const row = (c: Command) => `  ${c.name.padEnd(width)}${c.summary}`;
+  const grouped = new Set(HELP_GROUPS.flatMap(([, names]) => names));
+  const sections = HELP_GROUPS.map(([title, names]) => [title, names.flatMap((n) => shown.filter((c) => c.name === n))] as const);
+  // A command missing from HELP_GROUPS still gets listed, so adding one can't hide it.
+  const rest = shown.filter((c) => !grouped.has(c.name));
+  if (rest.length) sections.push([sections.some(([, cs]) => cs.length) ? "More" : "Commands", rest]);
+  const body = sections.filter(([, cs]) => cs.length).flatMap(([title, cs]) => ["", `${title}:`, ...cs.map(row)]);
+  return [
+    "ltm: long-term memory for your coding agents, so they stop relearning what your org already knows",
+    "",
+    "Usage: ltm <command> [options]",
+    ...body,
+    "",
+    "Run 'ltm <command> --help' for a command's options, or 'ltm --version' for the version.",
+    "Start with 'ltm query --text <words>' to see what the Bank already remembers.",
+  ].join("\n") + "\n";
 }
 
 function commandHelp(cmd: Command): string {

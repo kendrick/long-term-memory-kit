@@ -48,6 +48,12 @@ describe("run", () => {
     expect(r.stdout).toContain("beta");
   });
 
+  test("--help groups known commands and lists an ungrouped one under More", async () => {
+    const r = await run({ ...base, argv: ["--help"] }, [stub("query"), stub("brand-new")]);
+    expect(r.stdout).toMatch(/Look around:\n {2}query {6}query summary\n/);
+    expect(r.stdout).toMatch(/More:\n {2}brand-new {2}brand-new summary\n/);
+  });
+
   test("--help leaves out a hidden command, which still runs", async () => {
     const hidden: Command = { ...stub("ghost"), hidden: true };
     const r = await run({ ...base, argv: ["--help"] }, [stub("alpha"), hidden]);
