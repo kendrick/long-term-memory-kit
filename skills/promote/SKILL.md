@@ -4,7 +4,7 @@ description: Use when a decision recorded in this repo's Working memory, such as
 # x-release-please-start-version
 ---
 <!-- VENDORED-FROM: kendrick/long-term-memory-kit skills/promote -->
-<!-- VERSION: 0.2.0 -->
+<!-- VERSION: 0.3.0 -->
 <!-- x-release-please-end -->
 
 # Promote

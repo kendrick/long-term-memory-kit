@@ -4,7 +4,7 @@ description: Use when someone wants Bank Proposals drafted from existing materia
 # x-release-please-start-version
 ---
 <!-- VENDORED-FROM: kendrick/long-term-memory-kit skills/hydrate -->
-<!-- VERSION: 0.2.0 -->
+<!-- VERSION: 0.3.0 -->
 <!-- x-release-please-end -->
 
 # Hydrate
