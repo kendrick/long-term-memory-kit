@@ -37,7 +37,7 @@ On Linux, use `ltm-linux-x64` or `ltm-linux-arm64` and check it with `sha256sum 
 
 ### Claude Code Plugin
 
-To give Claude Code the Bank, install the plugin from this repo's marketplace. When it asks for `bank_url`, enter your Bank's git URL. The plugin starts its MCP server by running `ltm mcp`, so `ltm` has to be on your `PATH` first.
+To give Claude Code the Bank, install the plugin from this repo's marketplace. When it asks for `bank_url`, enter your Bank's git URL. The plugin runs the `ltm` on your `PATH` if there is one. Otherwise it downloads the matching Release binary into its data folder and checks it against `SHA256SUMS` before running it. It starts `ltm` through `bash`. On Windows, Claude Code gets `bash` from Git for Windows, and `ltm` still has to be on your `PATH`.
 
 ```sh
 claude plugin marketplace add kendrick/long-term-memory-kit
