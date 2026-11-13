@@ -1,7 +1,6 @@
 # shellcheck shell=sh
-# Sourced, not run, so the install.sh that #155 adds can share these with
-# bin/ltm-launch. Keep it POSIX sh, since that install.sh has to run under dash,
-# and keep it to function definitions so sourcing it does nothing by itself.
+# bin/ltm-launch sources bin/ltm-fetch.sh, and scripts/build-install.sh inlines it into the Release's install.sh, since `curl … | sh` leaves no file beside install.sh to source.
+# Keep it POSIX sh, because the built install.sh runs under dash, and keep it to function definitions and constants, so sourcing or inlining it runs nothing by itself.
 # POSIX has no `local`, so the helpers' variables use _ltm_ names.
 
 LTM_INSTALL_URL=https://github.com/kendrick/long-term-memory-kit#install
