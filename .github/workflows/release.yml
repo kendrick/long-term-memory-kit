@@ -25,7 +25,7 @@ on:
 permissions:
   contents: read
 
-# A call runs on main, so GITHUB_REF_NAME there is the branch; the tag comes in as an input.
+# A call runs on main, so GITHUB_REF_NAME there is the branch; the tag comes in as an input. Every checkout pins `ref` to it too: release-please can create a release on a later push than the release PR's merge, and the default checkout would then build that newer commit under the older tag. Outside a call `inputs.tag` is empty, which leaves checkout on its default ref.
 env:
   TAG: ${{ inputs.tag || github.ref_name }}
 
@@ -34,6 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.13
@@ -53,6 +55,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
       - uses: actions/download-artifact@v8
         with:
           name: dist
@@ -67,6 +71,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
       - uses: actions/download-artifact@v8
         with:
           name: dist
@@ -86,6 +92,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
       - uses: actions/download-artifact@v8
         with:
           name: dist-signed
@@ -101,6 +109,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.13
@@ -135,6 +145,8 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       - if: steps.key.outputs.present == 'true'
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
       - if: steps.key.outputs.present == 'true'
         uses: oven-sh/setup-bun@v2
         with:
@@ -179,6 +191,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
       - uses: actions/download-artifact@v8
         with:
           name: dist-signed
@@ -202,6 +216,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.13
@@ -247,6 +263,8 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       - if: steps.token.outputs.present == 'true'
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
       - if: steps.token.outputs.present == 'true'
         uses: oven-sh/setup-bun@v2
         with:

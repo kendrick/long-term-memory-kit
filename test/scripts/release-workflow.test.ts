@@ -103,6 +103,15 @@ describe("release.yml", () => {
     expect(scripts.filter((r) => r.includes("GITHUB_REF_NAME"))).toEqual([]);
   });
 
+  // Release-please can report a release on a later push than the release PR's merge, so the default checkout would build newer code under the older tag.
+  test("every checkout pins ref to the called tag", () => {
+    const checkouts = Object.values(wf.jobs).flatMap((j) =>
+      (j as { steps: { uses?: string; with?: { ref?: string } }[] }).steps.filter((s) => s.uses?.startsWith("actions/checkout@")),
+    );
+    expect(checkouts.length).toBeGreaterThan(0);
+    for (const c of checkouts) expect(c.with?.ref).toBe("${{ inputs.tag }}");
+  });
+
   test("homebrew waits on the Release and runs on tag pushes only", () => {
     expect([wf.jobs.homebrew.needs].flat()).toContain("release");
     expect(wf.jobs.homebrew.if).toBe("github.event_name == 'push'");
