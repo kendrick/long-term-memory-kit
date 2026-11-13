@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 
@@ -76,5 +78,39 @@ describe("release.yml", () => {
 
   test("PRs touching sign-darwin.sh trigger the dry run", () => {
     expect(wf.on.pull_request.paths).toContain("scripts/sign-darwin.sh");
+  });
+
+  test("homebrew waits on the Release and runs on tag pushes only", () => {
+    expect([wf.jobs.homebrew.needs].flat()).toContain("release");
+    expect(wf.jobs.homebrew.if).toBe("github.event_name == 'push'");
+  });
+
+  test("nothing needs homebrew, so a failed tap update can't hold back the Release or npm", () => {
+    for (const job of Object.values(wf.jobs) as { needs?: string | string[] }[]) {
+      expect([job.needs ?? []].flat()).not.toContain("homebrew");
+    }
+  });
+
+  // Runs the step's own script, since a notice in the text proves nothing about what bash does with it.
+  test("the homebrew token step exits 0 with a notice when HOMEBREW_TAP_TOKEN is empty, and flags it present otherwise", () => {
+    const step = wf.jobs.homebrew.steps.find((s: { id?: string }) => s.id === "token");
+    expect(step.run).toContain("::notice::");
+    expect(step.run).toContain("exit 0");
+    const run = (token: string) => {
+      const out = join(mkdtempSync(join(tmpdir(), "homebrew-token-")), "out");
+      writeFileSync(out, "");
+      const r = spawnSync("bash", ["-eo", "pipefail", "-c", step.run], {
+        env: { PATH: process.env.PATH, HOMEBREW_TAP_TOKEN: token, GITHUB_OUTPUT: out },
+        encoding: "utf8",
+      });
+      return { status: r.status, stdout: r.stdout, output: readFileSync(out, "utf8") };
+    };
+    const empty = run("");
+    expect(empty.status).toBe(0);
+    expect(empty.stdout).toContain("::notice::HOMEBREW_TAP_TOKEN is empty");
+    expect(empty.output).not.toContain("present=true");
+    const set = run("x");
+    expect(set.status).toBe(0);
+    expect(set.output).toContain("present=true");
   });
 });

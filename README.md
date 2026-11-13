@@ -20,6 +20,16 @@ A Bank is a git repository of Records. Each Record is one Markdown file with fla
 
 `ltm` is one self-contained binary. Each GitHub Release publishes it for five platforms: `ltm-linux-x64`, `ltm-linux-arm64`, `ltm-darwin-x64`, `ltm-darwin-arm64`, and `ltm-windows-x64.exe`, along with a `SHA256SUMS` file.
 
+### Homebrew
+
+On macOS or Linux, install `ltm` from the tap:
+
+```sh
+brew install kendrick/tap/ltm
+```
+
+Each release updates the formula, so `brew upgrade` picks up new versions.
+
 ### Fallback: Download a Release Binary
 
 Download your platform's binary and `SHA256SUMS`, check the binary against it, and move it onto your `PATH`. On an Apple silicon Mac:
