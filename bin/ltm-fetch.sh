@@ -1,5 +1,5 @@
 # shellcheck shell=sh
-# bin/ltm-launch sources this file, and scripts/build-install.sh inlines it into the Release's install.sh, since `curl … | sh` leaves no file beside install.sh to source.
+# bin/ltm-launch sources bin/ltm-fetch.sh, and scripts/build-install.sh inlines it into the Release's install.sh, since `curl … | sh` leaves no file beside install.sh to source.
 # Keep it POSIX sh, because the built install.sh runs under dash, and keep it to function definitions and constants, so sourcing or inlining it runs nothing by itself.
 # POSIX has no `local`, so the helpers' variables use _ltm_ names.
 
