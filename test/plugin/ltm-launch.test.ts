@@ -124,9 +124,8 @@ describe("bin/ltm-launch", () => {
     const r = await launch();
     expect(r.code).not.toBe(0);
     expect(r.stdout).toBe("");
-    // curl -S prints its own reason first (a 404 here, a DNS error in the field), so ours is the last line.
-    expect(r.stderr.trimEnd().split("\n").at(-1)).toBe(
-      `ltm: download failed: http://127.0.0.1:${server.port}/v${version}/${asset}; see https://github.com/kendrick/long-term-memory-kit#install`,
+    expect(r.stderr).toBe(
+      `ltm: download failed: http://127.0.0.1:${server.port}/v${version}/${asset}; see https://github.com/kendrick/long-term-memory-kit#install\n`,
     );
     expect(requests).toEqual([`/v${version}/${asset}`]);
     expect(cacheEntries()).toEqual([]);

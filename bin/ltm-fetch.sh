@@ -1,8 +1,8 @@
 # shellcheck shell=sh
-# Sourced, not run, so an installer script can share these with bin/ltm-launch.
-# Keep it POSIX sh, since that installer has to run under dash, and keep it to
-# function definitions so sourcing it does nothing by itself. POSIX has no
-# `local`, so the helpers' variables use _ltm_ names.
+# Sourced, not run, so the install.sh that #155 adds can share these with
+# bin/ltm-launch. Keep it POSIX sh, since that install.sh has to run under dash,
+# and keep it to function definitions so sourcing it does nothing by itself.
+# POSIX has no `local`, so the helpers' variables use _ltm_ names.
 
 LTM_INSTALL_URL=https://github.com/kendrick/long-term-memory-kit#install
 
@@ -45,11 +45,11 @@ ltm_fetch() {
   _ltm_tmp=$(mktemp "$(dirname "$2")/.ltm-fetch.XXXXXX") || return 1
   trap 'rm -f "$_ltm_tmp"; exit 1' HUP INT TERM
 
-  if ! curl -fsSL -o "$_ltm_tmp" "$_ltm_url"; then
+  if ! curl -fsL -o "$_ltm_tmp" "$_ltm_url"; then
     _ltm_fail "download failed: $_ltm_url"
     return 1
   fi
-  if ! _ltm_sums=$(curl -fsSL "$_ltm_sums_url"); then
+  if ! _ltm_sums=$(curl -fsL "$_ltm_sums_url"); then
     _ltm_fail "download failed: $_ltm_sums_url"
     return 1
   fi
@@ -60,7 +60,12 @@ ltm_fetch() {
     _ltm_fail "no SHA256SUMS line for $_ltm_asset at $_ltm_sums_url"
     return 1
   fi
-  if [ "$(ltm_sha256 "$_ltm_tmp")" != "$_ltm_want" ]; then
+  _ltm_got=$(ltm_sha256 "$_ltm_tmp")
+  if [ -z "$_ltm_got" ]; then
+    _ltm_fail "no sha256sum or shasum found"
+    return 1
+  fi
+  if [ "$_ltm_got" != "$_ltm_want" ]; then
     _ltm_fail "checksum mismatch for $_ltm_asset"
     return 1
   fi
