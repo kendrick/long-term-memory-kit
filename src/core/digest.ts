@@ -113,10 +113,15 @@ export function renderDigest(opts: {
         if (fm.effective_to != null) lines.push(`- effective_to: ${String(fm.effective_to)}`);
         for (const id of ruleIdsOf(r)) {
           const rule = byId.get(id);
-          const title = rule ? str(rule.frontmatter.title) : id;
+          // A Proposal's title must not reach Digest readers through an Exception (#145).
+          if (!(rule?.memoryType === "PolicyRule" && ["accepted", "superseded", "deprecated"].includes(String(rule.frontmatter.status)))) {
+            lines.push(`- Departs from PolicyRule ${id}, which is not accepted.`);
+            continue;
+          }
+          const title = str(rule.frontmatter.title);
           lines.push(
             inForce(id)
-              ? `- Departs from PolicyRule: ${title} (${id}). ${str(rule!.frontmatter.summary)}`
+              ? `- Departs from PolicyRule: ${title} (${id}). ${str(rule.frontmatter.summary)}`
               : `- Departs from PolicyRule: ${title} (${id}). That PolicyRule is no longer in force.`,
           );
         }
