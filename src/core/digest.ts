@@ -49,23 +49,42 @@ const DELIMITER_ROW = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/;
 
 function fenceTables(body: string): string {
   const lines = body.split("\n");
+  // Strip blockquote markers for every test; the fence still wraps the original lines.
+  const quote = lines.map((l) => /^\s*(?:>\s?)+/.exec(l)?.[0] ?? "");
+  const unquoted = lines.map((l, i) => l.slice(quote[i]!.length));
+  const depth = quote.map((q) => q.split(">").length - 1);
   const inFence: boolean[] = [];
   let fence: string | null = null;
-  for (const line of lines) {
-    const mark = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+  let fenceDepth = 0;
+  lines.forEach((_, i) => {
+    // A fence opened in a quote ends when the quote gets shallower, so it can't swallow tables after it.
+    if (fence !== null && depth[i]! < fenceDepth) fence = null;
+    const mark = /^\s*(`{3,}|~{3,})/.exec(unquoted[i]!)?.[1];
     let fenced = fence !== null;
-    if (mark && (fence === null || (mark[0] === fence[0] && mark.length >= fence.length))) {
+    // Inside a fence, a mark at another quote depth is content (pandoc keeps the block open).
+    const sameDepth = depth[i] === fenceDepth;
+    if (mark && (fence === null || (sameDepth && mark[0] === fence[0] && mark.length >= fence.length))) {
+      if (fence === null) fenceDepth = depth[i]!;
       fence = fence === null ? mark : null;
       fenced = true;
     }
     inFence.push(fenced);
-  }
-  const isTable = lines.map((l, i) => !inFence[i] && l.trimStart().startsWith("|"));
-  lines.forEach((l, i) => {
-    if (inFence[i] || i === 0 || inFence[i - 1] || !DELIMITER_ROW.test(l) || !lines[i - 1]!.includes("|")) return;
-    isTable[i - 1] = true;
-    for (let j = i; j < lines.length && !inFence[j] && lines[j]!.includes("|"); j++) isTable[j] = true;
   });
+  const isTable = lines.map((_, i) => !inFence[i] && unquoted[i]!.trimStart().startsWith("|"));
+  lines.forEach((_, i) => {
+    if (inFence[i] || i === 0 || inFence[i - 1] || !DELIMITER_ROW.test(unquoted[i]!) || !unquoted[i - 1]!.includes("|")) return;
+    isTable[i - 1] = true;
+    for (let j = i; j < lines.length && !inFence[j] && unquoted[j]!.includes("|"); j++) isTable[j] = true;
+  });
+  // A bare `+ item` bullet must not look like a grid border, so a border needs `+-`, `+=` or `+:`.
+  const isGridBorder = (i: number) => !inFence[i] && /^\+[-=:]/.test(unquoted[i]!.trimStart());
+  for (let i = 0; i < lines.length; i++) {
+    if (!isGridBorder(i)) continue;
+    let j = i + 1;
+    while (j < lines.length && !inFence[j] && (isGridBorder(j) || unquoted[j]!.trimStart().startsWith("|"))) j++;
+    if (j - i > 1) for (let k = i; k < j; k++) isTable[k] = true;
+    i = j - 1;
+  }
   const out: string[] = [];
   lines.forEach((l, i) => {
     if (isTable[i] && !isTable[i - 1]) out.push("```text");
@@ -203,11 +222,11 @@ export function writeDigest(dir: string, files: DigestFile[], split: boolean, to
   }
 }
 
-export function sizeWarnings(files: DigestFile[]): string[] {
+export function sizeWarnings(files: DigestFile[], split: boolean): string[] {
   return files
     .filter((f) => f.content.length > SIZE_LIMIT)
     .map(
       (f) =>
-        `ltm digest: ${f.name} is ${f.content.length} characters; Microsoft Search stops reading a file after 2,000,000. Use --split facet to write one file per Facet.`,
+        `ltm digest: ${f.name} is ${f.content.length} characters; Microsoft Search stops reading a file after 2,000,000.${split ? "" : " Use --split facet to write one file per Facet."}`,
     );
 }

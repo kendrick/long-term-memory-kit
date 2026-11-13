@@ -38,7 +38,7 @@ export const digest: Command = {
     const out = ctx.values.out;
     if (typeof out === "string") writeDigest(resolve(ctx.cwd, out), files, split, day);
     else ctx.out(files[0]!.content);
-    for (const line of sizeWarnings(files)) ctx.err(`${line}\n`);
+    for (const line of sizeWarnings(files, split)) ctx.err(`${line}\n`);
     return 0;
   },
 };

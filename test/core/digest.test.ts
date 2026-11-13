@@ -196,6 +196,71 @@ describe("digest", () => {
     });
   });
 
+  describe("6a: fenceTables edge shapes", () => {
+    const body = async (extra: string): Promise<string> =>
+      withScratch(DEMO, async (dir) => {
+        const p = pathOf(dir, RULE);
+        writeFileSync(p, `${readFileSync(p, "utf8")}\n${extra}\n`);
+        const { config, all } = load(dir);
+        return renderDigest({ config, all, picked: digestRecords(all, "2026-11-05"), scope: "x" });
+      });
+
+    test("an unquoted fence is not closed by a quoted mark (pandoc keeps it one CodeBlock)", async () => {
+      const t = "```\n| a |\n> ```\n| x | y |\n|---|---|\n| 1 | 2 |\n```";
+      const out = await body(t);
+      expect(out).toContain(t);
+      expect(out).not.toContain("```text");
+    });
+
+    test("a blockquoted pipe table lands in one text fence, markers kept", async () => {
+      const t = "> | a | b |\n> |---|---|\n> | 1 | 2 |";
+      expect(await body(t)).toContain(`\`\`\`text\n${t}\n\`\`\``);
+    });
+
+    test("a grid table lands in one fence holding all five lines", async () => {
+      const t = "+---+\n| a |\n+===+\n| 1 |\n+---+";
+      expect(await body(t)).toContain(`\`\`\`text\n${t}\n\`\`\``);
+    });
+
+    test("an indented grid table lands in one fence", async () => {
+      const t = "  +---+\n  | a |\n  +===+\n  | 1 |\n  +---+";
+      expect(await body(t)).toContain(`\`\`\`text\n${t}\n\`\`\``);
+    });
+
+    test("a pipe line inside a quoted code block gets no fence of its own", async () => {
+      const t = "> ```sh\n> | grep x\n> ```";
+      const md = await body(t);
+      expect(md).toContain(t);
+      expect(md).not.toContain("```text\n> | grep x");
+    });
+
+    test("a fence mark at a deeper quote level stays fenced content", async () => {
+      const t = "> ```\n> | a |\n>> ```\n> | b |\n> ```";
+      const md = await body(t);
+      expect(md).toContain(t);
+      expect(md).not.toContain("```text");
+    });
+
+    test("an unclosed quoted fence ends with the quote, so a later table is still fenced", async () => {
+      const t = "> ```sh\n> echo hi\n\n| a | b |\n|---|---|\n| 1 | 2 |";
+      expect(await body(t)).toContain("```text\n| a | b |\n|---|---|\n| 1 | 2 |\n```");
+    });
+
+    test("a + list stays unfenced", async () => {
+      const t = "+ one\n+ two\n+ three";
+      const md = await body(t);
+      expect(md).toContain(t);
+      expect(md).not.toContain(`\`\`\`text\n+ one`);
+    });
+
+    test("a blockquote of prose with a pipe but no delimiter row stays unfenced", async () => {
+      const t = "> either a | b\n> or c";
+      const md = await body(t);
+      expect(md).toContain(t);
+      expect(md).not.toContain(`\`\`\`text\n> either`);
+    });
+  });
+
   test("6b: a foreign .md in the out dir survives; split always writes org-wide.md", async () => {
     await withScratch(DEMO, async (dir) => {
       const out = join(dir, "out");
@@ -277,9 +342,19 @@ describe("digest", () => {
 
   test("11: size warning fires only over the limit", () => {
     const f = (n: number) => [{ name: "accepted.md", content: "x".repeat(n) }];
-    const w = sizeWarnings(f(SIZE_LIMIT + 1));
+    const w = sizeWarnings(f(SIZE_LIMIT + 1), false);
     expect(w).toHaveLength(1);
     expect(w[0]).toContain("--split facet");
-    expect(sizeWarnings(f(SIZE_LIMIT))).toEqual([]);
+    expect(sizeWarnings(f(SIZE_LIMIT), false)).toEqual([]);
+  });
+
+  test("11b: a split run's warning names the file and limit but not --split", () => {
+    for (const name of ["org-wide.md", "service_3aorder-service.md"]) {
+      const w = sizeWarnings([{ name, content: "x".repeat(SIZE_LIMIT + 1) }], true);
+      expect(w).toHaveLength(1);
+      expect(w[0]).toContain(name);
+      expect(w[0]).toContain("2,000,000");
+      expect(w[0]).not.toContain("--split");
+    }
   });
 });
