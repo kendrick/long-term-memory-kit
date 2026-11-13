@@ -30,7 +30,7 @@
   "devDependencies": {
     "@modelcontextprotocol/client": "2.4.0",
     "@types/bun": "1.4.4",
-    "oxfmt": "0.76.0",
+    "oxfmt": "0.78.0",
     "prettier": "3.9.10",
     "typescript": "7.0.2"
   },
