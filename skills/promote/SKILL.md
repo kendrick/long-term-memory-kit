@@ -1,9 +1,11 @@
 ---
 name: promote
 description: Use when a decision recorded in this repo's Working memory, such as an ADR or a decision-log entry, turns out to apply to other repos or to be governed by someone outside this repo's team. Promotes it to a Bank Proposal and records the Promotion in the repo.
+# x-release-please-start-version
 ---
 <!-- VENDORED-FROM: kendrick/long-term-memory-kit skills/promote -->
 <!-- VERSION: 0.2.0 -->
+<!-- x-release-please-end -->
 
 # Promote
 
