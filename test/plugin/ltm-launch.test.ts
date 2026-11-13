@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -58,10 +58,10 @@ function fakeLtmOnPath(reports: string): string {
 }
 
 // Async spawn: a sync one would block the event loop the local server answers on.
-async function launch(extraPath?: string) {
+async function launch(extraPath?: string, path = SYSTEM_PATH) {
   const proc = Bun.spawn(["bash", launcher, "mcp"], {
     env: {
-      PATH: extraPath ? `${extraPath}:${SYSTEM_PATH}` : SYSTEM_PATH,
+      PATH: extraPath ? `${extraPath}:${path}` : path,
       HOME: scratch,
       CLAUDE_PLUGIN_DATA: pluginData,
       LTM_RELEASE_BASE_URL: `http://127.0.0.1:${server.port}`,
@@ -128,6 +128,23 @@ describe("bin/ltm-launch", () => {
       `ltm: download failed: http://127.0.0.1:${server.port}/v${version}/${asset}; see https://github.com/kendrick/long-term-memory-kit#install\n`,
     );
     expect(requests).toEqual([`/v${version}/${asset}`]);
+    expect(cacheEntries()).toEqual([]);
+  });
+
+  test("with no sha256sum or shasum on PATH, fails with one stderr line and leaves nothing in the cache", async () => {
+    // Every tool the launcher needs except the two hashers, so the fetch gets as far as hashing.
+    const dir = join(scratch, "no-hash-bin");
+    mkdirSync(dir);
+    for (const tool of ["bash", "uname", "dirname", "sed", "head", "mkdir", "curl", "mktemp", "awk", "rm", "chmod", "mv", "cut"]) {
+      const target = Bun.which(tool, { PATH: SYSTEM_PATH });
+      if (!target) throw new Error(`${tool} not found on ${SYSTEM_PATH}`);
+      symlinkSync(target, join(dir, tool));
+    }
+    const r = await launch(undefined, dir);
+    expect(r.code).not.toBe(0);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe("ltm: no sha256sum or shasum found; see https://github.com/kendrick/long-term-memory-kit#install\n");
+    expect(requests).toHaveLength(2);
     expect(cacheEntries()).toEqual([]);
   });
 });

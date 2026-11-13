@@ -27,9 +27,10 @@ ltm_asset() {
 }
 
 ltm_sha256() {
+  # Prints nothing when neither tool exists, so the caller can name the problem.
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | cut -d ' ' -f 1
-  else
+  elif command -v shasum >/dev/null 2>&1; then
     shasum -a 256 "$1" | cut -d ' ' -f 1
   fi
 }
