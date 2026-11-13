@@ -1,6 +1,5 @@
 #!/bin/sh
-# Prints the shippable install.sh for <tag>: bin/ltm-fetch.sh inlined at the
-# marker line and the tag stamped in.
+# Prints the shippable install.sh for <tag>: bin/ltm-fetch.sh inlined at the marker line and the tag stamped in.
 set -eu
 
 if [ $# -ne 1 ] || [ -z "$1" ]; then

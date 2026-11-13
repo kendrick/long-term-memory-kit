@@ -180,13 +180,16 @@ describe("install.sh", () => {
     expect(on.stdout).not.toContain("export PATH");
   });
 
-  test("9: the unstamped repo install.sh refuses to guess a tag and makes no request", async () => {
-    const r = await install({ argv: ["sh", join(repo, "install.sh")], stdin: null, env: { LTM_INSTALL_DIR: dir } });
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain("set LTM_VERSION");
-    expect(requests).toEqual([]);
-    expect(existsSync(dir)).toBe(false);
-  });
+  const unbuilt =
+    "ltm: this install.sh is unbuilt; run sh scripts/build-install.sh <tag>, or use a Release's install.sh; see https://github.com/kendrick/long-term-memory-kit#install\n";
+  for (const env of [{}, { LTM_VERSION: "v1.2.3" }] as Record<string, string>[]) {
+    test(`9: the unbuilt repo install.sh refuses with ${JSON.stringify(env)}, makes no request, creates no dir`, async () => {
+      const r = await install({ argv: ["sh", join(repo, "install.sh")], stdin: null, env: { LTM_INSTALL_DIR: dir, ...env } });
+      expect(r).toEqual({ stdout: "", stderr: unbuilt, code: 1 });
+      expect(requests).toEqual([]);
+      expect(existsSync(dir)).toBe(false);
+    });
+  }
 
   test("10: the build inlines ltm-fetch.sh, stamps the tag, and needs a tag", () => {
     expect(built).not.toContain("@ltm-fetch.sh@");
@@ -209,16 +212,18 @@ describe("install.sh", () => {
     expectInstalled(r, dir);
   });
 
-  test("13: sh -n passes on install.sh, build-install.sh and the built output", () => {
-    for (const f of [join(repo, "install.sh"), join(repo, "scripts/build-install.sh"), builtPath]) {
+  const scripts = () => [join(repo, "install.sh"), join(repo, "scripts/build-install.sh"), builtPath];
+
+  test("13a: sh -n passes on install.sh, build-install.sh and the built output", () => {
+    for (const f of scripts()) {
       const r = Bun.spawnSync(["sh", "-n", f]);
       expect({ f, code: r.exitCode, stderr: r.stderr.toString() }).toEqual({ f, code: 0, stderr: "" });
     }
   });
 
   const shellcheck = Bun.which("shellcheck");
-  test.skipIf(!shellcheck)("13: shellcheck -s sh passes on install.sh, build-install.sh and the built output", () => {
-    for (const f of [join(repo, "install.sh"), join(repo, "scripts/build-install.sh"), builtPath]) {
+  test.skipIf(!shellcheck)("13b: shellcheck -s sh passes on install.sh, build-install.sh and the built output", () => {
+    for (const f of scripts()) {
       const r = Bun.spawnSync([shellcheck as string, "-s", "sh", f]);
       expect({ f, code: r.exitCode, out: r.stdout.toString() }).toEqual({ f, code: 0, out: "" });
     }
