@@ -174,6 +174,33 @@ describe("readAdr", () => {
 describe("readEntry", () => {
   const HEADING = "Cap retries at three per request";
 
+  test("blank lines between the heading and the key lines don't hide the metadata block", () => {
+    const text = "## 2026-11-01: Use X\n\nstatus: accepted\npromoted_to: acme:x\n\nBody.\n";
+    const s = source(readEntry("log.md", text, "Use X"));
+    expect(s.existing).toBe("acme:x");
+    expect(s.body).toBe("\nBody.\n");
+  });
+
+  test("only blank lines are skipped: prose under the heading still ends the block", () => {
+    const blank = source(readEntry("log.md", "## T\n\nstatus: accepted\n", "T"));
+    expect(blank.body).toBe("");
+    const prose = source(readEntry("log.md", "## T\nSome prose.\nstatus: accepted\n", "T"));
+    expect(prose.body).toBe("Some prose.\nstatus: accepted\n");
+  });
+
+  test("stamping a blank-line entry inserts after its last key line", () => {
+    const text = "## T\n\nstatus: accepted\n\nBody.\n";
+    const stamped = source(readEntry("log.md", text, "T")).stamp("promoted_to: acme:x");
+    expect(stamped.text).toBe("## T\n\nstatus: accepted\npromoted_to: acme:x\n\nBody.\n");
+    expect(stamped.line).toBe(4);
+  });
+
+  test("a fence opener after the blank line still gives an empty block", () => {
+    const s = source(readEntry("log.md", "## T\n\n```yaml\npromoted_to: acme:x\n```\n", "T"));
+    expect(s.existing).toBeNull();
+    expect(s.body).toBe("\n```yaml\npromoted_to: acme:x\n```\n");
+  });
+
   test("finds the entry, slugs it, and bounds its body at the next heading", () => {
     const text = fixture(LOG);
     const s = source(readEntry(LOG, text, HEADING));
