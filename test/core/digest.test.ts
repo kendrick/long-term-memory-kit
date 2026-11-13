@@ -127,6 +127,53 @@ describe("digest", () => {
     });
   });
 
+  const departs = (md: string) => entryOf(md, EXC).split("\n").filter((l) => l.startsWith("- Departs from"));
+  const notAccepted = `- Departs from PolicyRule ${RULE}, which is not accepted.`;
+
+  for (const status of ["proposed", "rejected"]) {
+    test(`5b: a ${status} PolicyRule shows by id only on its Exception`, async () => {
+      await withScratch(DEMO, async (dir) => {
+        edit(dir, RULE, "status: accepted", `status: ${status}`);
+        const { config, all } = load(dir);
+        const md = renderDigest({ config, all, picked: digestRecords(all, "2026-11-05"), scope: "x" });
+        expect(departs(md)).toEqual([notAccepted]);
+      });
+    });
+  }
+
+  test("5c: an Exception citing an id no Record holds prints the not-accepted line", async () => {
+    await withScratch(DEMO, async (dir) => {
+      const { config, all } = load(dir);
+      const ghost = all.filter((r) => String(r.frontmatter.id) !== RULE);
+      const md = renderDigest({ config, all: ghost, picked: digestRecords(all, "2026-11-05"), scope: "x" });
+      expect(departs(md)).toEqual([notAccepted]);
+    });
+  });
+
+  test("5d: a deprecated PolicyRule keeps its title and the no-longer-in-force note", async () => {
+    await withScratch(DEMO, async (dir) => {
+      edit(dir, RULE, "status: accepted", "status: deprecated");
+      const { config, all } = load(dir);
+      const md = renderDigest({ config, all, picked: digestRecords(all, "2026-11-05"), scope: "x" });
+      const title = readFileSync(pathOf(dir, RULE), "utf8").match(/^title: (.*)$/m)![1];
+      expect(departs(md)).toEqual([`- Departs from PolicyRule: ${title} (${RULE}). That PolicyRule is no longer in force.`]);
+    });
+  });
+
+  test("5e: Banks differing only in a proposed rule's title render byte-identical Digests", async () => {
+    const render = async (title: string) =>
+      withScratch(DEMO, async (dir) => {
+        edit(dir, RULE, "status: accepted", "status: proposed");
+        const t = readFileSync(pathOf(dir, RULE), "utf8").match(/^title: .*$/m)![0];
+        edit(dir, RULE, t, `title: ${title}`);
+        const { config, all } = load(dir);
+        return renderDigest({ config, all, picked: digestRecords(all, "2026-11-05"), scope: "x" });
+      });
+    const a = await render("DRAFT-SECRET");
+    expect(a).toBe(await render("Something else"));
+    expect(a).not.toContain("DRAFT-SECRET");
+  });
+
   test("6: bodies appear in full and no markdown table survives outside a fence", async () => {
     await withScratch(DEMO, async (dir) => {
       const p = pathOf(dir, RULE);

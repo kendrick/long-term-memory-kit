@@ -19,7 +19,7 @@ Bank commit 7998c1675ec7c417fc83a255227f912a990ad9cf (2026-11-05).
 Scope: all accepted Records.
 ```
 
-Sections follow in the order PolicyRule, Exception, Decision, Context. Each entry gives the Record's title and id, its `memory_type`, its Facets, its path in the Bank, and its full body. A PolicyRule's entry lists each Exception that departs from it. An Exception's entry gives its PolicyRule's title, id, and `summary`, or says that the PolicyRule is no longer in force when it isn't accepted. The Digest holds no markdown tables, because `ltm digest` wraps any table in a Record's body in a `text` block.
+Sections follow in the order PolicyRule, Exception, Decision, Context. Each entry gives the Record's title and id, its `memory_type`, its Facets, its path in the Bank, and its full body. A PolicyRule's entry lists each Exception that departs from it. An Exception's entry gives its PolicyRule's title, id, and `summary`, or says that the PolicyRule is no longer in force once it has been superseded or deprecated. A PolicyRule that was never accepted (proposed, rejected, or an id no Record holds) shows by id only, as "which is not accepted", so a draft's title stays out of the Digest. The Digest holds no markdown tables, because `ltm digest` wraps any table in a Record's body in a `text` block.
 
 To write the Digest into a directory instead, pass `--out`. It writes `accepted.md` there:
 
