@@ -2,27 +2,35 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { digest } from "../../src/cli/digest.ts";
-import { query } from "../../src/cli/query.ts";
 import { run } from "../../src/cli/run.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const demo = new URL("../../fixtures/demo-bank", import.meta.url).pathname;
 const ltm = (cwd: string, argv: string[], LTM_TODAY = "2026-11-05") =>
-  run({ argv, cwd, env: { LTM_TODAY } }, [digest, query]);
+  run({ argv, cwd, env: { LTM_TODAY } }, [digest]);
 // Only entry headings carry an id in parens; link lines name other Records' ids too.
 const digestIds = (md: string) => new Set([...md.matchAll(/^### .* \(([^()\s]+)\)$/gm)].map((m) => m[1]!));
 const snapshot = (dir: string) =>
   Object.fromEntries(readdirSync(dir).map((n) => [n, readFileSync(join(dir, n), "utf8")]));
 
 describe("ltm digest", () => {
-  test("lists exactly the ids ltm query --status accepted lists", async () => {
+  test("lists exactly the accepted ids in the fixture files", async () => {
+    // Plain line match on the fixture files: ltm query shares listRecords/selectRecords with the Digest, so a bug there moved both sides.
+    const today = "2026-11-05";
+    const want = new Set<string>();
+    for (const f of readdirSync(join(demo, "_memory"), { recursive: true, encoding: "utf8" })) {
+      if (!f.endsWith(".md")) continue;
+      const fm = readFileSync(join(demo, "_memory", f), "utf8").split(/\r?\n---\r?\n/)[0]!.split(/\r?\n/);
+      if (!fm.includes("status: accepted")) continue;
+      const to = fm.find((l) => l.startsWith("effective_to:"))?.slice(13).trim();
+      if (f.startsWith("exceptions/") && to && to < today) continue;
+      want.add(fm.find((l) => /^id:\s*\S/.test(l))!.replace(/^id:\s*/, "").trim());
+    }
+    // Pinned so a fixture edit that moves both sides still trips.
+    expect(want.size).toBe(15);
     await withScratch(demo, async (dir) => {
       const d = await ltm(dir, ["digest"]);
-      const q = await ltm(dir, ["query", "--status", "accepted", "--json"]);
       expect(d.exitCode).toBe(0);
-      expect(q.exitCode).toBe(0);
-      const want = new Set((JSON.parse(q.stdout) as { id: string }[]).map((r) => r.id));
-      expect(want.size).toBeGreaterThan(0);
       expect(digestIds(d.stdout)).toEqual(want);
     });
   });
