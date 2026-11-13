@@ -60,7 +60,7 @@ A diff means retrieval changed. Commit the new file only if the change is one yo
 
 ## The Release Gate
 
-The `bench-gate` job in [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs on every event the workflow handles: tag pushes, pull requests, and manual dispatches. It downloads the linux binary from the `build` job and runs the bench with it. The version comes from the tag name without its `v` on a push, and from `package.json` otherwise. The job then passes the result to [`scripts/eval-gate.ts`](../scripts/eval-gate.ts). The `npm` job needs `bench-gate`, and the GitHub Release job needs `npm`, so a failed gate stops the release.
+The `bench-gate` job in [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs on every event the workflow handles: releases, pull requests, and manual dispatches. It downloads the linux binary from the `build` job and runs the bench with it. The version comes from the release tag without its `v`, and from `package.json` otherwise. The job then passes the result to [`scripts/eval-gate.ts`](../scripts/eval-gate.ts). The `npm` job needs `bench-gate`, and the GitHub Release job needs `npm`, so a failed gate stops the release.
 
 The gate compares the new `hit_rate` with the one in the newest `bench.json` committed under `evals/results/` whose version sorts at or below the input's by semver. Counting the input's own version means a dry run at the committed version meets its own committed result. The gate fails when the new rate is lower, and passes when it's equal or higher. With no such result, it passes and prints that it found no baseline, along with the input rate. Otherwise it prints both rates.
 
@@ -123,7 +123,7 @@ The 0.0.0 baseline ran 14 agent runs, seven cases with and without the plugin, o
 
 ### In the Release Workflow
 
-The `plugin-eval` job in [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs on tag pushes only, so pull requests and manual dispatches never bill model calls. It needs the `ANTHROPIC_API_KEY` secret. When that secret is empty, the job prints a notice and skips the eval instead of failing. The job installs CLI 2.1.311, puts the linux binary on `PATH` as `ltm`, and runs `bun scripts/eval-plugin.ts --version <tag without v>`. It has `continue-on-error: true` and no other job needs it, so its result never blocks a release.
+The `plugin-eval` job in [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs on releases only, so pull requests and manual dispatches never bill model calls. It needs the `ANTHROPIC_API_KEY` secret. When that secret is empty, the job prints a notice and skips the eval instead of failing. The job installs CLI 2.1.311, puts the linux binary on `PATH` as `ltm`, and runs `bun scripts/eval-plugin.ts --version <tag without v>`. It has `continue-on-error: true` and no other job needs it, so its result never blocks a release.
 
 ## The Agent-Answer Eval
 

@@ -87,12 +87,20 @@ describe("release.yml", () => {
   test("the Release attaches an install.sh built for its own tag", () => {
     const steps: { uses?: string; run?: string }[] = wf.jobs.release.steps;
     const checkout = steps.findIndex((s) => s.uses === "actions/checkout@v7");
-    const build = steps.findIndex((s) => s.run === 'sh scripts/build-install.sh "$GITHUB_REF_NAME" > dist/install.sh');
+    const build = steps.findIndex((s) => s.run === 'sh scripts/build-install.sh "$TAG" > dist/install.sh');
     const create = steps.findIndex((s) => s.run?.includes("gh release create"));
     expect(checkout).toBeGreaterThanOrEqual(0);
     expect(build).toBeGreaterThan(checkout);
     expect(create).toBeGreaterThan(build);
     expect(steps[create]!.run).toContain("dist/install.sh");
+  });
+
+  // GITHUB_REF_NAME is the branch when release-please.yml calls this workflow, so a step reading it would release "main".
+  test("every step reads the tag from TAG, which a call sets from its input", () => {
+    expect(wf.on.workflow_call.inputs.tag.required).toBe(true);
+    expect(wf.env.TAG).toBe("${{ inputs.tag || github.ref_name }}");
+    const scripts = Object.values(wf.jobs).flatMap((j) => (j as { steps: { run?: string }[] }).steps.map((s) => s.run ?? ""));
+    expect(scripts.filter((r) => r.includes("GITHUB_REF_NAME"))).toEqual([]);
   });
 
   test("homebrew waits on the Release and runs on tag pushes only", () => {
@@ -147,7 +155,7 @@ describe("release.yml", () => {
       if (tapVersion) writeFileSync(join(tap, "Formula/ltm.rb"), homebrewFormula(tapVersion, sha));
       writeFileSync(join(temp, "ltm.rb"), homebrewFormula(tag, sha));
       const r = spawnSync("bash", ["-eo", "pipefail", "-c", step.run], {
-        env: { PATH: `${bin}:${process.env.PATH}`, GITHUB_REF_NAME: tag, RUNNER_TEMP: temp, TAP: tap, HOMEBREW_TAP_TOKEN: "x" },
+        env: { PATH: `${bin}:${process.env.PATH}`, TAG: tag, RUNNER_TEMP: temp, TAP: tap, HOMEBREW_TAP_TOKEN: "x" },
         encoding: "utf8",
       });
       const log = join(temp, "log");
@@ -165,5 +173,25 @@ describe("release.yml", () => {
       expect({ status: r.status, stderr: r.stderr }).toEqual({ status: 0, stderr: "" });
       expect(r.pushed).toBe(true);
     }
+  });
+});
+
+describe("release-please.yml", () => {
+  const rp = parse(readFileSync(join(ROOT, ".github/workflows/release-please.yml"), "utf8"), { logLevel: "error" });
+
+  test("calls release.yml with the new tag, and only when a release was created", () => {
+    expect(rp.jobs.release.uses).toBe("./.github/workflows/release.yml");
+    expect(rp.jobs.release.if).toBe("needs.release-please.outputs.release_created == 'true'");
+    expect(rp.jobs.release.with.tag).toBe("${{ needs.release-please.outputs.tag_name }}");
+    expect(rp.jobs.release.secrets).toBe("inherit");
+  });
+
+  // The release job publishes the draft only after the gates pass, so a failed gate never leaves a Release without binaries at latest/download.
+  test("release-please makes a tagged draft, which the release job then publishes", () => {
+    const config = JSON.parse(readFileSync(join(ROOT, "release-please-config.json"), "utf8"));
+    expect(config.draft).toBe(true);
+    expect(config["force-tag-creation"]).toBe(true);
+    const publish = wf.jobs.release.steps.find((s: { run?: string }) => s.run?.includes("--draft=false"));
+    expect(publish.run).toContain("gh release upload");
   });
 });
