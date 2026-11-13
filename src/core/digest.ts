@@ -213,11 +213,11 @@ export function writeDigest(dir: string, files: DigestFile[], split: boolean, to
   }
 }
 
-export function sizeWarnings(files: DigestFile[]): string[] {
+export function sizeWarnings(files: DigestFile[], split: boolean): string[] {
   return files
     .filter((f) => f.content.length > SIZE_LIMIT)
     .map(
       (f) =>
-        `ltm digest: ${f.name} is ${f.content.length} characters; Microsoft Search stops reading a file after 2,000,000. Use --split facet to write one file per Facet.`,
+        `ltm digest: ${f.name} is ${f.content.length} characters; Microsoft Search stops reading a file after 2,000,000.${split ? "" : " Use --split facet to write one file per Facet."}`,
     );
 }

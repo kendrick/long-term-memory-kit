@@ -311,9 +311,19 @@ describe("digest", () => {
 
   test("11: size warning fires only over the limit", () => {
     const f = (n: number) => [{ name: "accepted.md", content: "x".repeat(n) }];
-    const w = sizeWarnings(f(SIZE_LIMIT + 1));
+    const w = sizeWarnings(f(SIZE_LIMIT + 1), false);
     expect(w).toHaveLength(1);
     expect(w[0]).toContain("--split facet");
-    expect(sizeWarnings(f(SIZE_LIMIT))).toEqual([]);
+    expect(sizeWarnings(f(SIZE_LIMIT), false)).toEqual([]);
+  });
+
+  test("11b: a split run's warning names the file and limit but not --split", () => {
+    for (const name of ["org-wide.md", "service_3aorder-service.md"]) {
+      const w = sizeWarnings([{ name, content: "x".repeat(SIZE_LIMIT + 1) }], true);
+      expect(w).toHaveLength(1);
+      expect(w[0]).toContain(name);
+      expect(w[0]).toContain("2,000,000");
+      expect(w[0]).not.toContain("--split");
+    }
   });
 });
