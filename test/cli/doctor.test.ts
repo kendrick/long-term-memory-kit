@@ -687,3 +687,122 @@ exit 1
     300000,
   );
 });
+
+describe("exception-rule-not-accepted", () => {
+  const RULE = "_memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md";
+  const REDIS = "_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md";
+  const BILLING = "_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md";
+  const CHECK = "exception-rule-not-accepted";
+  type F = { file: string; check: string; message: string; related_files: string[] };
+
+  const edit = (dir: string, rel: string, key: string, line: string) => {
+    const file = join(dir, rel);
+    const src = readFileSync(file, "utf8");
+    const out = line === "" ? src.replace(new RegExp(`^${key}: .*\\n`, "m"), "") : src.replace(new RegExp(`^${key}: .*$`, "m"), line);
+    expect(out).not.toBe(src);
+    writeFileSync(file, out);
+  };
+  const findings = async (dir: string): Promise<F[]> => {
+    const r = await ltm(dir, "doctor", "--json");
+    expect(r.exitCode).toBe(0);
+    return JSON.parse(r.stdout) as F[];
+  };
+  const mine = async (dir: string) => (await findings(dir)).filter((f) => f.check === CHECK);
+  const expected = (file: string, status: string): F => ({
+    file,
+    check: CHECK,
+    message: `related entry 'constrained_by::cA9wE6uJr3' names ${RULE}, whose status is ${status}`,
+    related_files: [RULE],
+  });
+
+  test("0: the demo Bank as shipped gives no finding", async () => {
+    await withScratch(demo, async (dir) => {
+      expect(await mine(dir)).toEqual([]);
+    });
+  });
+
+  test("1: a superseded PolicyRule fires on the accepted Exception", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, RULE, "status", "status: superseded");
+      expect(await mine(dir)).toEqual([expected(REDIS, "superseded")]);
+      const human = await ltm(dir, "doctor");
+      expect(human.stdout).toContain(`${REDIS}: ${CHECK}: `);
+      expect(human.stdout).toContain("cA9wE6uJr3");
+    });
+  });
+
+  test("2: a proposed PolicyRule fires the same finding", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, RULE, "status", "status: proposed");
+      expect(await mine(dir)).toEqual([expected(REDIS, "proposed")]);
+    });
+  });
+
+  test("3: re-accepting the rule clears it, and a title-only edit never raises it", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, RULE, "status", "status: superseded");
+      edit(dir, RULE, "status", "status: accepted");
+      expect(await mine(dir)).toEqual([]);
+    });
+    await withScratch(demo, async (dir) => {
+      edit(dir, RULE, "title", "title: No cross-service DB reads, revised");
+      expect(await mine(dir)).toEqual([]);
+    });
+  });
+
+  for (const status of ["deprecated", "superseded"]) {
+    test(`4: a retired Exception (${status}) never fires`, async () => {
+      await withScratch(demo, async (dir) => {
+        edit(dir, RULE, "status", "status: superseded");
+        edit(dir, REDIS, "status", `status: ${status}`);
+        expect(await mine(dir)).toEqual([]);
+      });
+    });
+  }
+
+  test("5: a proposed Exception never fires", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, RULE, "status", "status: superseded");
+      edit(dir, REDIS, "status", "status: proposed");
+      expect(await mine(dir)).toEqual([]);
+    });
+  });
+
+  test("6: an id no Record holds is broken-related's alone", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, REDIS, "related", "related: [constrained_by::ZZZZZZZZZZ]");
+      const all = await findings(dir);
+      expect(all.filter((f) => f.check === CHECK)).toEqual([]);
+      expect(all.filter((f) => f.check === "broken-related" && f.file === REDIS)).toHaveLength(1);
+    });
+  });
+
+  test("7: only the non-accepted entry fires, and a repeated entry counts once", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, RULE, "status", "status: superseded");
+      edit(
+        dir,
+        BILLING,
+        "related",
+        "related: [constrained_by::nR5hB2yTq8, constrained_by::cA9wE6uJr3, constrained_by::cA9wE6uJr3]",
+      );
+      expect(await mine(dir)).toEqual([expected(BILLING, "superseded"), expected(REDIS, "superseded")]);
+    });
+  });
+
+  test("8: an id two Records hold gives no finding", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, RULE, "status", "status: superseded");
+      const copy = join(dir, "_memory/policy-rules/no-cross-service-db-reads-copy-cA9wE6uJr3.md");
+      writeFileSync(copy, readFileSync(join(dir, RULE), "utf8"));
+      expect(await mine(dir)).toEqual([]);
+    });
+  });
+
+  test("9: a PolicyRule with no status line gives no finding", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, RULE, "status", "");
+      expect(await mine(dir)).toEqual([]);
+    });
+  });
+});

@@ -4,7 +4,7 @@
 
 Each finding prints as `<file>: <check>: <message>`, sorted by file and then by check, in the order the sections below appear. `ltm doctor --json` prints the same findings as an array of objects with the keys `file`, `check`, `message`, and `related_files`.
 
-Retired Records (`status` of `superseded`, `deprecated`, or `rejected`) are skipped by `stale-confirmed`, `review-due`, and `orphan`. A malformed field is `ltm validate`'s to report, so a check that needs it skips that Record without a finding.
+Retired Records (`status` of `superseded`, `deprecated`, or `rejected`) are skipped by `stale-confirmed`, `review-due`, `orphan`, and `exception-rule-not-accepted`. A malformed field is `ltm validate`'s to report, so a check that needs it skips that Record without a finding.
 
 There is no suppression list. To clear a finding, edit the Record, or change a threshold under `doctor:` in `memory-bank.yaml`. The five thresholds are `stale_confirmed_days`, `proposal_age_days`, `max_chain_length`, `orphan_days`, and `near_duplicate_threshold`. The first four must be integers of 1 or more, and `near_duplicate_threshold` must be a number between 0 and 1, exclusive. Each default is read from `schema/memory-bank.schema.json`.
 
@@ -89,6 +89,18 @@ Every report line below except `near-duplicate`'s came from `ltm doctor` run wit
 **False positives:** A link to a Record that lives in another Bank, or one that has not been merged yet.
 
 **Dismissal:** Correct the id, or remove the entry from `related`. If the target Record is on an unmerged branch, the finding clears once it merges.
+
+## exception-rule-not-accepted
+
+**Fields:** `related` on accepted Exceptions only, reading each `constrained_by::<id>` entry, and the `status` of the Record that id names. A retired or proposed Exception is skipped. An id that no Record holds is `broken-related`'s finding. An id that two Records hold, and a named Record with no `status`, are left to `ltm validate`.
+
+**Threshold:** None. It fires when the named Record's `status` is anything but `accepted`, so `proposed` fires as well as `superseded`, `deprecated`, and `rejected`.
+
+**Report line:** `_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md: exception-rule-not-accepted: related entry 'constrained_by::cA9wE6uJr3' names _memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md, whose status is superseded` (scratch edit: `status` on the PolicyRule changed from `accepted` to `superseded`). The finding's `related_files` lists the PolicyRule. A repeated entry counts as one finding.
+
+**False positives:** A PolicyRule that was superseded by a newer rule the Exception still departs from, where only the `constrained_by` id is stale.
+
+**Dismissal:** If a newer PolicyRule replaced the old one and the departure still applies, point `constrained_by::` at the new rule's id. If the departure no longer applies, retire the Exception (`ltm deprecate <id>`). If the rule is a Proposal, the finding clears once the rule is accepted.
 
 ## supersession-no-shared-facet
 
