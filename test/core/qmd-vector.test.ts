@@ -70,7 +70,7 @@ function packageWith(manifest: object): string {
 
 // 2.9.1, not the fixture's 2.8.3, so a message can't pass by hard-coding the tested version in place of manifest.version.
 const v291 = () => packageWith({ name: "@tobilu/qmd", version: "2.9.1", type: "module", exports: { ".": { import: "./dist/index.js" } } });
-const MSG = (member: string) => `qmd vector status failed: qmd 2.9.1 has no ${member}; recall.mode: vector is tested against qmd 2.8.3`;
+const MSG = (member: string, op = "status") => `qmd vector ${op} failed: qmd 2.9.1 has no ${member}; recall.mode: vector is tested against qmd 2.8.3`;
 
 describe("qmdVectorBackend.preflight", () => {
   test("returns null when every document is embedded", () => {
@@ -184,7 +184,7 @@ describe("qmdVectorBackend.prefetch and search", () => {
     // The backend spreads env at each spawn, so this takes effect on the next worker run.
     s.env.FAKE_STORE_OMIT = "llm.embedModelName";
     expect(() => s.backend.prefetch([a])).toThrow(
-      new RecallError("qmd vector search failed: qmd 2.9.1 has no store.internal.llm.embedModelName; recall.mode: vector is tested against qmd 2.8.3"),
+      new RecallError(MSG("store.internal.llm.embedModelName", "search")),
     );
   });
 
