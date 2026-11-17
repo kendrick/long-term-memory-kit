@@ -17,5 +17,8 @@ let source;
 export const setConfigSource = ({ configPath } = {}) => {
   source = configPath;
 };
-// Only the embed model, the one gated field the tests exercise.
-export const loadConfig = () => ({ models: { embed: /^\s+embed:\s*(\S+)/m.exec(readFileSync(source ?? getConfigPath(), "utf8"))?.[1] } });
+// The whole config, so collections' update hooks and paths reach the worker's trust snapshot. Bun.YAML is fine: the fake only runs under bun, inside the worker.
+export const loadConfig = () => {
+  const c = Bun.YAML.parse(readFileSync(source ?? getConfigPath(), "utf8")) ?? {};
+  return { ...c, collections: c.collections ?? {} };
+};

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -219,5 +219,67 @@ describe("qmdVectorBackend.prefetch and search", () => {
     const before = createStores();
     backend.prefetch([a, b]);
     expect(createStores() - before).toBe(1);
+  });
+});
+
+describe("qmd-vector-worker trust gate for a project-local config", () => {
+  const CUSTOM = "hf:custom/embed.gguf";
+  const status = { decisions: { active: 9, pending: 0, model: CUSTOM } };
+  // Literal, not computed by the fake's sensitiveDigest: the digest of a config whose only gated item is the custom embed model.
+  const BASE_DIGEST = '{"hooks":[],"paths":[],"models":[["embed","hf:custom/embed.gguf"]]}';
+  const base = (decisions = "") =>
+    `collections:\n  decisions:\n    path: _memory/decisions\n    pattern: "**/*.md"\n${decisions}models:\n  embed: ${CUSTOM}\n`;
+
+  // realpath because the worker's cwd is the resolved path and FAKE_TRUSTED is keyed on it (macOS /var is a symlink).
+  const project = (yaml: string) => {
+    const dir = mkdtempSync(join(root, "proj-"));
+    mkdirSync(join(dir, ".qmd"));
+    writeFileSync(join(dir, ".qmd/index.yml"), yaml);
+    return realpathSync(dir);
+  };
+  const trusted = (p: string) => ({ FAKE_TRUSTED: JSON.stringify({ [`${p}/.qmd/index.yml`]: BASE_DIGEST }) });
+  // The worker finds .qmd/ by walking up from its cwd, which it inherits from this process.
+  const inProject = <T>(dir: string, fn: () => T): T => {
+    const prev = process.cwd();
+    process.chdir(dir);
+    try {
+      return fn();
+    } finally {
+      process.chdir(prev);
+    }
+  };
+  // null: the custom model loaded. "has no embeddings": the worker fell back to the default.
+  const preflight = (p: string, env: Record<string, string>) =>
+    inProject(p, () => qmdVectorBackend(RECALL, bank, setup({ status, env }).env, noWarn).preflight());
+
+  test("a trusted config with no hooks keeps its custom embed model", () => {
+    const p = project(base());
+    expect(preflight(p, trusted(p))).toBeNull();
+  });
+
+  test("adding an update: hook to a trusted config falls back to the default embed model", () => {
+    const p = project(base("    update: git pull\n"));
+    expect(preflight(p, trusted(p))).toContain("has no embeddings");
+  });
+
+  test("QMD_TRUST_LOCAL_CONFIG=1 lets the hooked config's custom model through", () => {
+    const p = project(base("    update: git pull\n"));
+    expect(preflight(p, { ...trusted(p), QMD_TRUST_LOCAL_CONFIG: "1" })).toBeNull();
+  });
+
+  test("a collection path outside the project falls back to the default embed model", () => {
+    const p = project(base().replace("path: _memory/decisions", "path: ../elsewhere"));
+    expect(preflight(p, trusted(p))).toContain("has no embeddings");
+  });
+
+  // Falsifiers: qmd doesn't gate these, so a digest that moved on any edit would fail them.
+  test("changing a collection's pattern on a trusted config keeps the custom model", () => {
+    const p = project(base().replace('"**/*.md"', '"**/*.txt"'));
+    expect(preflight(p, trusted(p))).toBeNull();
+  });
+
+  test("moving a collection's path within the project keeps the custom model", () => {
+    const p = project(base().replace("path: _memory/decisions", "path: _memory"));
+    expect(preflight(p, trusted(p))).toBeNull();
   });
 });
