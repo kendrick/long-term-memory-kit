@@ -46,13 +46,13 @@ Every report line below except `near-duplicate`'s came from `ltm doctor` run wit
 
 **Fields:** `effective_to`, on every memory type. Retired Records are skipped.
 
-**Threshold:** None. The check fires when `effective_to` is at least one day before today, so the `effective_to` day itself isn't reported. An Exception drops out of `ltm query` the same day the check starts reporting it, so this check is how you find the ones that have gone quiet.
+**Threshold:** None. The check fires when `effective_to` is at least one day before today, so the `effective_to` day itself isn't reported. An Exception drops out of `ltm query` the same day the check starts reporting it, so this check is where you find the ones that disappeared.
 
 **Report line:** `_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md: effective-to-passed: effective_to 2026-11-10 has passed` (scratch edit: `effective_to` changed from `2026-12-31` to `2026-11-10`)
 
-**False positives:** A departure that was extended without moving `effective_to`.
+**False positives:** An Exception whose owner extended it without moving `effective_to`.
 
-**Dismissal:** If the departure ended, run `ltm deprecate <id>`. If it was extended, move `effective_to` later. An Exception can also trip `exception-rule-not-accepted`, and `ltm deprecate` clears both.
+**Dismissal:** If the Exception ended, run `ltm deprecate <id>`. If it was extended, move `effective_to` later. An Exception can also trip `exception-rule-not-accepted`, and `ltm deprecate` clears both.
 
 ## stale-proposal
 
