@@ -1,10 +1,11 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import * as fs from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { parse } from "yaml";
 import { isInside, isMapping, type BankConfig } from "../core/bank.ts";
 import { formatRecordText } from "../core/fmt.ts";
 import { listRecordFiles, type RecordFile } from "../core/query.ts";
 import { splitFrontmatter } from "../core/record.ts";
+import { applyEdits, type EditFs } from "../core/supersede.ts";
 import { firstLine } from "../core/text.ts";
 import { openBank } from "./bank.ts";
 import type { Command } from "./run.ts";
@@ -29,7 +30,7 @@ function statusAliases(config: BankConfig): string[] {
   return Array.isArray(aliases) && aliases.every((a) => typeof a === "string") ? (aliases as string[]) : [];
 }
 
-export const fmt: Command = {
+export const makeFmt = (io: EditFs = fs): Command => ({
   name: "fmt",
   summary: "Rewrite Record frontmatter canonically, leaving the body byte-identical",
   options: { check: { type: "boolean", description: "Report Records that need rewriting and write nothing" } },
@@ -80,7 +81,7 @@ export const fmt: Command = {
     for (const f of files) {
       let text: string;
       try {
-        text = readFileSync(f.abs, "utf8");
+        text = fs.readFileSync(f.abs, "utf8");
       } catch (e) {
         texts.set(f.abs, e as Error);
         continue;
@@ -111,14 +112,16 @@ export const fmt: Command = {
         ctx.out(`${f.rel}\n`);
         wouldChange = true;
       } else {
-        try {
-          writeFileSync(f.abs, result.text);
-        } catch (e) {
-          ctx.err(`ltm fmt: ${f.rel}: ${firstLine((e as Error).message)}\n`);
+        // A write planned from stale text would drop whatever another ltm command or an editor saved after our read (#221).
+        const refused = applyEdits([{ abs: f.abs, rel: f.rel, base: text, text: result.text }], io).failed;
+        if (refused !== null) {
+          ctx.err(`ltm fmt: ${refused.rel}: ${refused.message}\n`);
           failed = true;
         }
       }
     }
     return failed || wouldChange ? 1 : 0;
   },
-};
+});
+
+export const fmt: Command = makeFmt();

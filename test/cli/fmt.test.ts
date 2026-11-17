@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import * as fs from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { run } from "../../src/cli/run.ts";
+import { makeFmt } from "../../src/cli/fmt.ts";
+import { run, type RunResult } from "../../src/cli/run.ts";
 import { splitFrontmatter } from "../../src/core/record.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
@@ -14,6 +16,7 @@ const ltm = (cwd: string, ...argv: string[]) => run({ argv, cwd, env: {} });
 const QUEUE = "_memory/decisions/adopt-message-queue-for-orders-hT5cY8dUa6.md";
 const PG = "_memory/decisions/postgres-everywhere-kQ7vN2xLp4.md";
 const OVERVIEW = "_memory/context/order-service-overview-gN5yD9sMe2.md";
+const PROPOSAL = "_memory/decisions/adopt-opentelemetry-tracing-pL2sG4nVq0.md";
 
 const sha = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex");
 
@@ -239,6 +242,80 @@ describe("ltm fmt", () => {
       } finally {
         chmodSync(locked, 0o644);
       }
+    });
+  });
+
+  test("with no concurrent writer, reformatted Records match the canonical bytes and leave no temp file", async () => {
+    await withScratch(demo, async (dir) => {
+      for (const rel of [QUEUE, PG, OVERVIEW]) edit(join(dir, rel), reverseKeys);
+      expect(await ltm(dir, "fmt")).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+      for (const rel of [QUEUE, PG, OVERVIEW]) expect(sha(join(dir, rel))).toBe(sha(join(demo, rel)));
+      for (const folder of ["_memory/decisions", "_memory/context"]) {
+        expect(readdirSync(join(dir, folder)).filter((n) => /^\.ltm-.*\.tmp$/.test(n))).toEqual([]);
+      }
+    });
+  });
+
+  // The #81 race, replayed through fmt's EditFs seam rather than mock.module, which is process-wide in bun and leaks into later files.
+  test("an ltm accept that lands between fmt's read and its write survives, and fmt exits 1", async () => {
+    await withScratch(demo, async (dir) => {
+      const proposal = join(dir, PROPOSAL);
+      edit(proposal, reverseKeys);
+      edit(join(dir, QUEUE), reverseKeys);
+      let accepted: Promise<RunResult> | undefined;
+      let inWindow: string | undefined;
+      const stub = {
+        ...fs,
+        accessSync: (p: fs.PathLike, m?: number) => {
+          if (accepted === undefined && p === proposal) {
+            // run() has no await before cmd.run, and accept's run has none at all, so its write lands before this returns.
+            accepted = run({ argv: ["accept", "pL2sG4nVq0"], cwd: dir, env: { LTM_TODAY: "2026-11-16" } });
+            inWindow = readFileSync(proposal, "utf8");
+            expect(inWindow).toContain("\nstatus: accepted\n");
+          }
+          return fs.accessSync(p, m);
+        },
+      };
+      const r = await run({ argv: ["fmt"], cwd: dir, env: {} }, [makeFmt(stub)]);
+      expect(accepted).toBeDefined();
+      expect((await accepted!).exitCode).toBe(0);
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toContain(`ltm fmt: ${PROPOSAL}: changed on disk since it was read; run the command again\n`);
+      const after = readFileSync(proposal, "utf8");
+      expect(after).toContain("\nstatus: accepted\n");
+      expect(after).not.toContain("\nstatus: proposed\n");
+      expect(after).toBe(inWindow!);
+      expect(sha(join(dir, QUEUE))).toBe(sha(join(demo, QUEUE)));
+    });
+  });
+
+  // Windows reports no POSIX mode bits, so 0600 can't be observed there.
+  test.skipIf(process.platform === "win32")("a 0600 Record keeps 0600 after fmt rewrites it", async () => {
+    await withScratch(demo, async (dir) => {
+      const file = join(dir, OVERVIEW);
+      edit(file, reverseKeys);
+      chmodSync(file, 0o600);
+      expect((await ltm(dir, "fmt", OVERVIEW)).exitCode).toBe(0);
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      expect(sha(file)).toBe(sha(join(demo, OVERVIEW)));
+    });
+  });
+
+  test("--check never reaches the write path", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(join(dir, QUEUE), reverseKeys);
+      let calls = 0;
+      const stub = {
+        ...fs,
+        accessSync: (p: fs.PathLike, m?: number) => {
+          calls++;
+          return fs.accessSync(p, m);
+        },
+      };
+      const r = await run({ argv: ["fmt", "--check"], cwd: dir, env: {} }, [makeFmt(stub)]);
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe(`${QUEUE}\n`);
+      expect(calls).toBe(0);
     });
   });
 
