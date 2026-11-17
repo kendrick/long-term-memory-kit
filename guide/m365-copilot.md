@@ -33,7 +33,7 @@ Two runs on the same commit and the same day write the same bytes. To render the
 
 Microsoft's GitHub Cloud Knowledge connector indexes every markdown file in a repo, and it can't tell an accepted Record from a Proposal. Pointed at the whole Bank, it lets Copilot cite a Retired Record as current. Point it at `digest/` instead.
 
-The workflow in [Route 2](#route-2-the-publish-workflow) commits `digest/` to the Bank on every change. For this route alone, keep its Render the Digest and Commit the Digest steps, and drop Convert to Word, Save the Word files, Get a Graph token, and Upload to SharePoint.
+The workflow in [Route 2](#route-2-the-publish-workflow) commits `digest/` to the Bank on every change. For this route alone, keep its Render the Digest, Check the run is on main's head, and Commit the Digest steps, and drop Convert to Word, Save the Word files, Get a Graph token, and Upload to SharePoint.
 
 The connector shows repo content only to people who can already see the repo on GitHub. Readers without a GitHub seat need Route 2 or Route 3.
 
@@ -51,7 +51,7 @@ Before you add the workflow, set up the following:
 - `SHAREPOINT_SITE_ID` and `SHAREPOINT_DRIVE_ID` are repo variables holding the site id and the document library's drive id.
 - The default branch must let the workflow push its `digest/` commit.
 
-Save the workflow in the Bank as `.github/workflows/ltm-digest.yml`. Set `LTM_VERSION` to the value in your `ltm-validate.yml`, and change `main` if your default branch has another name:
+Save the workflow in the Bank as `.github/workflows/ltm-digest.yml`. Set `LTM_VERSION` to the value in your `ltm-validate.yml`, and change `main` in the trigger and in the `git fetch` line of the Check the run is on main's head step if your default branch has another name:
 
 ```yaml
 name: ltm-digest
@@ -99,8 +99,20 @@ jobs:
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Convert to Word
+      # GitHub's "Re-run jobs" button reuses the old run's SHA, so without this check the upload lands before the push fails.
+      - name: Check the run is on main's head
+        id: head
         if: steps.render.outputs.changed == 'true'
+        run: |
+          git fetch --depth=1 origin main
+          if [ "$(git rev-parse FETCH_HEAD)" = "$(git rev-parse HEAD)" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::This run's commit is not the head of main, so it uploads and commits nothing."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Convert to Word
+        if: steps.render.outputs.changed == 'true' && steps.head.outputs.current == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y pandoc
@@ -109,13 +121,13 @@ jobs:
             pandoc "$f" -o "docx/$(basename "$f" .md).docx"
           done
       - name: Save the Word files
-        if: steps.render.outputs.changed == 'true'
+        if: steps.render.outputs.changed == 'true' && steps.head.outputs.current == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: digest-docx
           path: docx/
       - name: Get a Graph token
-        if: steps.render.outputs.changed == 'true'
+        if: steps.render.outputs.changed == 'true' && steps.head.outputs.current == 'true'
         env:
           TENANT: ${{ vars.ENTRA_TENANT_ID || secrets.ENTRA_TENANT_ID }}
           CLIENT_ID: ${{ vars.ENTRA_CLIENT_ID || secrets.ENTRA_CLIENT_ID }}
@@ -131,10 +143,10 @@ jobs:
           echo "::add-mask::$token"
           echo "LTM_GRAPH_TOKEN=$token" >> "$GITHUB_ENV"
       - name: Upload to SharePoint
-        if: steps.render.outputs.changed == 'true'
+        if: steps.render.outputs.changed == 'true' && steps.head.outputs.current == 'true'
         run: ltm publish sharepoint --site "${{ vars.SHAREPOINT_SITE_ID }}" --drive "${{ vars.SHAREPOINT_DRIVE_ID }}" --path Digest docx/
       - name: Commit the Digest
-        if: steps.render.outputs.changed == 'true'
+        if: steps.render.outputs.changed == 'true' && steps.head.outputs.current == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -144,9 +156,9 @@ jobs:
 
 An Entra access token lasts about an hour, so the Get a Graph token step mints a new one on each run with the client-credentials grant and hands it to `ltm` as `LTM_GRAPH_TOKEN`. Nobody has run this step against a real tenant yet.
 
-The workflow commits and uploads only when some Digest file's bytes changed. It checks the markdown in `digest/` and not the Word files, because `pandoc` writes a different `.docx` on every run. The workflow makes this check because `ltm publish sharepoint` never skips a file and uploads every file in the directory each time it runs. A push made with the workflow's own token starts no new run, so the `digest/` commit doesn't loop. The commit comes last because the change check compares against the committed `digest/`. When an upload fails, the run commits nothing, so the next run still sees the change and uploads again.
+The workflow commits and uploads only when some Digest file's bytes changed and the run's commit was the head of `main` when the Check step ran. It checks the markdown in `digest/` and not the Word files, because `pandoc` writes a different `.docx` on every run. The workflow makes this check because `ltm publish sharepoint` never skips a file and uploads every file in the directory each time it runs. A push made with the workflow's own token starts no new run, so the `digest/` commit doesn't loop. The commit comes last because the change check compares against the committed `digest/`. When an upload fails, the run commits nothing, so the next run still sees the change and uploads again. A push to `main` that lands between the Check step and `git push` still lets that run upload once before its push fails. The `concurrency` group queues the next run behind it, and that run uploads the newer Digest.
 
-`ltm publish sharepoint` sends one `PUT` per file to the folder `--path` names in the drive, and it overwrites the file it wrote last time. It uploads each file as it is and converts nothing. When one upload fails, it still sends the rest, then exits `1` and names each failed path on stderr. A rerun is always safe. Without `LTM_GRAPH_TOKEN`, it exits `2`, names the variable, and sends nothing. It calls the Graph API and never a model.
+`ltm publish sharepoint` sends one `PUT` per file to the folder `--path` names in the drive, and it overwrites the file it wrote last time. It uploads each file as it is and converts nothing. When one upload fails, it still sends the rest, then exits `1` and names each failed path on stderr. A rerun is always safe. Re-running an old workflow run uploads nothing and commits nothing once the default branch has moved past that run's commit. Without `LTM_GRAPH_TOKEN`, `ltm publish sharepoint` exits `2`, names the variable, and sends nothing. It calls the Graph API and never a model.
 
 To check the target URLs before the first upload, pass `--dry-run`. It needs no token and sends nothing:
 
@@ -162,7 +174,7 @@ https://graph.microsoft.com/v1.0/sites/<site-id>/drives/<drive-id>/root:/Digest/
 
 ## Route 3: Upload by Hand
 
-Some tenants won't grant the Graph token. For them, delete the workflow's Get a Graph token and Upload to SharePoint steps and keep Save the Word files. Each run that changes the Digest then saves the `.docx` files as a zip in a GitHub Actions artifact named `digest-docx`.
+Some tenants won't grant the Graph token. For them, delete the workflow's Get a Graph token and Upload to SharePoint steps and keep Save the Word files. Each run on the head of `main` that changes the Digest then saves the `.docx` files as a zip in a GitHub Actions artifact named `digest-docx`.
 
 To bring SharePoint up to date, download that artifact from the run's page and unzip it. Upload every `.docx` file in it to the document library, and replace the files with the same names.
 
