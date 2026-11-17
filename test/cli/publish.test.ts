@@ -6,7 +6,7 @@ import { publish } from "../../src/cli/publish.ts";
 import { run, type RunResult } from "../../src/cli/run.ts";
 
 const TOKEN = "t0k";
-type Hit = { method: string; path: string; auth: string | null; body: string };
+type Hit = { method: string; path: string; raw: string; auth: string | null; body: string };
 let hits: Hit[] = [];
 let failName = "";
 let server: ReturnType<typeof Bun.serve>;
@@ -25,8 +25,9 @@ beforeAll(() => {
     port: 0,
     hostname: "127.0.0.1",
     async fetch(req) {
-      const path = decodeURIComponent(new URL(req.url).pathname);
-      hits.push({ method: req.method, path, auth: req.headers.get("authorization"), body: await req.text() });
+      const raw = new URL(req.url).pathname;
+      const path = decodeURIComponent(raw);
+      hits.push({ method: req.method, path, raw, auth: req.headers.get("authorization"), body: await req.text() });
       if (failName && path.endsWith(`/${failName}:/content`)) return new Response("nope", { status: 500 });
       return new Response("{}", { status: 200 });
     },
@@ -100,6 +101,52 @@ describe("ltm publish sharepoint", () => {
     expect((await ltm(["publish", "sharepoint", "--site", "a/b", "--drive", "d", "--path", "Digest", dir])).exitCode).toBe(2);
     expect((await ltm(["publish", "sharepoint", ...flags, dir], { ...env, LTM_GRAPH_BASE_URL: "http://example.com" })).exitCode).toBe(2);
     expect(hits).toEqual([]);
+  });
+
+  test("a dot segment or backslash in --site, --drive, or --path exits 2 naming the flag and sends nothing", async () => {
+    const base = (skip: string) => ["site", "drive", "path"].filter((f) => f !== skip).flatMap((f) => [`--${f}`, f === "path" ? "Digest" : f[0]!]);
+    const rows: [string, string, string[]][] = [
+      ["path", "../..", []],
+      ["path", "../..", ["--dry-run"]],
+      ["site", "..", []],
+      ["site", "a\\b", []],
+      ["path", "../x", []],
+      ["path", "a/./b", []],
+      ["path", "./Digest", []],
+      ["path", "Digest/.", []],
+      ["path", "x\\y", []],
+      ["site", ".", []],
+      ["drive", "..", []],
+      ["drive", "a\\b", []],
+      ["site", "%2e%2e", []],
+      ["drive", ".%2E", []],
+    ];
+    for (const [flag, value, extra] of rows) {
+      const res = await ltm(["publish", "sharepoint", ...base(flag), `--${flag}`, value, ...extra, dir]);
+      expect([flag, value, res.exitCode]).toEqual([flag, value, 2]);
+      expect(res.stderr).toContain(`--${flag}`);
+      expect(res.stdout).toBe("");
+    }
+    expect(hits).toEqual([]);
+  });
+
+  test("dotted values that are not dot segments upload, and the fake gets the dry-run URL", async () => {
+    const cases: [string, string][] = [
+      ["v1.2/Digest", "/sites/s/drives/d/root:/v1.2/Digest/accepted.docx:/content"],
+      ["..notes", "/sites/s/drives/d/root:/..notes/accepted.docx:/content"],
+      ["a//b", "/sites/s/drives/d/root:/a/b/accepted.docx:/content"],
+    ];
+    for (const [path, first] of cases) {
+      const args = ["publish", "sharepoint", "--site", "s", "--drive", "d", "--path", path, dir];
+      const dry = await ltm([...args, "--dry-run"]);
+      expect(dry.exitCode).toBe(0);
+      hits = [];
+      const res = await ltm(args);
+      expect(res.exitCode).toBe(0);
+      const expected = dry.stdout.trim().split("\n").map((l) => new URL(l).pathname);
+      expect(hits.map((h) => h.raw)).toEqual(expected);
+      expect(hits[0]!.path).toBe(first);
+    }
   });
 
   test("a missing or empty dir exits 1 naming it", async () => {

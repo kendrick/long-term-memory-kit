@@ -3,8 +3,9 @@ import { firstLine } from "../core/text.ts";
 import { graphBase, listUploads, uploadAll, uploadUrl } from "../core/sharepoint.ts";
 import type { Command } from "./run.ts";
 
-// Site and drive ids are spliced into the URL verbatim, so anything that would end or reshape the path is refused.
-const BAD_ID = /[/?#\s]/;
+// Site and drive ids go into the URL verbatim. fetch resolves dot segments, %2e included, and reads '\' as '/', so either one sends the request somewhere other than the URL --dry-run prints. checkArgs refuses both up front.
+const BAD_ID = /[/?#\s\\]/;
+const DOT_ID = /^(?:\.|%2e){1,2}$/i;
 
 export const publish: Command = {
   name: "publish",
@@ -26,8 +27,12 @@ export const publish: Command = {
       if (typeof values[flag] !== "string" || values[flag] === "") return `missing --${flag}`;
     }
     for (const flag of ["site", "drive"] as const) {
-      if (BAD_ID.test(values[flag] as string)) return `--${flag} must not contain '/', '?', '#', or whitespace`;
+      if (BAD_ID.test(values[flag] as string)) return `--${flag} must not contain '/', '?', '#', '\\', or whitespace`;
+      if (DOT_ID.test(values[flag] as string)) return `--${flag} must not be '.' or '..'`;
     }
+    const folderPath = values.path as string;
+    if (folderPath.includes("\\")) return "--path must not contain '\\'";
+    if (folderPath.split("/").some((seg) => seg === "." || seg === "..")) return "--path must not have a '.' or '..' segment";
     const base = graphBase(env);
     if (typeof base !== "string") return base.error;
     if (values["dry-run"] !== true && !env.LTM_GRAPH_TOKEN) {
