@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { npmShimTarget, qmdBackend, qmdCommand, type Recall } from "../../src/core/qmd.ts";
+import { qmdVectorBackend } from "../../src/core/qmd-vector.ts";
 
 // npm's cmd-shim (v6/v7) output for a node bin, byte for byte apart from the target.
 const npmShim = (target: string, eol = "\r\n") =>
@@ -145,6 +146,16 @@ describe.skipIf(process.platform !== "win32")("qmd.cmd on Windows", () => {
     const marker = join(mkdtempSync(join(root, "marker-")), "ran");
     const bin = binWith(`@echo ran>"${marker}"\r\n`);
     const problem = qmdBackend(RECALL, bank, { ...winEnv(), PATH: pathWith(bin) }, noWarn).preflight();
+    expect(problem).toMatch(/\\qmd\.cmd is not an npm shim, and ltm won't run qmd through cmd\.exe$/i);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  test("vector mode returns the same problem from preflight instead of throwing", () => {
+    // doctor and query call preflight outside their RecallError catch, so a throw here crashes ltm.
+    const marker = join(mkdtempSync(join(root, "marker-")), "ran");
+    const bin = binWith(`@echo ran>"${marker}"\r\n`);
+    const recall: Recall = { ...RECALL, mode: "vector" };
+    const problem = qmdVectorBackend(recall, bank, { ...winEnv(), PATH: pathWith(bin) }, noWarn).preflight();
     expect(problem).toMatch(/\\qmd\.cmd is not an npm shim, and ltm won't run qmd through cmd\.exe$/i);
     expect(existsSync(marker)).toBe(false);
   });
