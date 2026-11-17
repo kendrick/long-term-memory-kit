@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { IDENTITY, git } from "./helpers/git-bank.ts";
 
 type Step = { id?: string; name?: string; if?: string; run?: string; env?: Record<string, string> };
 type Workflow = { concurrency?: unknown; jobs: Record<string, { steps: Step[] }> };
@@ -62,27 +63,17 @@ test("the head check writes current=false on an older commit and current=true on
   const { check } = headCheck();
   const root = mkdtempSync(join(tmpdir(), "ltm-head-"));
   try {
-    // GIT_CONFIG_GLOBAL keeps the user's git config (signing, identity, url rewrites) out of the scratch repos.
-    const env = {
-      PATH: process.env.PATH!,
-      GIT_CONFIG_GLOBAL: "/dev/null",
-      GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com",
-      GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com",
-    };
-    const git = (cwd: string, ...args: string[]) => {
-      const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
-      if (r.status !== 0) throw new Error(`git ${args.join(" ")} in ${cwd}: ${r.stderr.trim()}`);
-      return r.stdout.trim();
-    };
+    // The check's own `git fetch` must not see the user's global config (url rewrites, etc.).
+    const env = { PATH: process.env.PATH!, GIT_CONFIG_GLOBAL: "/dev/null" };
     const origin = join(root, "origin.git");
     git(root, "init", "--bare", "-b", "main", origin);
     const work = join(root, "work");
     git(root, "init", "-b", "main", work);
     git(work, "remote", "add", "origin", origin);
-    git(work, "commit", "--allow-empty", "-m", "old");
-    const old = git(work, "rev-parse", "HEAD");
+    git(work, ...IDENTITY, "commit", "--allow-empty", "-m", "old");
+    const old = git(work, "rev-parse", "HEAD").trim();
     git(work, "push", "origin", "main");
-    git(work, "commit", "--allow-empty", "-m", "head");
+    git(work, ...IDENTITY, "commit", "--allow-empty", "-m", "head");
     git(work, "push", "origin", "main");
     for (const [sha, expected] of [[old, "false"], [undefined, "true"]] as const) {
       const clone = join(root, `clone-${expected}`);
