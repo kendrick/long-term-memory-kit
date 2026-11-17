@@ -15,7 +15,7 @@ let runs = 0;
 
 describe("release.yml", () => {
   test("the GitHub Release needs the smokes and bench-gate but not npm, so a failed or skipped publish can't hold back the binaries", () => {
-    expect(wf.jobs.release.needs).toEqual(expect.arrayContaining(["bench-gate", "smoke-linux", "smoke-macos"]));
+    expect(wf.jobs.release.needs).toEqual(expect.arrayContaining(["bench-gate", "smoke-linux", "smoke-macos", "smoke-windows"]));
     expect(wf.jobs.release.needs).not.toContain("npm");
     expect(wf.jobs.npm.needs).not.toContain("release");
   });
@@ -78,6 +78,31 @@ describe("release.yml", () => {
     const runs = wf.jobs["smoke-macos"].steps.map((s: { run?: string }) => s.run ?? "");
     expect(runs.some((r: string) => r.includes("scripts/smoke-binary.sh dist/ltm-darwin-arm64"))).toBe(true);
     expect(runs.some((r: string) => r.includes("codesign --verify --strict") && r.includes("dist/ltm-darwin-x64"))).toBe(true);
+  });
+
+  test("smoke-windows runs the Windows binary on windows-latest, and both publish paths wait on it", () => {
+    const job = wf.jobs["smoke-windows"];
+    expect([job.needs].flat()).toContain("build");
+    expect(job["runs-on"]).toBe("windows-latest");
+    const steps: { uses?: string; run?: string; with?: { name?: string } }[] = job.steps;
+    expect(steps.some((s) => s.uses?.startsWith("actions/download-artifact@") && s.with?.name === "dist")).toBe(true);
+    expect(steps.some((s) => s.run?.includes("scripts/smoke-windows.ps1 dist/ltm-windows-x64.exe"))).toBe(true);
+    expect(wf.jobs.release.needs).toContain("smoke-windows");
+    expect(wf.jobs.npm.needs).toContain("smoke-windows");
+  });
+
+  test("smoke-windows proves the smoke fails on a non-Windows binary", () => {
+    const steps: { run?: string }[] = wf.jobs["smoke-windows"].steps;
+    const real = steps.findIndex((s) => s.run?.includes("scripts/smoke-windows.ps1 dist/ltm-windows-x64.exe"));
+    const control = steps.findIndex(
+      (s) => !!s.run?.includes("ltm-linux-x64") && s.run.includes("scripts/smoke-windows.ps1") && s.run.includes("smoke: FAIL --version"),
+    );
+    expect(real).toBeGreaterThanOrEqual(0);
+    expect(control).toBeGreaterThan(real);
+  });
+
+  test("PRs touching smoke-windows.ps1 trigger the dry run", () => {
+    expect(wf.on.pull_request.paths).toContain("scripts/smoke-windows.ps1");
   });
 
   test("PRs touching sign-darwin.sh trigger the dry run", () => {

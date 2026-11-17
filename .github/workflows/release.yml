@@ -17,6 +17,7 @@ on:
       - '.github/workflows/release.yml'
       - 'scripts/build-binaries.sh'
       - 'scripts/smoke-binary.sh'
+      - 'scripts/smoke-windows.ps1'
       - 'scripts/sign-darwin.sh'
       - 'scripts/build-npm.ts'
       - 'scripts/publish-npm.sh'
@@ -103,6 +104,32 @@ jobs:
       # The runner is arm64 and Rosetta isn't guaranteed, so x64 gets the signature check only.
       - run: codesign --verify --strict -v dist/ltm-darwin-x64
 
+  # Nothing ran the Windows binary before #185. It reads `dist`: signing touches only the darwin binaries, so the .exe is byte-identical in both artifacts.
+  smoke-windows:
+    needs: build
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - run: pwsh -NoProfile -File scripts/smoke-windows.ps1 dist/ltm-windows-x64.exe
+      # Negative control: a smoke that passes a binary Windows can't launch proves nothing. The explicit `exit 0` matters because the pwsh wrapper otherwise exits with the script's 1.
+      - name: smoke fails on a binary that isn't a Windows executable
+        run: |
+          Copy-Item dist/ltm-linux-x64 "$env:RUNNER_TEMP/not-windows.exe"
+          $out = pwsh -NoProfile -File scripts/smoke-windows.ps1 "$env:RUNNER_TEMP/not-windows.exe" 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Output $out
+          if ($code -ne 1 -or $out -notmatch 'smoke: FAIL --version') { throw "expected exit 1 and 'smoke: FAIL --version', got exit $code" }
+          exit 0
+
   # No `if:` on purpose: the dispatch dry run has to exercise the gate against the committed baseline too.
   bench-gate:
     needs: build
@@ -185,7 +212,7 @@ jobs:
   # Only tag pushes trigger `push`, so this gate means "real release". Gating on github.ref would let a dispatch run on a tag ref publish. `release` doesn't wait on `npm`, which is optional: every other install method downloads these binaries, so a failed or skipped publish mustn't hold them back. It lists bench-gate itself, since it used to reach bench-gate only through `npm`.
   release:
     if: github.event_name == 'push'
-    needs: [sign-macos, smoke-linux, smoke-macos, bench-gate]
+    needs: [sign-macos, smoke-linux, smoke-macos, smoke-windows, bench-gate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -214,7 +241,7 @@ jobs:
 
   npm:
     # Nothing publishes unsmoked or below the committed bench hit rate.
-    needs: [sign-macos, smoke-linux, smoke-macos, bench-gate]
+    needs: [sign-macos, smoke-linux, smoke-macos, smoke-windows, bench-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
