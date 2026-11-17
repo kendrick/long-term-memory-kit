@@ -98,7 +98,7 @@ Every report line below except `near-duplicate`'s came from `ltm doctor` run wit
 
 **Report line:** `_memory/exceptions/order-service-redis-until-2027-03-wJ3nC7hTy4.md: exception-rule-not-accepted: related entry 'constrained_by::cA9wE6uJr3' names _memory/policy-rules/no-cross-service-db-reads-cA9wE6uJr3.md, whose status is superseded` (scratch edit: `status` on the PolicyRule changed from `accepted` to `superseded`). The finding's `related_files` lists the PolicyRule. A repeated entry counts as one finding.
 
-**False positives:** A PolicyRule that was superseded by a newer rule the Exception still departs from, where only the `constrained_by` id is stale.
+**False positives:** None known. An Exception means something only against a rule that agents can rely on, so every finding needs one of the fixes under Dismissal. The usual cause is a PolicyRule superseded by a newer one that the Exception still departs from, where only the `constrained_by` id is out of date.
 
 **Dismissal:** If a newer PolicyRule replaced the old one and the departure still applies, point `constrained_by::` at the new rule's id. If the departure no longer applies, retire the Exception (`ltm deprecate <id>`). If the rule is a Proposal, the finding clears once the rule is accepted.
 
