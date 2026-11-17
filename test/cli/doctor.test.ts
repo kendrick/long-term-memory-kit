@@ -519,7 +519,7 @@ exit 1
   });
 
   test("qmd's recorded trust in a project-local config lets its embed model through", async () => {
-    const trusted = (local: string) => ({ FAKE_TRUSTED: JSON.stringify({ [`${local}/index.yml`]: JSON.stringify({ embed: "hf:local/embed.gguf" }) }) });
+    const trusted = (local: string) => ({ FAKE_TRUSTED: JSON.stringify({ [`${local}/index.yml`]: '{"hooks":[],"paths":[],"models":[["embed","hf:local/embed.gguf"]]}' }) });
     await withLocalConfig(trusted, (r, stores, local) => {
       expect(r.stderr).toBe("");
       expect(r.status).toBe(0);
