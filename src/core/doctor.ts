@@ -10,6 +10,7 @@ import { sharesScope } from "./validate.ts";
 export type CheckName =
   | "stale-confirmed"
   | "review-due"
+  | "effective-to-passed"
   | "stale-proposal"
   | "long-chain"
   | "orphan"
@@ -216,6 +217,17 @@ function reviewDue(ctx: DoctorContext): DoctorFinding[] {
   return out;
 }
 
+function effectiveToPassed(ctx: DoctorContext): DoctorFinding[] {
+  const out: DoctorFinding[] = [];
+  for (const r of ctx.records) {
+    if (!isLive(r)) continue;
+    const v = dateField(r, "effective_to");
+    if (v === null || daysBetween(v, ctx.today) < 1) continue;
+    out.push(finding(r.path, "effective-to-passed", `effective_to ${v} has passed`));
+  }
+  return out;
+}
+
 function staleProposal(ctx: DoctorContext): DoctorFinding[] {
   const t = ctx.thresholds.proposal_age_days;
   const out: DoctorFinding[] = [];
@@ -416,6 +428,7 @@ function nearDuplicate(ctx: DoctorContext): DoctorFinding[] {
 export const CHECKS: readonly { name: CheckName; run(ctx: DoctorContext): DoctorFinding[] }[] = [
   { name: "stale-confirmed", run: staleConfirmed },
   { name: "review-due", run: reviewDue },
+  { name: "effective-to-passed", run: effectiveToPassed },
   { name: "stale-proposal", run: staleProposal },
   { name: "long-chain", run: longChain },
   { name: "orphan", run: orphan },
