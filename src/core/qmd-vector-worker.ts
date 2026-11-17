@@ -47,6 +47,13 @@ async function handle(req: Request): Promise<Status | Results> {
     configPath && !fullyTrusted() ? { dbPath, config: { ...config, models: undefined } } : { dbPath, configPath },
   );
   try {
+    // qmd 2.8.3 has no public API for either member, so a qmd upgrade that renames or drops one fails here with a version message; other internal.* reads (e.g. llm.embed) are unchecked.
+    for (const [member, ok] of [
+      ["store.internal.db.prepare", typeof store.internal?.db?.prepare === "function"],
+      ["store.internal.llm.embedModelName", typeof store.internal?.llm?.embedModelName === "string"],
+    ] as const) {
+      if (!ok) throw new Error(`qmd ${manifest.version} has no ${member}; recall.mode: vector is tested against qmd 2.8.3`);
+    }
     if (req.op === "status") {
       // The public internal.getHashesNeedingEmbedding counts the whole index, never one collection.
       const { getHashesNeedingEmbedding } = qmdStore;

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -544,6 +544,48 @@ exit 1
       expect(r.stdout).toBe("");
       expect(r.stderr).toBe('ltm doctor: qmd vector search failed: qmd could not embed a query with model fake-embed-model: No model file found at "fake-embed-model"\n');
     });
+  });
+
+  // The message also names the tested 2.8.3, so these run against a 2.9.1 copy to tell manifest.version from a hard-coded string.
+  const withQmd291 = async (fn: (pkg: string) => Promise<void>) => {
+    const dir = mkdtempSync(join(tmpdir(), "ltm-qmd291-"));
+    try {
+      cpSync(fakePkg, dir, { recursive: true });
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "@tobilu/qmd", version: "2.9.1", type: "module", exports: { ".": { import: "./dist/index.js" } } }));
+      await fn(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  const missing = (member: string) => `ltm doctor: qmd vector status failed: qmd 2.9.1 has no ${member}; recall.mode: vector is tested against qmd 2.8.3\n`;
+
+  test("a qmd store without internal.llm.embedModelName exits 1 naming the member and qmd's version", async () => {
+    await withQmd291((pkg) =>
+      withVector(WITH_THRESHOLD, { FAKE_PKG: pkg, FAKE_STORE_OMIT: "llm.embedModelName" }, (r) => {
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toBe("");
+        expect(r.stderr).toBe(missing("store.internal.llm.embedModelName"));
+      }),
+    );
+  });
+
+  test("a qmd store without internal.db exits 1 naming the member and qmd's version", async () => {
+    await withQmd291((pkg) =>
+      withVector(WITH_THRESHOLD, { FAKE_PKG: pkg, FAKE_STORE_OMIT: "db" }, (r) => {
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toBe("");
+        expect(r.stderr).toBe(missing("store.internal.db.prepare"));
+      }),
+    );
+  });
+
+  test("dropping a store member the worker never reads leaves doctor's result unchanged", async () => {
+    await withQmd291((pkg) =>
+      withVector(WITH_THRESHOLD, { FAKE_PKG: pkg, FAKE_VEC: vec(0.62), FAKE_STORE_OMIT: "dbPath" }, (r) => {
+        expect(r.exitCode).toBe(0);
+        expect(r.stdout).toContain(`${MQ}: near-duplicate: scores 0.62 against ${PUB} (threshold 0.6)\n`);
+      }),
+    );
   });
 
   test("mode: vsearch exits 1 saying search or vector", async () => {
