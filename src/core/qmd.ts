@@ -57,10 +57,16 @@ export type QmdBackend = RecallBackend & {
   indexed(collection: string): Set<string>;
 };
 
+// npm installs qmd on Windows as a qmd.cmd shim, which a bare-name spawn with no shell never finds.
+export function qmdCommand(env: Record<string, string | undefined>, platform: NodeJS.Platform = process.platform): string {
+  if (platform !== "win32") return "qmd";
+  return Bun.which("qmd", { PATH: env.PATH ?? env.Path ?? env.path ?? "" }) ?? "qmd";
+}
+
 export function qmdCollections(collections: Partial<Record<MemoryType, string>>, env: Record<string, string | undefined>) {
   // The caller's env, not process.env: it decides which qmd runs and which index (XDG dirs) it reads.
   // `--all` can print more than Bun's ~1 MiB default maxBuffer, which would fail the run with ENOBUFS.
-  const qmd = (args: string[]) => spawnSync("qmd", args, { encoding: "utf8", env, maxBuffer: Infinity });
+  const qmd = (args: string[]) => spawnSync(qmdCommand(env), args, { encoding: "utf8", env, maxBuffer: Infinity });
   // realpath on both sides, since qmd stores a resolved path (macOS /tmp is /private/tmp).
   const collectionRoots = new Map<string, string>();
   const show = (type: MemoryType): string | null => {
@@ -98,7 +104,7 @@ export function qmdCollections(collections: Partial<Record<MemoryType, string>>,
     }
     const collectionRoot = collectionRoots.get(name);
     // NO_COLOR keeps qmd from wrapping the path in escape codes when stdout is a TTY.
-    const r = spawnSync("qmd", ["ls", name], { encoding: "utf8", env: { ...env, NO_COLOR: "1" }, maxBuffer: Infinity });
+    const r = spawnSync(qmdCommand(env), ["ls", name], { encoding: "utf8", env: { ...env, NO_COLOR: "1" }, maxBuffer: Infinity });
     if (r.error) throw new RecallError(`qmd ls ${name} failed: ${firstLine(r.error.message)}`);
     if (r.status !== 0) {
       const first = (r.stderr ?? "").split("\n").find((l) => l.trim() !== "")?.trim();
