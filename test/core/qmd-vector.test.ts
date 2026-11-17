@@ -37,7 +37,7 @@ const rec = (path: string, fm: Record<string, unknown> = {}): ParsedRecord => ({
 });
 
 let n = 0;
-function setup(vars: { status?: object; vec?: object; pkg?: string; path?: string; qmdConfig?: string } = {}) {
+function setup(vars: { status?: object; vec?: object; pkg?: string; path?: string; qmdConfig?: string; env?: Record<string, string> } = {}) {
   const pkg = vars.pkg ?? fakePkg;
   const log = join(root, `log-${n}`);
   // Own config dir per run, so neither the fake nor the worker reads the user's ~/.config/qmd.
@@ -46,7 +46,7 @@ function setup(vars: { status?: object; vec?: object; pkg?: string; path?: strin
     mkdirSync(join(config, "qmd"), { recursive: true });
     writeFileSync(join(config, "qmd/index.yml"), vars.qmdConfig);
   }
-  const env = {
+  const env: Record<string, string> = {
     XDG_CONFIG_HOME: config,
     PATH: vars.path ?? `${bin}:${process.env.PATH}`,
     FAKE_PKG: pkg,
@@ -54,6 +54,7 @@ function setup(vars: { status?: object; vec?: object; pkg?: string; path?: strin
     FAKE_VEC: JSON.stringify(vars.vec ?? {}),
     FAKE_STATUS: JSON.stringify(vars.status ?? { decisions: { active: 9, pending: 0 } }),
     FAKE_LOG: log,
+    ...vars.env,
   };
   const createStores = () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter((l) => l.startsWith("createStore")).length : 0);
   return { env, createStores };
@@ -66,6 +67,10 @@ function packageWith(manifest: object): string {
   writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
   return dir;
 }
+
+// 2.9.1, not the fixture's 2.8.3, so a message can't pass by hard-coding the tested version in place of manifest.version.
+const v291 = () => packageWith({ name: "@tobilu/qmd", version: "2.9.1", type: "module", exports: { ".": { import: "./dist/index.js" } } });
+const MSG = (member: string) => `qmd vector status failed: qmd 2.9.1 has no ${member}; recall.mode: vector is tested against qmd 2.8.3`;
 
 describe("qmdVectorBackend.preflight", () => {
   test("returns null when every document is embedded", () => {
@@ -115,6 +120,26 @@ describe("qmdVectorBackend.preflight", () => {
     );
   });
 
+  test("a store without internal.llm.embedModelName fails naming the member and qmd's version", () => {
+    const { env } = setup({ pkg: v291(), env: { FAKE_STORE_OMIT: "llm.embedModelName" } });
+    expect(qmdVectorBackend(RECALL, bank, env, noWarn).preflight()).toBe(MSG("store.internal.llm.embedModelName"));
+  });
+
+  test("a store without internal.db fails naming the member and qmd's version", () => {
+    const { env } = setup({ pkg: v291(), env: { FAKE_STORE_OMIT: "db" } });
+    expect(qmdVectorBackend(RECALL, bank, env, noWarn).preflight()).toBe(MSG("store.internal.db.prepare"));
+  });
+
+  test("internal.db without a prepare function fails the same way", () => {
+    const { env } = setup({ pkg: v291(), env: { FAKE_STORE_OMIT: "db.prepare" } });
+    expect(qmdVectorBackend(RECALL, bank, env, noWarn).preflight()).toBe(MSG("store.internal.db.prepare"));
+  });
+
+  test("dropping a store member the worker never reads changes nothing", () => {
+    const { env } = setup({ pkg: v291(), env: { FAKE_STORE_OMIT: "dbPath" } });
+    expect(qmdVectorBackend(RECALL, bank, env, noWarn).preflight()).toBeNull();
+  });
+
   test("reports a qmd missing from PATH", () => {
     const empty = join(root, "empty");
     mkdirSync(empty, { recursive: true });
@@ -152,6 +177,15 @@ describe("qmdVectorBackend.prefetch and search", () => {
     const { backend } = ready({ vec });
     backend.prefetch([a, b]);
     expect(backend.search([a, b], text)).toEqual([{ record: b, score: 0.62 }]);
+  });
+
+  test("search fails with the same message when the store lacks embedModelName", () => {
+    const s = ready({ pkg: v291() });
+    // The backend spreads env at each spawn, so this takes effect on the next worker run.
+    s.env.FAKE_STORE_OMIT = "llm.embedModelName";
+    expect(() => s.backend.prefetch([a])).toThrow(
+      new RecallError("qmd vector search failed: qmd 2.9.1 has no store.internal.llm.embedModelName; recall.mode: vector is tested against qmd 2.8.3"),
+    );
   });
 
   test("a query nobody prefetched is a miss", () => {
