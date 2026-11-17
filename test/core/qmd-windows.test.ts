@@ -32,8 +32,6 @@ const binWith = (script: string) => {
   writeFileSync(join(dir, "qmd.cmd"), script);
   return dir;
 };
-const winBin = () => binWith(WIN_QMD);
-const inertBin = () => binWith(INERT_QMD);
 // cmd.exe needs these to start, and a real Windows env always carries them.
 const winEnv = () => ({ SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec, PATHEXT: process.env.PATHEXT, QMD_ROOT });
 
@@ -42,7 +40,8 @@ const noWarn = (line: string) => {
   throw new Error(`unexpected warning: ${line}`);
 };
 
-test("windows tests run where CI expects them", () => {
+// describe.skipIf would report a non-Windows runner as all-green skips, so CI fails here instead.
+test("the test-windows job really runs on Windows", () => {
   if (process.env.LTM_EXPECT_WINDOWS_TESTS === "1") expect(process.platform).toBe("win32");
 });
 
@@ -58,19 +57,26 @@ describe.skipIf(process.platform !== "win32")("qmd.cmd on Windows", () => {
   });
 
   test("a qmd.cmd shim on Path (not PATH) resolves", () => {
-    expect(qmdBackend(RECALL, bank, { ...winEnv(), Path: winBin() }, noWarn).preflight()).toBeNull();
+    expect(qmdBackend(RECALL, bank, { ...winEnv(), Path: binWith(WIN_QMD) }, noWarn).preflight()).toBeNull();
   });
 
   test("a collection name with cmd metacharacters runs no command", () => {
     const marker = join(mkdtempSync(join(root, "marker-")), "pwned");
     const recall: Recall = { ...RECALL, collections: { Decision: `a&echo pwned>"${marker}"` } };
-    const problem = qmdBackend(recall, bank, { ...winEnv(), PATH: inertBin() }, noWarn).preflight();
+    const problem = qmdBackend(recall, bank, { ...winEnv(), PATH: binWith(INERT_QMD) }, noWarn).preflight();
     expect(problem).toStartWith("recall.collections.Decision:");
     expect(existsSync(marker)).toBe(false);
   });
 
+  test("a %VAR% collection name reaches qmd unexpanded", () => {
+    // cmd.exe expands %NAME% even inside quotes, and the fake knows only `decisions`, so expansion would make preflight pass.
+    const recall: Recall = { ...RECALL, collections: { Decision: "%LTM_PCT_PROBE%" } };
+    const env = { ...winEnv(), LTM_PCT_PROBE: "decisions", PATH: binWith(WIN_QMD) };
+    expect(qmdBackend(recall, bank, env, noWarn).preflight()).toStartWith("recall.collections.Decision:");
+  });
+
   test("qmd ls runs through the shim too", () => {
-    const backend = qmdBackend(RECALL, bank, { ...winEnv(), Path: winBin() }, noWarn);
+    const backend = qmdBackend(RECALL, bank, { ...winEnv(), Path: binWith(WIN_QMD) }, noWarn);
     const files = backend.indexed("decisions");
     expect(files).toBeInstanceOf(Set);
     expect(files.size).toBe(0);
