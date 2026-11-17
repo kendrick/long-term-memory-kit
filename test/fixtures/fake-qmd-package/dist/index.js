@@ -31,11 +31,14 @@ export async function createStore({ dbPath, configPath, config }) {
     },
     close: async () => {},
   };
-  // FAKE_STORE_OMIT: comma-separated dotted paths under `internal` to delete, so a test can model a qmd that dropped a member.
-  for (const path of (process.env.FAKE_STORE_OMIT ?? "").split(",").filter(Boolean)) {
+  // FAKE_STORE_OMIT: one dotted path under `internal` to delete, so a test can model a qmd that dropped a member. Throws on a path that isn't there, so a typo can't silently drop nothing.
+  const path = process.env.FAKE_STORE_OMIT;
+  if (path) {
     const keys = path.split(".");
     const last = keys.pop();
-    delete keys.reduce((o, k) => o[k], store.internal)[last];
+    const parent = keys.reduce((o, k) => o?.[k], store.internal);
+    if (!parent || !(last in parent)) throw new Error(`FAKE_STORE_OMIT: no internal.${path} to delete`);
+    delete parent[last];
   }
   return store;
 }
