@@ -51,9 +51,19 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  # The arm64 leg runs natively. An x64 runner can't emulate it, so its container fails with `exec format error` there.
   smoke-linux:
+    name: smoke-linux (${{ matrix.bin }})
     needs: build
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - bin: ltm-linux-x64
+            runner: ubuntu-latest
+          - bin: ltm-linux-arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -64,7 +74,7 @@ jobs:
           path: dist
       # Artifacts drop the executable bit.
       - run: chmod +x dist/ltm-*
-      - run: bash scripts/smoke-binary.sh dist/ltm-linux-x64
+      - run: bash scripts/smoke-binary.sh dist/${{ matrix.bin }}
 
   # bun's cross-compiled darwin binaries carry a signature that fails codesign, and macOS kills them at launch (#183), so a Mac re-signs them. It uploads a second artifact because smoke-linux and bench-gate read `dist` in parallel, and overwriting it under them would race.
   sign-macos:
@@ -101,8 +111,11 @@ jobs:
           path: dist
       - run: chmod +x dist/ltm-*
       - run: bash scripts/smoke-binary.sh dist/ltm-darwin-arm64
-      # The runner is arm64 and Rosetta isn't guaranteed, so x64 gets the signature check only.
-      - run: codesign --verify --strict -v dist/ltm-darwin-x64
+      # macos-15 is arm64, so the x64 binary needs Rosetta, and the image doesn't guarantee it's installed.
+      - run: sudo softwareupdate --install-rosetta --agree-to-license
+      # An x64 build that's secretly arm64 would pass the smoke without Rosetta ever running.
+      - run: archs="$(lipo -archs dist/ltm-darwin-x64)"; echo "$archs"; [ "$archs" = x86_64 ]
+      - run: bash scripts/smoke-binary.sh dist/ltm-darwin-x64
 
   # Nothing ran the Windows binary before #185. It reads `dist`: signing touches only the darwin binaries, so the .exe is byte-identical in both artifacts.
   smoke-windows:

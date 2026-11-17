@@ -74,10 +74,28 @@ describe("release.yml", () => {
     }
   });
 
-  test("smoke-macos checks both darwin signatures", () => {
-    const runs = wf.jobs["smoke-macos"].steps.map((s: { run?: string }) => s.run ?? "");
-    expect(runs.some((r: string) => r.includes("scripts/smoke-binary.sh dist/ltm-darwin-arm64"))).toBe(true);
-    expect(runs.some((r: string) => r.includes("codesign --verify --strict") && r.includes("dist/ltm-darwin-x64"))).toBe(true);
+  // smoke-binary.sh runs `codesign --verify --strict` on a darwin binary before executing it, so the smoke covers both signatures.
+  test("smoke-macos installs Rosetta and smokes both darwin binaries", () => {
+    const runs: string[] = wf.jobs["smoke-macos"].steps.map((s: { run?: string }) => s.run ?? "");
+    const rosetta = runs.findIndex((r) => r.includes("softwareupdate --install-rosetta --agree-to-license"));
+    const lipo = runs.findIndex((r) => r.includes("lipo -archs dist/ltm-darwin-x64") && r.includes("x86_64"));
+    const x64 = runs.findIndex((r) => r.includes("scripts/smoke-binary.sh dist/ltm-darwin-x64"));
+    expect(rosetta).toBeGreaterThanOrEqual(0);
+    expect(lipo).toBeGreaterThan(rosetta);
+    expect(x64).toBeGreaterThan(lipo);
+    expect(runs.some((r) => r.includes("scripts/smoke-binary.sh dist/ltm-darwin-arm64"))).toBe(true);
+    expect(runs.filter((r) => r.startsWith("codesign"))).toEqual([]);
+  });
+
+  test("smoke-linux runs both linux binaries, arm64 on an arm runner", () => {
+    const job = wf.jobs["smoke-linux"];
+    expect(job.strategy.matrix.include).toEqual([
+      { bin: "ltm-linux-x64", runner: "ubuntu-latest" },
+      { bin: "ltm-linux-arm64", runner: "ubuntu-24.04-arm" },
+    ]);
+    expect(job["runs-on"]).toBe("${{ matrix.runner }}");
+    expect(job.steps.some((s: { run?: string }) => s.run === "bash scripts/smoke-binary.sh dist/${{ matrix.bin }}")).toBe(true);
+    for (const name of ["release", "npm"]) expect(wf.jobs[name].needs).toEqual(expect.arrayContaining(["smoke-linux", "smoke-windows"]));
   });
 
   test("smoke-windows runs the Windows binary on windows-latest, and both publish paths wait on it", () => {
