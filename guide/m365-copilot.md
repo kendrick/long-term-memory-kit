@@ -51,7 +51,7 @@ Before you add the workflow, set up the following:
 - `SHAREPOINT_SITE_ID` and `SHAREPOINT_DRIVE_ID` are repo variables holding the site id and the document library's drive id.
 - The default branch must let the workflow push its `digest/` commit.
 
-Save the workflow in the Bank as `.github/workflows/ltm-digest.yml`. Set `LTM_VERSION` to the value in your `ltm-validate.yml`, and change `main` in the trigger and in the Check the run is on main's head step if your default branch has another name:
+Save the workflow in the Bank as `.github/workflows/ltm-digest.yml`. Set `LTM_VERSION` to the value in your `ltm-validate.yml`, and change `main` in the trigger and in the `git fetch` line of the Check the run is on main's head step if your default branch has another name:
 
 ```yaml
 name: ltm-digest
@@ -99,7 +99,7 @@ jobs:
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
-      # Re-run jobs reuses the old run's SHA, so without this check the upload lands before the push fails.
+      # GitHub's "Re-run jobs" button reuses the old run's SHA, so without this check the upload lands before the push fails.
       - name: Check the run is on main's head
         id: head
         if: steps.render.outputs.changed == 'true'
@@ -156,7 +156,7 @@ jobs:
 
 An Entra access token lasts about an hour, so the Get a Graph token step mints a new one on each run with the client-credentials grant and hands it to `ltm` as `LTM_GRAPH_TOKEN`. Nobody has run this step against a real tenant yet.
 
-The workflow commits and uploads only when some Digest file's bytes changed and the run's commit is the head of `main`. It checks the markdown in `digest/` and not the Word files, because `pandoc` writes a different `.docx` on every run. The workflow makes this check because `ltm publish sharepoint` never skips a file and uploads every file in the directory each time it runs. A push made with the workflow's own token starts no new run, so the `digest/` commit doesn't loop. The commit comes last because the change check compares against the committed `digest/`. When an upload fails, the run commits nothing, so the next run still sees the change and uploads again.
+The workflow commits and uploads only when some Digest file's bytes changed and the run's commit was the head of `main` when the run checked. It checks the markdown in `digest/` and not the Word files, because `pandoc` writes a different `.docx` on every run. The workflow makes this check because `ltm publish sharepoint` never skips a file and uploads every file in the directory each time it runs. A push made with the workflow's own token starts no new run, so the `digest/` commit doesn't loop. The commit comes last because the change check compares against the committed `digest/`. When an upload fails, the run commits nothing, so the next run still sees the change and uploads again. A push to `main` that lands between the check and `git push` still lets that run upload once, and then its push fails. The `concurrency` group queues the next run behind it, and that run uploads the newer Digest.
 
 `ltm publish sharepoint` sends one `PUT` per file to the folder `--path` names in the drive, and it overwrites the file it wrote last time. It uploads each file as it is and converts nothing. When one upload fails, it still sends the rest, then exits `1` and names each failed path on stderr. A rerun is always safe. Re-running an old workflow run uploads nothing and commits nothing once the default branch has moved past that run's commit. Without `LTM_GRAPH_TOKEN`, `ltm publish sharepoint` exits `2`, names the variable, and sends nothing. It calls the Graph API and never a model.
 
@@ -174,7 +174,7 @@ https://graph.microsoft.com/v1.0/sites/<site-id>/drives/<drive-id>/root:/Digest/
 
 ## Route 3: Upload by Hand
 
-Some tenants won't grant the Graph token. For them, delete the workflow's Get a Graph token and Upload to SharePoint steps and keep Save the Word files. Each run that changes the Digest then saves the `.docx` files as a zip in a GitHub Actions artifact named `digest-docx`.
+Some tenants won't grant the Graph token. For them, delete the workflow's Get a Graph token and Upload to SharePoint steps and keep Save the Word files. Each run on the head of `main` that changes the Digest then saves the `.docx` files as a zip in a GitHub Actions artifact named `digest-docx`.
 
 To bring SharePoint up to date, download that artifact from the run's page and unzip it. Upload every `.docx` file in it to the document library, and replace the files with the same names.
 

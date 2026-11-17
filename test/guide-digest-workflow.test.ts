@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,17 +39,18 @@ test.each(["Route 1:", "Route 3:"])("%s names every Graph step a reader must dro
 
 const headCheck = () => {
   const steps = (parse(block!) as Workflow).jobs["ltm-digest"]!.steps;
-  const i = steps.findIndex((s) => ["git fetch", "origin main", "git rev-parse FETCH_HEAD", "git rev-parse HEAD"].every((t) => s.run?.includes(t)));
-  return { steps, i, check: steps[i]! };
+  const checkIndex = steps.findIndex((s) => ["git fetch", "origin main", "git rev-parse FETCH_HEAD", "git rev-parse HEAD"].every((t) => s.run?.includes(t)));
+  return { steps, checkIndex, check: steps[checkIndex]! };
 };
 
 test("a step before the upload compares HEAD with the fetched main, and every later step reads its output", () => {
-  const { steps, i, check } = headCheck();
-  expect(i).toBeGreaterThanOrEqual(0);
+  const { steps, checkIndex, check } = headCheck();
+  expect(checkIndex).toBeGreaterThanOrEqual(0);
   expect(check.id).toBeDefined();
-  expect(i).toBe(steps.findIndex((s) => s.id === "render") + 1);
+  // Right after Render the Digest, the check runs behind the same `changed` gate and before any step that reads its output.
+  expect(checkIndex).toBe(steps.findIndex((s) => s.id === "render") + 1);
   const upload = steps.findIndex((s) => s.run?.includes("ltm publish sharepoint") === true);
-  expect(i).toBeLessThan(upload);
+  expect(checkIndex).toBeLessThan(upload);
   for (const name of ["Convert to Word", "Save the Word files", "Get a Graph token", "Upload to SharePoint", "Commit the Digest"]) {
     const gate = steps.find((s) => s.name === name)?.if;
     expect(gate).toContain("steps.render.outputs.changed == 'true'");
@@ -60,43 +61,48 @@ test("a step before the upload compares HEAD with the fetched main, and every la
 test("the head check writes current=false on an older commit and current=true on main's head", () => {
   const { check } = headCheck();
   const root = mkdtempSync(join(tmpdir(), "ltm-head-"));
-  const env = {
-    PATH: process.env.PATH!,
-    GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com",
-    GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com",
-    GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "protocol.file.allow", GIT_CONFIG_VALUE_0: "always",
-  };
-  const git = (cwd: string, ...args: string[]) => {
-    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
-    expect(r.status).toBe(0);
-    return r.stdout.trim();
-  };
-  const origin = join(root, "origin.git");
-  git(root, "init", "--bare", "-b", "main", origin);
-  const work = join(root, "work");
-  git(root, "init", "-b", "main", work);
-  git(work, "remote", "add", "origin", origin);
-  git(work, "commit", "--allow-empty", "-m", "x");
-  const x = git(work, "rev-parse", "HEAD");
-  git(work, "push", "origin", "main");
-  git(work, "commit", "--allow-empty", "-m", "z");
-  const z = git(work, "rev-parse", "HEAD");
-  git(work, "push", "origin", "main");
-  for (const [sha, expected] of [[x, "false"], [z, "true"]] as const) {
-    const clone = join(root, `clone-${expected}`);
-    const url = `file://${origin}`;
-    if (sha === x) {
-      git(root, "clone", url, clone);
-      git(clone, "checkout", "--detach", x);
-    } else {
-      git(root, "clone", "--depth=1", "--branch", "main", url, clone);
+  try {
+    // GIT_CONFIG_GLOBAL keeps the user's git config (signing, identity, url rewrites) out of the scratch repos.
+    const env = {
+      PATH: process.env.PATH!,
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com",
+      GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com",
+    };
+    const git = (cwd: string, ...args: string[]) => {
+      const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+      if (r.status !== 0) throw new Error(`git ${args.join(" ")} in ${cwd}: ${r.stderr.trim()}`);
+      return r.stdout.trim();
+    };
+    const origin = join(root, "origin.git");
+    git(root, "init", "--bare", "-b", "main", origin);
+    const work = join(root, "work");
+    git(root, "init", "-b", "main", work);
+    git(work, "remote", "add", "origin", origin);
+    git(work, "commit", "--allow-empty", "-m", "old");
+    const old = git(work, "rev-parse", "HEAD");
+    git(work, "push", "origin", "main");
+    git(work, "commit", "--allow-empty", "-m", "head");
+    git(work, "push", "origin", "main");
+    for (const [sha, expected] of [[old, "false"], [undefined, "true"]] as const) {
+      const clone = join(root, `clone-${expected}`);
+      const url = `file://${origin}`;
+      if (sha) {
+        // A re-run checks out the old SHA.
+        git(root, "clone", url, clone);
+        git(clone, "checkout", "--detach", sha);
+      } else {
+        // The runner's shallow checkout of the branch head.
+        git(root, "clone", "--depth=1", "--branch", "main", url, clone);
+      }
+      const out = join(root, `out-${expected}`);
+      writeFileSync(out, "");
+      const r = spawnSync("bash", ["-c", check.run!], { cwd: clone, env: { ...env, GITHUB_OUTPUT: out }, encoding: "utf8" });
+      expect(r.status, r.stderr).toBe(0);
+      expect(readFileSync(out, "utf8")).toBe(`current=${expected}\n`);
     }
-    const out = join(root, `out-${expected}`);
-    writeFileSync(out, "");
-    const r = spawnSync("bash", ["-c", check.run!], { cwd: clone, env: { ...env, GITHUB_OUTPUT: out }, encoding: "utf8" });
-    expect(r.status).toBe(0);
-    expect(readFileSync(out, "utf8")).toBe(`current=${expected}\n`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
