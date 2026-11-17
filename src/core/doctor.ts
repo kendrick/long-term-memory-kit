@@ -14,6 +14,7 @@ export type CheckName =
   | "long-chain"
   | "orphan"
   | "broken-related"
+  | "exception-rule-not-accepted"
   | "supersession-no-shared-facet"
   | "near-duplicate";
 
@@ -143,6 +144,7 @@ type DoctorContext = {
   today: string;
   thresholds: Thresholds;
   heldIds: ReadonlySet<string>;
+  resolve(id: string): ParsedRecord | undefined;
   edges: readonly Edge[];
   inbound: ReadonlyMap<ParsedRecord, number>;
   backend?: RecallBackend;
@@ -320,6 +322,25 @@ function brokenRelated(ctx: DoctorContext): DoctorFinding[] {
   return out;
 }
 
+function exceptionRuleNotAccepted(ctx: DoctorContext): DoctorFinding[] {
+  const out: DoctorFinding[] = [];
+  for (const r of ctx.records) {
+    if (r.memoryType !== "Exception" || r.frontmatter.status !== "accepted") continue;
+    const related = stringListField(r, "related");
+    if (related === null) continue;
+    for (const entry of new Set(related.filter((x) => x.startsWith("constrained_by::")))) {
+      const id = relatedId(entry);
+      // A missing id is broken-related's to report; a shared id or a missing status is validate's.
+      const target = ctx.resolve(id);
+      const status = target?.frontmatter.status;
+      if (!target || typeof status !== "string" || status === "accepted") continue;
+      const message = `related entry 'constrained_by::${id}' names ${target.path}, whose status is ${status}`;
+      out.push(finding(r.path, "exception-rule-not-accepted", message, [target.path]));
+    }
+  }
+  return out;
+}
+
 function supersessionNoSharedFacet(ctx: DoctorContext): DoctorFinding[] {
   const out: DoctorFinding[] = [];
   for (const e of ctx.edges) {
@@ -399,6 +420,7 @@ export const CHECKS: readonly { name: CheckName; run(ctx: DoctorContext): Doctor
   { name: "long-chain", run: longChain },
   { name: "orphan", run: orphan },
   { name: "broken-related", run: brokenRelated },
+  { name: "exception-rule-not-accepted", run: exceptionRuleNotAccepted },
   { name: "supersession-no-shared-facet", run: supersessionNoSharedFacet },
   { name: "near-duplicate", run: nearDuplicate },
 ];
@@ -449,6 +471,7 @@ function buildContext(records: ParsedRecord[], today: string, thresholds: Thresh
     today,
     thresholds,
     heldIds: new Set(byId.keys()),
+    resolve,
     edges: [...edges.values()],
     inbound,
     backend,

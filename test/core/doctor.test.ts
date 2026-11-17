@@ -143,7 +143,7 @@ describe("loadThresholds", () => {
 });
 
 describe("CHECKS", () => {
-  test("lists the eight checks in report order", () => {
+  test("lists the nine checks in report order", () => {
     expect(CHECKS.map((c) => c.name)).toEqual([
       "stale-confirmed",
       "review-due",
@@ -151,6 +151,7 @@ describe("CHECKS", () => {
       "long-chain",
       "orphan",
       "broken-related",
+      "exception-rule-not-accepted",
       "supersession-no-shared-facet",
       "near-duplicate",
     ]);
