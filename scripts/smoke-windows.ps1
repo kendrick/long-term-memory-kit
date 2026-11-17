@@ -32,20 +32,34 @@ try {
   Copy-Item -Recurse -Force (Join-Path $root 'fixtures/demo-bank') $bank
   Copy-Item -Recurse -Force (Join-Path $root 'test/fixtures/fake-qmd-package') (Join-Path $tmp 'fake-qmd-package')
 
-  # Same shape npm i -g installs on Windows. goto, not a ( ) block, so a ) in an expanded path can't end the block early.
+  # npm cmd-shim's text for a node bin: since #231 ltm reads the target out of it and runs that under node, and refuses any other .cmd.
   Set-Content -LiteralPath (Join-Path $qmdbin 'qmd.cmd') -Value @(
-    '@echo off'
-    'if "%~1"=="skills" goto skills'
-    'if "%~1"=="collection" goto collection'
-    'exit /b 1'
-    ':skills'
-    'echo %FAKE_PKG%\skills'
-    'exit /b 0'
-    ':collection'
-    'echo Collection: %3'
-    'echo   Path:     %FAKE_ROOT%'
-    'exit /b 0'
+    '@ECHO off'
+    'GOTO start'
+    ':find_dp0'
+    'SET dp0=%~dp0'
+    'EXIT /b'
+    ':start'
+    'SETLOCAL'
+    'CALL :find_dp0'
+    ''
+    'IF EXIST "%dp0%\node.exe" ('
+    '  SET "_prog=%dp0%\node.exe"'
+    ') ELSE ('
+    '  SET "_prog=node"'
+    '  SET PATHEXT=%PATHEXT:;.JS;=;%'
+    ')'
+    ''
+    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\qmd.js" %*'
   )
+  Set-Content -LiteralPath (Join-Path $qmdbin 'qmd.js') -Value @'
+const [cmd, , name] = process.argv.slice(2);
+if (cmd === "skills") { console.log(require("path").join(process.env.FAKE_PKG, "skills")); process.exit(0); }
+if (cmd === "collection") { console.log(`Collection: ${name}\n  Path:     ${process.env.FAKE_ROOT}`); process.exit(0); }
+process.exit(1);
+'@
+  # The shim needs node, as a real npm install does; grab the runner's before PATH drops it, and only place it once the no-runtime check is done.
+  $nodeExe = Get-Command node -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
 
   # Replace PATH rather than env -i: a native Windows process still needs SystemRoot, TEMP and USERPROFILE. windows-latest puts node in many PATH dirs.
   $env:PATH = @($qmdbin, "$env:SystemRoot\System32", "$env:SystemRoot") -join [IO.Path]::PathSeparator
@@ -113,6 +127,9 @@ try {
     'doctor: { near_duplicate_threshold: 0.6 }'
     'recall: { backend: qmd, mode: vector, collections: { Decision: decisions } }'
   )
+  # npm puts node.exe beside its global shims, and the shim reader looks there first. Only node joins PATH; bun stays absent.
+  if (-not $nodeExe) { Fail 'doctor vector: no node on the runner to run the qmd shim' }
+  Copy-Item -LiteralPath $nodeExe -Destination (Join-Path $qmdbin 'node.exe')
   $env:FAKE_PKG = Join-Path $tmp 'fake-qmd-package'
   $env:FAKE_ROOT = Join-Path $bank '_memory/decisions'
   $env:XDG_CONFIG_HOME = Join-Path $tmp 'xdg'
