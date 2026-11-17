@@ -66,6 +66,7 @@ The tool takes `type` as one string, `facets` and `status` as lists, `text`, `al
 |---|---|---|---|
 | Needs an install | No | `ltm` on `PATH` | The plugin, with `ltm` on `PATH` |
 | Drops Retired Records | No, grep for `status` yourself | Yes, unless you pass `--all` or `--status` | Yes, unless you pass `all` or `status` |
+| Drops Exceptions past `effective_to` | No | Yes, unless you pass `--all` | Yes, unless you pass `all` |
 | Marks Proposals | No, grep for `status: proposed` | `(proposal)` in text, `is_proposal` in JSON | `is_proposal` |
 | Finds the repo's Facets | No, you type them | Yes, from the `consumers` map | Yes, from the `consumers` map |
 | Includes Org-wide Records | No | Yes | Yes |

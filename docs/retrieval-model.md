@@ -74,6 +74,7 @@ That code sits in two layers.
 `selectRecords` in `src/core/query.ts` holds the selection rules. `ltm query` and the MCP `query` tool both run it, so the two can't drift apart. It does this:
 
 - It leaves retired Records out. Name a retired status with `--status`, or pass `--all`, to see them. `--status accepted` never lets a retired Record through.
+- It leaves out Exceptions past their `effective_to`, the same rule the Digest uses. Pass `--all` to see them. `--status` doesn't bring them back, because expiry isn't a status.
 - It filters Facets by overlap. A Record matches `--facet service:order-service` when its `applies_to` holds that Facet. Unless the Bank sets `query.org_wide: exclude`, an org-wide Record matches every Facet, because it applies everywhere. A Record with no `applies_to` is org-wide.
 - It ranks `--text` on the header. It searches `title` and `summary`, not the body, so a passing mention in a body doesn't outrank a Record about the topic. Pass `--body` with `--text` to search the body too, for that query only. A Record that matches only in its body still ranks after every Record that matches in its header. A Bank that sets `recall:` ranks `--text` through qmd instead, as [Stage 0](#stage-0) describes.
 
