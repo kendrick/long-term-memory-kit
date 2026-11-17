@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { realpathSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, extname, join } from "node:path";
 import { isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
 import type { Query } from "./qmd-vector-worker.ts";
 import type { ParsedRecord } from "./record.ts";
@@ -57,21 +57,55 @@ export type QmdBackend = RecallBackend & {
   indexed(collection: string): Set<string>;
 };
 
-// npm installs qmd on Windows as a qmd.cmd shim, which a bare-name spawn with no shell never finds.
-export function qmdCommand(env: Record<string, string | undefined>, platform: NodeJS.Platform = process.platform): string {
-  if (platform !== "win32") return "qmd";
+export type QmdCommand = { file: string; prefix: string[] } | { problem: string };
+
+// Pinned to the shim text npm's cmd-shim (v6–v8) writes for a node bin; anything else isn't safe to run without cmd.exe.
+export function npmShimTarget(text: string): string | null {
+  if (!/SET "_prog=node"/i.test(text)) return null;
+  return /"%_prog%"\s+"%dp0%\\([^"\r\n]+)"\s+%\*\s*$/m.exec(text)?.[1] ?? null;
+}
+
+// Bun spawns any .cmd through cmd.exe, which expands %VAR% in args, so run the shim's script under node instead.
+function npmShimCommand(shim: string, PATH: string): QmdCommand {
+  let target: string | null = null;
+  try {
+    target = npmShimTarget(readFileSync(shim, "utf8"));
+  } catch {}
+  if (target === null) return { problem: `${shim} is not an npm shim, and ltm won't run qmd through cmd.exe` };
+  const dir = dirname(shim);
+  const script = join(dir, target);
+  if (!existsSync(script)) return { problem: `${shim} points at ${script}, which does not exist` };
+  const local = join(dir, "node.exe");
+  const node = existsSync(local) ? local : Bun.which("node", { PATH });
+  if (node === null) return { problem: `${shim} needs node, which is not on PATH` };
+  return { file: node, prefix: [script] };
+}
+
+export function qmdCommand(env: Record<string, string | undefined>, platform: NodeJS.Platform = process.platform): QmdCommand {
+  if (platform !== "win32") return { file: "qmd", prefix: [] };
   // A plain object copied from Windows process.env keeps the `Path` key, and its lookups are case-sensitive.
-  return Bun.which("qmd", { PATH: env.PATH ?? env.Path ?? env.path ?? "" }) ?? "qmd";
+  const PATH = env.PATH ?? env.Path ?? env.path ?? "";
+  const found = Bun.which("qmd", { PATH });
+  // Unresolved stays bare, so spawnSync's ENOENT still reads as "qmd not found on PATH".
+  if (found === null) return { file: "qmd", prefix: [] };
+  // npm also writes an extensionless sh script beside qmd.cmd, and Windows can't run it.
+  const hit = extname(found) === "" && existsSync(`${found}.cmd`) ? `${found}.cmd` : found;
+  return /\.(cmd|bat)$/i.test(hit) ? npmShimCommand(hit, PATH) : { file: hit, prefix: [] };
 }
 
 export function qmdCollections(collections: Partial<Record<MemoryType, string>>, env: Record<string, string | undefined>) {
   // The caller's env, not process.env: it decides which qmd runs and which index (XDG dirs) it reads.
   const program = qmdCommand(env);
-  // `--all` can print more than Bun's ~1 MiB default maxBuffer, which would fail the run with ENOBUFS.
-  const qmd = (args: string[]) => spawnSync(program, args, { encoding: "utf8", env, maxBuffer: Infinity });
+  const spawn = (args: string[], spawnEnv: Record<string, string | undefined>) => {
+    if ("problem" in program) throw new RecallError(program.problem);
+    // `--all` can print more than Bun's ~1 MiB default maxBuffer, which would fail the run with ENOBUFS.
+    return spawnSync(program.file, [...program.prefix, ...args], { encoding: "utf8", env: spawnEnv, maxBuffer: Infinity });
+  };
+  const qmd = (args: string[]) => spawn(args, env);
   // realpath on both sides, since qmd stores a resolved path (macOS /tmp is /private/tmp).
   const collectionRoots = new Map<string, string>();
   const show = (type: MemoryType): string | null => {
+    if ("problem" in program) return program.problem;
     const name = collections[type]!;
     const r = qmd(["collection", "show", name]);
     if ((r.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return "qmd not found on PATH";
@@ -106,7 +140,7 @@ export function qmdCollections(collections: Partial<Record<MemoryType, string>>,
     }
     const collectionRoot = collectionRoots.get(name);
     // NO_COLOR keeps qmd from wrapping the path in escape codes when stdout is a TTY.
-    const r = spawnSync(program, ["ls", name], { encoding: "utf8", env: { ...env, NO_COLOR: "1" }, maxBuffer: Infinity });
+    const r = spawn(["ls", name], { ...env, NO_COLOR: "1" });
     if (r.error) throw new RecallError(`qmd ls ${name} failed: ${firstLine(r.error.message)}`);
     if (r.status !== 0) {
       const first = (r.stderr ?? "").split("\n").find((l) => l.trim() !== "")?.trim();
@@ -120,7 +154,8 @@ export function qmdCollections(collections: Partial<Record<MemoryType, string>>,
     }
     return files;
   };
-  return { qmd, collectionRoots, show, checkAll, collectionOf, indexed };
+  const problem = "problem" in program ? program.problem : null;
+  return { qmd, problem, collectionRoots, show, checkAll, collectionOf, indexed };
 }
 
 export function hitRecord(

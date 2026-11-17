@@ -24,7 +24,7 @@ export function qmdVectorBackend(
   prefetchQueries(queries: Query[]): void;
 } {
   const { collections } = recall;
-  const { qmd, collectionRoots, checkAll, collectionOf, indexed } = qmdCollections(collections, env);
+  const { qmd, problem: qmdProblem, collectionRoots, checkAll, collectionOf, indexed } = qmdCollections(collections, env);
   const cache = new Map<string, Results["results"][number]>();
   let pkg: string | undefined;
   let bankRoot: string | undefined;
@@ -65,6 +65,8 @@ export function qmdVectorBackend(
     collectionOf,
     indexed,
     preflight() {
+      // The qmd helper throws on an unrunnable shim, and doctor and query call preflight outside their RecallError catch.
+      if (qmdProblem !== null) return qmdProblem;
       const located = qmd(["skills", "path"]);
       if ((located.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return "qmd not found on PATH";
       const printed = (located.stdout ?? "").trim();
