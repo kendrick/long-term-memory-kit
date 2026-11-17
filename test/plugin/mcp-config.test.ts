@@ -51,7 +51,7 @@ describe("plugin.json mcpServers.ltm", () => {
           const transport = new StdioClientTransport({
             command: interpolate(server.command, userConfig, pluginData),
             args: (server.args ?? []).map((a) => interpolate(a, userConfig, pluginData)),
-            env: { ...(process.env as Record<string, string>), PATH: `${shimDir}${delimiter}${process.env.PATH ?? ""}`, ...env },
+            env: { ...(process.env as Record<string, string>), PATH: `${shimDir}${delimiter}${process.env.PATH ?? ""}`, ...env, LTM_TODAY: "2026-11-16" },
             cwd,
           });
           const client = new Client({ name: "ltm-plugin-test", version: "0.0.0" });

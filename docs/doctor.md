@@ -46,7 +46,7 @@ Every report line below except `near-duplicate`'s came from `ltm doctor` run wit
 
 **Fields:** `effective_to`, on every memory type. Retired Records are skipped.
 
-**Threshold:** None. The check fires when `effective_to` is at least one day before today, so the `effective_to` day itself isn't reported. An Exception drops out of `ltm query` on the same day, so this check is how you find the ones that have gone quiet.
+**Threshold:** None. The check fires when `effective_to` is at least one day before today, so the `effective_to` day itself isn't reported. An Exception drops out of `ltm query` the same day the check starts reporting it, so this check is how you find the ones that have gone quiet.
 
 **Report line:** `_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md: effective-to-passed: effective_to 2026-11-10 has passed` (scratch edit: `effective_to` changed from `2026-12-31` to `2026-11-10`)
 

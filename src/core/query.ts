@@ -181,7 +181,7 @@ export const RETIRED_STATUSES: readonly string[] = ["superseded", "deprecated", 
 const isRetired = (r: ParsedRecord): boolean =>
   typeof r.frontmatter.status === "string" && RETIRED_STATUSES.includes(r.frontmatter.status);
 
-// String compare is right once isCalendarDate passes. Any other value never expires, so the Exception stays listed for `ltm validate` to flag.
+// A malformed effective_to never expires, so the Exception stays listed for `ltm validate` to flag.
 export function isExpired(r: ParsedRecord, today: string): boolean {
   const to = r.frontmatter.effective_to;
   return r.memoryType === "Exception" && typeof to === "string" && isCalendarDate(to) && to < today;

@@ -5,7 +5,7 @@ import { run } from "../../src/cli/run.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const demo = new URL("../../fixtures/demo-bank", import.meta.url).pathname;
-const ltm = (cwd: string, ...argv: string[]) => run({ argv, cwd, env: {} });
+const ltm = (cwd: string, ...argv: string[]) => run({ argv, cwd, env: { LTM_TODAY: "2026-11-16" } });
 const paths = (stdout: string) =>
   stdout
     .split("\n")
