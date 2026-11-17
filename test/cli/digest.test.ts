@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { digest } from "../../src/cli/digest.ts";
 import { run } from "../../src/cli/run.ts";
@@ -41,6 +41,32 @@ describe("ltm digest", () => {
       const on = await ltm(dir, ["digest"], "2027-03-31");
       expect(digestIds(after.stdout).has("wJ3nC7hTy4")).toBe(false);
       expect(digestIds(on.stdout).has("wJ3nC7hTy4")).toBe(true);
+    });
+  });
+
+  const setEffectiveTo = (dir: string, to: string) => {
+    const p = join(dir, "_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md");
+    const text = readFileSync(p, "utf8");
+    const next = text.replace("effective_to: 2026-12-31", `effective_to: ${to}`);
+    expect(next).not.toBe(text);
+    writeFileSync(p, next);
+  };
+
+  test("keeps an Exception whose effective_to is not a calendar date", async () => {
+    await withScratch(demo, async (dir) => {
+      setEffectiveTo(dir, "2026-02-30");
+      const d = await ltm(dir, ["digest"], "2026-11-16");
+      expect(d.exitCode).toBe(0);
+      expect(digestIds(d.stdout).has("tZ6qL0vKd1")).toBe(true);
+    });
+  });
+
+  test("keeps an Exception on its effective_to day", async () => {
+    await withScratch(demo, async (dir) => {
+      setEffectiveTo(dir, "2026-11-16");
+      const d = await ltm(dir, ["digest"], "2026-11-16");
+      expect(d.exitCode).toBe(0);
+      expect(digestIds(d.stdout).has("tZ6qL0vKd1")).toBe(true);
     });
   });
 

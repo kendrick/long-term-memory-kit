@@ -1,6 +1,7 @@
 import { lstatSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "./bank.ts";
+import { isCalendarDate } from "./clock.ts";
 import { search } from "./recall.ts";
 import { parseRecordFile, RecordError, type ParsedRecord } from "./record.ts";
 import { byCodeUnit, firstLine } from "./text.ts";
@@ -180,6 +181,12 @@ export const RETIRED_STATUSES: readonly string[] = ["superseded", "deprecated", 
 const isRetired = (r: ParsedRecord): boolean =>
   typeof r.frontmatter.status === "string" && RETIRED_STATUSES.includes(r.frontmatter.status);
 
+// String compare is right once isCalendarDate passes. Any other value never expires, so the Exception stays listed for `ltm validate` to flag.
+export function isExpired(r: ParsedRecord, today: string): boolean {
+  const to = r.frontmatter.effective_to;
+  return r.memoryType === "Exception" && typeof to === "string" && isCalendarDate(to) && to < today;
+}
+
 export type QueryOptions = {
   filters: Filter[];
   type?: MemoryType;
@@ -190,6 +197,8 @@ export type QueryOptions = {
   // Absent means include, so a Bank that never sets query.org_wide keeps matching org-wide Records on every Facet query.
   orgWide?: OrgWide;
   body?: boolean;
+  // Absent skips the expiry check, so a caller that never reads the clock sees every Exception.
+  today?: string;
 };
 
 export type OrgWide = "include" | "exclude";
@@ -239,6 +248,8 @@ export function selectRecords(records: ParsedRecord[], opts: QueryOptions): Pars
   let out = records.filter(
     (r) =>
       (wantsRetired || !isRetired(r)) &&
+      // Expiry isn't a status, so only `all` brings an expired Exception back.
+      (opts.all || opts.today === undefined || !isExpired(r, opts.today)) &&
       matches(r, opts.filters) &&
       (opts.type === undefined || r.memoryType === opts.type) &&
       (opts.statuses.length === 0 ||

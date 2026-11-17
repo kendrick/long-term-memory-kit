@@ -22,12 +22,7 @@ const ruleIdsOf = (r: ParsedRecord): string[] => {
 };
 
 export function digestRecords(records: ParsedRecord[], today: string): ParsedRecord[] {
-  const accepted = selectRecords(records, { filters: [], statuses: ["accepted"], facets: [], all: false });
-  // String compare is right for YYYY-MM-DD; any other shape keeps the Exception for `ltm validate` to flag.
-  return accepted.filter((r) => {
-    const to = r.frontmatter.effective_to;
-    return !(r.memoryType === "Exception" && typeof to === "string" && /^\d{4}-\d{2}-\d{2}$/.test(to) && to < today);
-  });
+  return selectRecords(records, { filters: [], statuses: ["accepted"], facets: [], all: false, today });
 }
 
 export function bankHeader(config: BankConfig): { name: string; commit: string } {
