@@ -19,6 +19,19 @@ jobs:
       # The committed generated files are what an agent in the demo Bank reads; fail when the renderer drifts from them.
       - run: bun src/cli/bin.ts init --check fixtures/demo-bank
 
+  # ltm resolves qmd differently on Windows (#230), and this is the only CI job that runs there.
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - run: bun install --frozen-lockfile
+      - run: bun test test/core/qmd-windows.test.ts
+        env:
+          LTM_EXPECT_WINDOWS_TESTS: "1"
+
   plugin:
     runs-on: ubuntu-latest
     steps:
