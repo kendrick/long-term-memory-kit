@@ -31,7 +31,7 @@ try {
 
   const queries = bench.queries.map((q: any) => {
     const args = [...ltm, "query", "--bank", bank, "--text", q.query, "--json", ...(values.all ? ["--all"] : [])];
-    const p = Bun.spawnSync(args, { cwd: consumer, stderr: "pipe" });
+    const p = Bun.spawnSync(args, { cwd: consumer, env: { ...process.env, LTM_TODAY: "2026-11-16" }, stderr: "pipe" });
     if (p.exitCode !== 0) throw new Error(`ltm failed on "${q.query}": ${p.stderr.toString()}`);
     const ranked: string[] = JSON.parse(p.stdout.toString()).results.map((r: { path: string }) => r.path);
     const head = ranked.slice(0, q.expected_in_top_k);

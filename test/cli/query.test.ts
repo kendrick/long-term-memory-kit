@@ -22,7 +22,7 @@ import { run } from "../../src/cli/run.ts";
 import { withScratch } from "../helpers/scratch.ts";
 
 const demo = new URL("../../fixtures/demo-bank", import.meta.url).pathname;
-const ltm = (cwd: string, ...argv: string[]) => run({ argv, cwd, env: {} });
+const ltm = (cwd: string, ...argv: string[]) => run({ argv, cwd, env: { LTM_TODAY: "2026-11-16" } });
 const paths = (stdout: string) =>
   stdout
     .split("\n")
@@ -777,7 +777,7 @@ function ltmQmdLs(dir: string, out: string, omit: string | null, ...argv: string
     .filter((f) => `_memory/decisions/${f}` !== omit)
     .map((f) => `   1.2 KB  Nov  5 10:00  qmd://decisions/${f}\n`)
     .join("");
-  return run({ argv, cwd: dir, env: { PATH: qmdBin, QMD_ROOT: decisions, QMD_OUT: out, QMD_LS: ls } });
+  return run({ argv, cwd: dir, env: { PATH: qmdBin, QMD_ROOT: decisions, QMD_OUT: out, QMD_LS: ls, LTM_TODAY: "2026-11-16" } });
 }
 
 // Recorded from `ltm query` on fixtures/demo-bank before Stage 0 existed (AC 1), never regenerated.
@@ -792,7 +792,7 @@ describe("ltm query Stage 0 (#134)", () => {
   test("recall: set and no qmd on PATH falls back to lexical with a note, exit 0", async () => {
     await withScratch(demo, async (dir) => {
       setRecall(dir, "recall: { backend: qmd, mode: search, collections: { Decision: decisions } }");
-      const r = await run({ argv: ["query", "--json", "--text", "postgres"], cwd: dir, env: { PATH: noQmdBin } });
+      const r = await run({ argv: ["query", "--json", "--text", "postgres"], cwd: dir, env: { PATH: noQmdBin, LTM_TODAY: "2026-11-16" } });
       expect(r.exitCode).toBe(0);
       expect(r.stderr).toBe("ltm query: recall: qmd not found on PATH; ranked by lexical\n");
       const rows = JSON.parse(r.stdout) as { path: string; ranked_by: string }[];
@@ -1084,5 +1084,81 @@ describe("ltm query --body", () => {
     const r = await ltm(demo, "query", "--help");
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain("--body");
+  });
+});
+
+describe("ltm query, expired Exceptions (#222)", () => {
+  const setExc = (dir: string, effectiveTo: string, title?: string) => {
+    const file = join(dir, PG_EXC);
+    let text = readFileSync(file, "utf8").replace("effective_to: 2026-12-31", `effective_to: ${effectiveTo}`);
+    if (title !== undefined) text = text.replace("title: billing-service may keep MySQL until 2026-12", `title: ${title}`);
+    writeFileSync(file, text);
+  };
+
+  test("an Exception past its effective_to is left out unless --all; --status doesn't bring it back", async () => {
+    await withScratch(demo, async (dir) => {
+      setExc(dir, "2026-11-10");
+      const plain = await ltm(dir, "query", "--type", "Exception");
+      expect(plain.exitCode).toBe(0);
+      expect(paths(plain.stdout)).not.toContain(PG_EXC);
+      expect(paths(plain.stdout).length).toBeGreaterThan(0);
+      const all = await ltm(dir, "query", "--type", "Exception", "--all");
+      expect(paths(all.stdout)).toContain(PG_EXC);
+      const accepted = await ltm(dir, "query", "--type", "Exception", "--status", "accepted");
+      expect(accepted.exitCode).toBe(0);
+      expect(paths(accepted.stdout)).not.toContain(PG_EXC);
+    });
+  });
+
+  test("an Exception on its effective_to day stays in", async () => {
+    await withScratch(demo, async (dir) => {
+      setExc(dir, "2026-11-16");
+      const r = await ltm(dir, "query", "--type", "Exception");
+      expect(paths(r.stdout)).toContain(PG_EXC);
+    });
+  });
+
+  test("an effective_to that isn't a calendar date never expires the Exception", async () => {
+    await withScratch(demo, async (dir) => {
+      setExc(dir, "2026-02-30");
+      const r = await ltm(dir, "query", "--type", "Exception");
+      expect(paths(r.stdout)).toContain(PG_EXC);
+    });
+  });
+
+  test("falsifier: a title change alone moves nothing either way", async () => {
+    await withScratch(demo, async (dir) => {
+      setExc(dir, "2026-12-31", "billing-service keeps MySQL a while");
+      expect(paths((await ltm(dir, "query", "--type", "Exception")).stdout)).toContain(PG_EXC);
+      setExc(dir, "2026-11-10");
+      expect(paths((await ltm(dir, "query", "--type", "Exception")).stdout)).not.toContain(PG_EXC);
+    });
+  });
+
+  test("--bank from outside a Bank honors expiry too", async () => {
+    await withScratch(demo, async (dir) => {
+      setExc(dir, "2026-11-10");
+      const outside = mkdtempSync(join(tmpdir(), "ltm-nobank-"));
+      try {
+        // The outside dir has no git origin, so without --facet ltm query shows only org-wide Records and the Exception would drop out whether or not it had expired.
+        const argv = ["query", "--bank", dir, "--type", "Exception", "--facet", "service:billing-service", "--json"];
+        const results = async (...more: string[]) => {
+          const r = await ltm(outside, ...argv, ...more);
+          expect(r.exitCode).toBe(0);
+          return (JSON.parse(r.stdout).results as { path: string }[]).map((x) => x.path);
+        };
+        expect(await results()).not.toContain(PG_EXC);
+        expect(await results("--all")).toContain(PG_EXC);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test("LTM_TODAY=bogus exits 1 naming the variable", async () => {
+    const r = await run({ argv: ["query"], cwd: demo, env: { LTM_TODAY: "bogus" } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toBe("ltm query: LTM_TODAY 'bogus' is not a YYYY-MM-DD date\n");
+    expect(r.stdout).toBe("");
   });
 });

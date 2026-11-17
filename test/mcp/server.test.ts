@@ -47,7 +47,7 @@ async function withServer<T>(fn: (s: { client: Client; bank: string; consumer: s
   return withDemoGitBank(
     (bank) =>
       withConsumerRepo(async (consumer) => {
-        const env = { ...process.env, LTM_BANK_PATH: bank };
+        const env = { ...process.env, LTM_BANK_PATH: bank, LTM_TODAY: "2026-11-16" };
         return withMcp(env, consumer, (client) => fn({ client, bank, consumer, env }));
       }),
     edit,
@@ -94,6 +94,26 @@ describe("ltm mcp, read-only tools", () => {
           expect(textOf(r)).toBe(await cli(["query", "--bank", bank, ...argv], consumer, env));
         }
       }),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "query leaves out an Exception past its effective_to unless all is set",
+    () =>
+      withServer(
+        async ({ client }) => {
+          const exc = "_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md";
+          // The consumer repo's origin maps to order-service, so the billing-service Facet keeps the Exception in scope.
+          const pathsFor = async (args: Record<string, unknown>) =>
+            (ok(await call(client, "query", { type: "Exception", facets: ["service:billing-service"], ...args })).results as { path: string }[]).map((r) => r.path);
+          expect(await pathsFor({})).not.toContain(exc);
+          expect(await pathsFor({ all: true })).toContain(exc);
+        },
+        (root) => {
+          const file = join(root, "_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md");
+          writeFileSync(file, readFileSync(file, "utf8").replace("effective_to: 2026-12-31", "effective_to: 2026-11-10"));
+        },
+      ),
     MCP_TEST_TIMEOUT,
   );
 
@@ -871,7 +891,7 @@ describe("ltm mcp, query runs the CLI once", () => {
     withDemoGitBank(
       (bank) =>
         withConsumerRepo(async (consumer) => {
-          const base = { ...process.env, LTM_BANK_URL: undefined, LTM_CONFIG: undefined, ...extra(bank) };
+          const base = { ...process.env, LTM_BANK_URL: undefined, LTM_CONFIG: undefined, LTM_TODAY: "2026-11-16", ...extra(bank) };
           for (const [inBank, cwd, env] of [
             [false, consumer, { ...base, LTM_BANK_PATH: bank }],
             [true, bank, { ...base, LTM_BANK_PATH: undefined }],

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { today } from "../core/clock.ts";
 import { ConfigError, consumerEntry, isMapping, MEMORY_TYPES, type BankConfig, type MemoryType } from "../core/bank.ts";
 import { loadRecall, qmdBackend, type QmdBackend, type Recall } from "../core/qmd.ts";
 import { qmdVectorBackend } from "../core/qmd-vector.ts";
@@ -6,6 +7,7 @@ import { tokenize } from "../core/recall.ts";
 import { rankStage0, type RankedBy } from "../core/stage0.ts";
 import { isOrgWide, listRecords, orgWideMode, parseFilter, selectRecords, type Filter, type QueryOptions } from "../core/query.ts";
 import type { ParsedRecord } from "../core/record.ts";
+import { firstLine } from "../core/text.ts";
 import {
   noBankMessage,
   repoIdentity,
@@ -188,7 +190,7 @@ export const query: Command = {
     status: { type: "string", multiple: true, description: "Only Records with this status, which may be a retired one" },
     text: { type: "string", description: "Rank results by matches in title and summary, or through recall: when the Bank sets it" },
     body: { type: "boolean", description: "With --text, also match words in each Record's body, ranked after title and summary matches" },
-    all: { type: "boolean", description: "Include Retired Records" },
+    all: { type: "boolean", description: "Include Retired Records and Exceptions past their effective_to" },
     bank: { type: "string", description: "Bank name from your user config, or path to a Bank" },
   },
   positionals: [{ name: "filter", required: false, variadic: true }],
@@ -207,6 +209,13 @@ export const query: Command = {
     return badFacet === undefined ? undefined : `invalid facet '${badFacet}' (expected prefix:value)`;
   },
   async run(ctx) {
+    let day: string;
+    try {
+      day = today(ctx.env);
+    } catch (e) {
+      ctx.err(`ltm query: ${firstLine((e as Error).message)}\n`);
+      return 1;
+    }
     // checkArgs already rejected anything parseFilter refuses; the guard only narrows the type.
     const filters = ctx.positionals
       .map((a) => parseFilter(a))
@@ -221,6 +230,7 @@ export const query: Command = {
       text: typeof ctx.values.text === "string" ? ctx.values.text : undefined,
       body: ctx.values.body === true,
       all: ctx.values.all === true,
+      today: day,
     };
     if (typeof ctx.values.bank === "string") return runResolved(ctx, opts);
     const root = locateBank(ctx, "query");

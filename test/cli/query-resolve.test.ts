@@ -62,7 +62,7 @@ beforeEach(() => {
   mkdirSync(home);
   configPath = join(tmp, "config.yaml");
   writeFileSync(configPath, exampleConfig);
-  env = { LTM_CONFIG: configPath, HOME: home };
+  env = { LTM_CONFIG: configPath, HOME: home, LTM_TODAY: "2026-11-16" };
   const acme = makeBank("acme");
   makeBank("personal");
   // The demo Bank's one org-wide Record is a PolicyRule with no applies_to key. These copies add
@@ -288,7 +288,7 @@ describe("ltm query from a Consumer repo", () => {
   });
 
   test("--bank expands ~/ itself when the shell did not (=form and quoted form)", async () => {
-    const scratchHome = { HOME: home };
+    const scratchHome = { HOME: home, LTM_TODAY: "2026-11-16" };
     for (const argv of [
       ["query", "--bank=~/banks/acme", "--type", "Exception"],
       ["query", "--bank", "~/banks/acme", "--type", "Exception"],
@@ -303,7 +303,7 @@ describe("ltm query from a Consumer repo", () => {
   test("--bank ~/x with HOME unset names --bank once", async () => {
     // Absolute paths only: a `~/` path in the user config would fail on HOME first.
     writeFileSync(configPath, `banks:\n  acme: { path: ${join(home, "banks", "acme")} }\n`);
-    const r = await run({ argv: ["query", "--bank=~/banks/acme"], cwd: repo, env: { LTM_CONFIG: configPath } });
+    const r = await run({ argv: ["query", "--bank=~/banks/acme"], cwd: repo, env: { LTM_CONFIG: configPath, LTM_TODAY: "2026-11-16" } });
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr.trim().split("\n")).toEqual(["ltm query: --bank: '~/banks/acme' needs HOME or USERPROFILE, and neither is set"]);
   });
@@ -312,7 +312,7 @@ describe("ltm query from a Consumer repo", () => {
     const inBank = join(home, "banks", "acme");
     for (const args of [["--all"], ["--json", "--all"], ["--type", "Exception"], ["--text", "redis"]]) {
       const withConfig = await run({ argv: ["query", ...args], cwd: inBank, env });
-      const without = await run({ argv: ["query", ...args], cwd: inBank, env: {} });
+      const without = await run({ argv: ["query", ...args], cwd: inBank, env: { LTM_TODAY: "2026-11-16" } });
       expect(withConfig).toEqual(without);
       expect(withConfig.stdout).not.toContain("acme:");
     }
