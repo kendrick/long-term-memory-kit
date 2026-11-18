@@ -848,3 +848,91 @@ describe("exception-rule-not-accepted", () => {
     });
   });
 });
+
+describe("effective-to-passed", () => {
+  const BILLING = "_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md";
+  const PG_RULE = "_memory/policy-rules/relational-stores-use-postgres-nR5hB2yTq8.md";
+  const CHECK = "effective-to-passed";
+  const pinned = (cwd: string, ...argv: string[]) => run({ argv, cwd, env: { LTM_TODAY: "2026-11-16" } });
+  type F = { file: string; check: string; message: string; related_files: string[] };
+
+  const edit = (dir: string, rel: string, key: string, line: string) => {
+    const file = join(dir, rel);
+    const src = readFileSync(file, "utf8");
+    const out = src.replace(new RegExp(`^${key}: .*$`, "m"), line);
+    expect(out).not.toBe(src);
+    writeFileSync(file, out);
+  };
+  const mine = async (dir: string): Promise<F[]> => {
+    const r = await pinned(dir, "doctor", "--json");
+    expect(r.exitCode).toBe(0);
+    return (JSON.parse(r.stdout) as F[]).filter((f) => f.check === CHECK);
+  };
+
+  test("1: a past effective_to prints the finding line", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, BILLING, "effective_to", "effective_to: 2026-11-10");
+      const r = await pinned(dir, "doctor");
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout.split("\n")).toContain(`${BILLING}: ${CHECK}: effective_to 2026-11-10 has passed`);
+    });
+  });
+
+  test("2: an effective_to equal to today gives no finding", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, BILLING, "effective_to", "effective_to: 2026-11-16");
+      expect(await mine(dir)).toEqual([]);
+    });
+  });
+
+  test("3: an impossible date gives no finding, and validate still reports it", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, BILLING, "effective_to", "effective_to: 2026-02-30");
+      expect(await mine(dir)).toEqual([]);
+      const v = await pinned(dir, "validate");
+      expect(v.exitCode).not.toBe(0);
+      expect(v.stdout + v.stderr).toContain("effective_to");
+    });
+  });
+
+  test("4: deprecating the Exception clears the finding", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, BILLING, "effective_to", "effective_to: 2026-11-10");
+      expect(await mine(dir)).toHaveLength(1);
+      const d = await pinned(dir, "deprecate", "tZ6qL0vKd1");
+      expect(d.exitCode).toBe(0);
+      expect(await mine(dir)).toEqual([]);
+    });
+  });
+
+  test("5: a PolicyRule past its effective_to is reported but still queried", async () => {
+    await withScratch(demo, async (dir) => {
+      const file = join(dir, PG_RULE);
+      const src = readFileSync(file, "utf8");
+      const out = src.replace(/^status: .*$/m, (s) => `${s}\neffective_to: 2026-11-10`);
+      expect(out).not.toBe(src);
+      writeFileSync(file, out);
+      expect((await mine(dir)).map((f) => f.file)).toEqual([PG_RULE]);
+      const q = await pinned(dir, "query", "--type", "PolicyRule");
+      expect(q.exitCode).toBe(0);
+      expect(q.stdout).toContain("nR5hB2yTq8");
+    });
+  });
+
+  test("6: a title-only edit changes neither result", async () => {
+    await withScratch(demo, async (dir) => {
+      edit(dir, BILLING, "title", "title: billing-service MySQL exception, retitled");
+      expect(await mine(dir)).toEqual([]);
+      edit(dir, BILLING, "effective_to", "effective_to: 2026-11-10");
+      expect(await mine(dir)).toHaveLength(1);
+      edit(dir, BILLING, "title", "title: billing-service MySQL exception, retitled again");
+      expect((await mine(dir)).map((f) => f.message)).toEqual(["effective_to 2026-11-10 has passed"]);
+    });
+  });
+
+  test("7: the demo Bank as shipped gives no finding", async () => {
+    await withScratch(demo, async (dir) => {
+      expect(await mine(dir)).toEqual([]);
+    });
+  });
+});

@@ -4,7 +4,7 @@
 
 Each finding prints as `<file>: <check>: <message>`, sorted by file and then by check, in the order the sections below appear. `ltm doctor --json` prints the same findings as an array of objects with the keys `file`, `check`, `message`, and `related_files`.
 
-Retired Records (`status` of `superseded`, `deprecated`, or `rejected`) are skipped by `stale-confirmed`, `review-due`, `orphan`, and `exception-rule-not-accepted`. A malformed field is `ltm validate`'s to report, so a check that needs it skips that Record without a finding.
+Retired Records (`status` of `superseded`, `deprecated`, or `rejected`) are skipped by `stale-confirmed`, `review-due`, `effective-to-passed`, `orphan`, and `exception-rule-not-accepted`. A malformed field is `ltm validate`'s to report, so a check that needs it skips that Record without a finding.
 
 There is no suppression list. To clear a finding, edit the Record, or change a threshold under `doctor:` in `memory-bank.yaml`. The five thresholds are `stale_confirmed_days`, `proposal_age_days`, `max_chain_length`, `orphan_days`, and `near_duplicate_threshold`. The first four must be integers of 1 or more, and `near_duplicate_threshold` must be a number between 0 and 1, exclusive. Each default is read from `schema/memory-bank.schema.json`.
 
@@ -41,6 +41,18 @@ Every report line below except `near-duplicate`'s came from `ltm doctor` run wit
 **False positives:** A Record whose review happened but whose `review_by` was never moved forward.
 
 **Dismissal:** Review the Record, then set `review_by` to a future date or remove the field. If the Record no longer applies, retire it by setting `status` to `deprecated`.
+
+## effective-to-passed
+
+**Fields:** `effective_to`, on every memory type. Retired Records are skipped.
+
+**Threshold:** None. The check fires when `effective_to` is at least one day before today, so the `effective_to` day itself isn't reported. An Exception drops out of `ltm query` the same day the check starts reporting it, so this check is where you find the ones that disappeared.
+
+**Report line:** `_memory/exceptions/legacy-billing-mysql-until-2026-12-tZ6qL0vKd1.md: effective-to-passed: effective_to 2026-11-10 has passed` (scratch edit: `effective_to` changed from `2026-12-31` to `2026-11-10`)
+
+**False positives:** An Exception whose owner extended it without moving `effective_to`.
+
+**Dismissal:** If the Exception ended, run `ltm deprecate <id>`. If it was extended, move `effective_to` later. An Exception can also trip `exception-rule-not-accepted`, and `ltm deprecate` clears both.
 
 ## stale-proposal
 

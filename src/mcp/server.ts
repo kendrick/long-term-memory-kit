@@ -139,7 +139,7 @@ export function createServer(env: Env, cwd: string): McpServer {
         status: z.array(z.string()).optional().describe(schemaDesc("status")),
         text: z.string().optional().describe("Free text to rank Records by."),
         body: z.boolean().optional().describe("With text, also match words in each Record's body, ranked after title and summary matches."),
-        all: z.boolean().optional().describe("Include Retired Records, whose status is superseded, deprecated, or rejected."),
+        all: z.boolean().optional().describe("Include Retired Records, whose status is superseded, deprecated, or rejected, and Exceptions past their effective_to."),
         bank: bankInput,
       }),
     },

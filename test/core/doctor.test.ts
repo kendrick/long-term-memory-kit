@@ -143,10 +143,11 @@ describe("loadThresholds", () => {
 });
 
 describe("CHECKS", () => {
-  test("lists the nine checks in report order", () => {
+  test("lists the ten checks in report order", () => {
     expect(CHECKS.map((c) => c.name)).toEqual([
       "stale-confirmed",
       "review-due",
+      "effective-to-passed",
       "stale-proposal",
       "long-chain",
       "orphan",

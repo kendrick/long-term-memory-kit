@@ -1,4 +1,4 @@
-<!-- ltm:generated:begin v0.0.0 -->
+<!-- ltm:generated:begin v0.3.0 -->
 
 This repo is the acme Bank. It holds Records that apply to more than one repo. Each Record is one Markdown file with YAML frontmatter, filed in its memory type's folder: Decision (`_memory/decisions`), PolicyRule (`_memory/policy-rules`), Exception (`_memory/exceptions`), and Context (`_memory/context`).
 
@@ -28,29 +28,29 @@ A Record with `status: proposed` is a Proposal. Read it as context, never as a c
 
 ## Frontmatter Fields
 
-| Field            | Required | Description                                                                                                     |
-| ---------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
-| `schema`         | yes      | Set to 1, the Record schema version.                                                                            |
-| `id`             | yes      | Give the Record a unique 10-character nanoid from [A-Za-z0-9_-] and never change it.                            |
-| `memory_type`    | yes      | Pick exactly one memory type: Decision, PolicyRule, Exception, or Context.                                      |
-| `title`          | yes      | Name the Record in a short, non-empty line.                                                                     |
-| `status`         | yes      | Set the lifecycle state. A proposed Record is a Proposal: agents surface it but never treat it as a constraint. |
-| `date`           | yes      | Record the date the Record was written or last accepted, as YYYY-MM-DD.                                         |
-| `effective_from` |          | Set the YYYY-MM-DD date the Record starts to apply, if it applies later than its date.                          |
-| `effective_to`   |          | Set the YYYY-MM-DD date the Record stops applying, such as the end of an Exception.                             |
-| `last_confirmed` |          | Set the YYYY-MM-DD date someone last confirmed the Record still holds. Only move it forward.                    |
-| `review_by`      |          | Set the YYYY-MM-DD date by which someone must review the Record again.                                          |
-| `summary`        |          | State the claim and its scope in one sentence.                                                                  |
-| `superseded_by`  |          | Name the one id of the Record that superseded this one. It holds a single id, while supersedes is a list.       |
-| `supersedes`     |          | List the ids of the Records this one supersedes. Fill superseded_by on each of them too.                        |
-| `promoted_from`  |          | Name where this Record came from when promoted out of a repo's working memory.                                  |
-| `promoted_to`    |          | Name the Bank Record this item was promoted to, as <bank>:<id>.                                                 |
-| `subject`        |          | Reserved. Accepted here, and v1 ignores it.                                                                     |
-| `applies_to`     |          | List the Facets where the Record applies, each as <prefix>:<value> using a prefix the Bank declares.            |
-| `owners`         |          | List the Facets that own the Record, each as <prefix>:<value>, such as team:commerce-architecture.              |
-| `tags`           |          | List free-form keywords for search. Use applies_to, not tags, to say where the Record applies.                  |
-| `source_refs`    |          | List the sources the Record was drawn from, such as URLs, file paths, or PR references.                         |
-| `related`        |          | List links to other Records, each as <relation>::<id>, such as constrained_by::<PolicyRule id> on an Exception. |
+| Field            | Required | Description                                                                                                                                                                                        |
+| ---------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`         | yes      | Set to 1, the Record schema version.                                                                                                                                                               |
+| `id`             | yes      | Give the Record a unique 10-character nanoid from [A-Za-z0-9_-] and never change it.                                                                                                               |
+| `memory_type`    | yes      | Pick exactly one memory type: Decision, PolicyRule, Exception, or Context.                                                                                                                         |
+| `title`          | yes      | Name the Record in a short, non-empty line.                                                                                                                                                        |
+| `status`         | yes      | Set the lifecycle state. A proposed Record is a Proposal: agents surface it but never treat it as a constraint.                                                                                    |
+| `date`           | yes      | Record the date the Record was written or last accepted, as YYYY-MM-DD.                                                                                                                            |
+| `effective_from` |          | Set the YYYY-MM-DD date the Record starts to apply, if later than its date. No ltm command reads it.                                                                                               |
+| `effective_to`   |          | Set the YYYY-MM-DD date the Record stops applying. An Exception drops out of ltm query, the MCP query tool and the Digest the day after this date, and ltm doctor reports any live Record past it. |
+| `last_confirmed` |          | Set the YYYY-MM-DD date someone last confirmed the Record still holds. Only move it forward.                                                                                                       |
+| `review_by`      |          | Set the YYYY-MM-DD date by which someone must review the Record again.                                                                                                                             |
+| `summary`        |          | State the claim and its scope in one sentence.                                                                                                                                                     |
+| `superseded_by`  |          | Name the one id of the Record that superseded this one. It holds a single id, while supersedes is a list.                                                                                          |
+| `supersedes`     |          | List the ids of the Records this one supersedes. Fill superseded_by on each of them too.                                                                                                           |
+| `promoted_from`  |          | Name where this Record came from when promoted out of a repo's working memory.                                                                                                                     |
+| `promoted_to`    |          | Name the Bank Record this item was promoted to, as <bank>:<id>.                                                                                                                                    |
+| `subject`        |          | Reserved. Accepted here, and v1 ignores it.                                                                                                                                                        |
+| `applies_to`     |          | List the Facets where the Record applies, each as <prefix>:<value> using a prefix the Bank declares.                                                                                               |
+| `owners`         |          | List the Facets that own the Record, each as <prefix>:<value>, such as team:commerce-architecture.                                                                                                 |
+| `tags`           |          | List free-form keywords for search. Use applies_to, not tags, to say where the Record applies.                                                                                                     |
+| `source_refs`    |          | List the sources the Record was drawn from, such as URLs, file paths, or PR references.                                                                                                            |
+| `related`        |          | List links to other Records, each as <relation>::<id>, such as constrained_by::<PolicyRule id> on an Exception.                                                                                    |
 
 ## Propose a Record
 

@@ -4,7 +4,7 @@ People who work in Microsoft 365 ask Copilot their questions in Teams, Outlook, 
 
 ## What the Digest Holds
 
-The Digest holds only accepted Records. Proposals and Retired Records stay out, so Copilot can't cite a superseded rule as if it still holds. An Exception stays in through its `effective_to` day and drops out the day after. Run it from the Bank root to print it on stdout:
+The Digest holds only accepted Records. Proposals and Retired Records stay out, so Copilot can't cite a superseded rule as if it still holds. An Exception stays in through its `effective_to` day and drops out the day after. `ltm query` and the MCP `query` tool apply the same rule, so Copilot and coding agents see the same set. Run it from the Bank root to print it on stdout:
 
 ```sh
 ltm digest

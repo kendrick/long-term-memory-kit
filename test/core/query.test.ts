@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_FOLDERS, type BankConfig } from "../../src/core/bank.ts";
 import {
   countFacets,
+  isExpired,
   isOrgWide,
   listRecordFiles,
   listRecords,
@@ -433,6 +434,55 @@ describe("selectRecords with literal Records", () => {
     expect(selectRecords([r("a.md", { status: "accepted" }), r("b.md", { memory_type: "Context" })], o)).toEqual([]);
     const { applies_to: _, ...untagged } = r("t.md", { status: "accepted", applies_to: ["team:payments"] }).frontmatter;
     expect(selectRecords([r("t.md", untagged)], o)).toEqual([]);
+  });
+});
+
+describe("isExpired", () => {
+  const today = "2026-11-16";
+  const ex = (effective_to?: unknown, memoryType: ParsedRecord["memoryType"] = "Exception"): ParsedRecord => ({
+    path: "x.md",
+    memoryType,
+    frontmatter: effective_to === undefined ? { status: "accepted" } : { status: "accepted", effective_to },
+  });
+
+  test.each([
+    ["2026-11-10", true],
+    ["2026-11-16", false],
+    ["2026-11-17", false],
+    ["2026-02-30", false],
+    ["2026-13-01", false],
+    [20261110, false],
+    [undefined, false],
+  ] as const)("an Exception with effective_to %p is expired: %p", (to, want) => {
+    expect(isExpired(ex(to), today)).toBe(want);
+  });
+
+  test("a PolicyRule past its effective_to is not expired", () => {
+    expect(isExpired(ex("2026-11-10", "PolicyRule"), today)).toBe(false);
+  });
+});
+
+describe("selectRecords with today", () => {
+  const ex = (path: string, effective_to: string): ParsedRecord => ({
+    path,
+    memoryType: "Exception",
+    frontmatter: { status: "accepted", effective_to },
+  });
+  const expired = ex("expired.md", "2026-11-10");
+  const live = ex("live.md", "2026-12-31");
+  const paths = (o: Partial<QueryOptions>) => selectRecords([expired, live], opts(o)).map((r) => r.path);
+
+  test("drops an expired Exception unless all is set", () => {
+    expect(paths({ today: "2026-11-16" })).toEqual(["live.md"]);
+    expect(paths({ today: "2026-11-16", all: true })).toEqual(["expired.md", "live.md"]);
+  });
+
+  test("statuses don't bring an expired Exception back", () => {
+    expect(paths({ today: "2026-11-16", statuses: ["accepted"] })).toEqual(["live.md"]);
+  });
+
+  test("without today, nothing expires", () => {
+    expect(paths({})).toEqual(["expired.md", "live.md"]);
   });
 });
 

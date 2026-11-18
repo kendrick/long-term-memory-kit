@@ -33,11 +33,11 @@
       "$ref": "#/$defs/date"
     },
     "effective_from": {
-      "description": "Set the YYYY-MM-DD date the Record starts to apply, if it applies later than its date.",
+      "description": "Set the YYYY-MM-DD date the Record starts to apply, if later than its date. No ltm command reads it.",
       "$ref": "#/$defs/date"
     },
     "effective_to": {
-      "description": "Set the YYYY-MM-DD date the Record stops applying, such as the end of an Exception.",
+      "description": "Set the YYYY-MM-DD date the Record stops applying. An Exception drops out of ltm query, the MCP query tool and the Digest the day after this date, and ltm doctor reports any live Record past it.",
       "$ref": "#/$defs/date"
     },
     "last_confirmed": {
