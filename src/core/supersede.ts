@@ -230,7 +230,7 @@ export function applyEdits(
       // rename ignores the target's own mode, so a read-only Record would be replaced without this check.
       io.accessSync(abs, fs.constants.W_OK);
       const original = io.readFileSync(abs);
-      // Each render is a whole file, so renaming one planned from stale text would drop whatever a concurrent ltm command wrote there. The window between this check and the rename stays open; closing it would take a Bank lock.
+      // Each render is a whole file, so renaming one planned from stale text would drop whatever a concurrent ltm command wrote there. The ~1 ms window left between this check and the rename (measured in #81) is accepted for now; closing it would take a Bank lock, whose design #81 records.
       if (original.toString("utf8") !== base) throw new Error("changed on disk since it was read; run the command again");
       // The basename stays out of the temp name, since a Record name near NAME_MAX plus a suffix would fail with ENAMETOOLONG.
       tmp = join(dirname(abs), `.ltm-${nonce()}.tmp`);
