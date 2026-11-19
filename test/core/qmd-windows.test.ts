@@ -29,7 +29,13 @@ const npmShim = (target: string, eol = "\r\n") =>
   ].join(eol);
 
 // Compares its args but never echoes them, so a test can't pass by anything running injected text.
+// Falsifier for #236: the first run behind the marker exits 1, as the cold-start spawn did on the runner. Without a warm-up spawn, the first asserting test fails.
 const FAKE_CLI = `const a = process.argv.slice(2);
+const marker = process.env.LTM_FAKE_QMD_COLD_MARKER;
+if (marker && !require("node:fs").existsSync(marker)) {
+  require("node:fs").writeFileSync(marker, "");
+  process.exit(1);
+}
 const is = (...w) => a.length === w.length && w.every((x, i) => a[i] === x);
 if (is("collection", "show", "decisions")) {
   process.stdout.write("Collection: decisions\\n  Path:     " + process.env.QMD_ROOT + "\\n");
@@ -61,7 +67,7 @@ const npmBin = () => {
 // The shim's node comes from PATH, as on the runner, where no node.exe sits beside qmd.cmd.
 const pathWith = (bin: string) => [bin, dirname(Bun.which("node")!)].join(delimiter);
 // A real Windows env always carries these, and Bun.which reads PATHEXT.
-const winEnv = () => ({ SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec, PATHEXT: process.env.PATHEXT, QMD_ROOT });
+const winEnv = () => ({ SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec, PATHEXT: process.env.PATHEXT, QMD_ROOT, LTM_FAKE_QMD_COLD_MARKER: join(root, "cold-start-done") });
 
 const RECALL: Recall = { backend: "qmd", mode: "search", collections: { Decision: "decisions" } };
 const noWarn = (line: string) => {
