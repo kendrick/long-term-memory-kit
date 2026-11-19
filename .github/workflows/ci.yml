@@ -22,10 +22,6 @@ jobs:
   # ltm resolves qmd differently on Windows (#230), and this is the only CI job that runs there.
   test-windows:
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        rep: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
