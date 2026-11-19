@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { afterAll, describe, expect, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,7 +30,15 @@ const npmShim = (target: string, eol = "\r\n") =>
   ].join(eol);
 
 // Compares its args but never echoes them, so a test can't pass by anything running injected text.
+// Replays the cold-runner node start from #236 so the 5 s default can't come back unnoticed.
 const FAKE_CLI = `const a = process.argv.slice(2);
+if (process.env.LTM_FAKE_QMD_COLD_MS && process.env.LTM_FAKE_QMD_COLD_MARKER) {
+  const fs = require("node:fs");
+  if (!fs.existsSync(process.env.LTM_FAKE_QMD_COLD_MARKER)) {
+    fs.writeFileSync(process.env.LTM_FAKE_QMD_COLD_MARKER, "");
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.LTM_FAKE_QMD_COLD_MS));
+  }
+}
 const is = (...w) => a.length === w.length && w.every((x, i) => a[i] === x);
 if (is("collection", "show", "decisions")) {
   process.stdout.write("Collection: decisions\\n  Path:     " + process.env.QMD_ROOT + "\\n");
@@ -101,6 +110,35 @@ describe("npmShimTarget", () => {
 });
 
 describe.skipIf(process.platform !== "win32")("qmd.cmd on Windows", () => {
+  test("diag: cold vs warm shim spawn", () => {
+    const env = { ...winEnv(), PATH: pathWith(npmBin()) };
+    const cmd = qmdCommand(env);
+    if ("problem" in cmd) throw new Error(cmd.problem);
+    const steps: [string, string[]][] = [
+      ["shim-cold", [...cmd.prefix, "collection", "show", "decisions"]],
+      ["shim-warm", [...cmd.prefix, "collection", "show", "decisions"]],
+      ["node-e-0", ["-e", "0"]],
+    ];
+    for (const [step, args] of steps) {
+      const t0 = performance.now();
+      const r = spawnSync(cmd.file, args, { env, encoding: "utf8" });
+      const ms = Math.round(performance.now() - t0);
+      console.log("DIAG236", JSON.stringify({ step, ms, status: r.status, signal: r.signal, error: r.error?.message, stderr: r.stderr }));
+    }
+    expect("file" in cmd).toBe(true);
+  }, 120_000);
+
+  test("diag: what a timed-out spawn returns", () => {
+    const marker = join(mkdtempSync(join(root, "cold-")), "cold-start-done");
+    const env = { ...winEnv(), PATH: pathWith(npmBin()), LTM_FAKE_QMD_COLD_MS: "6000", LTM_FAKE_QMD_COLD_MARKER: marker };
+    const cmd = qmdCommand(env);
+    if ("problem" in cmd) throw new Error(cmd.problem);
+    const t0 = performance.now();
+    const r = spawnSync(cmd.file, [...cmd.prefix, "collection", "show", "decisions"], { env, encoding: "utf8" });
+    const ms = Math.round(performance.now() - t0);
+    console.log("DIAG236", JSON.stringify({ step: "forced-cold-6s", ms, status: r.status, signal: r.signal, error: r.error?.message, stderr: r.stderr }));
+  });
+
   test("no qmd on PATH still reports qmd not found on PATH", () => {
     const empty = mkdtempSync(join(root, "empty-"));
     expect(qmdBackend(RECALL, bank, { ...winEnv(), PATH: empty }, noWarn).preflight()).toBe("qmd not found on PATH");
