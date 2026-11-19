@@ -30,12 +30,16 @@ const npmShim = (target: string, eol = "\r\n") =>
   ].join(eol);
 
 // Compares its args but never echoes them, so a test can't pass by anything running injected text.
-// Falsifier for #236: the first run behind the marker exits 1, as the cold-start spawn did on the runner. Without a warm-up spawn, the first asserting test fails.
+// Falsifier for #236: the first run behind the marker exits non-zero, as the cold-start spawn did on the runner. Without a warm-up spawn, the first asserting test fails.
 const FAKE_CLI = `const a = process.argv.slice(2);
 const marker = process.env.LTM_FAKE_QMD_COLD_MARKER;
-if (marker && !require("node:fs").existsSync(marker)) {
-  require("node:fs").writeFileSync(marker, "");
-  process.exit(1);
+if (marker) {
+  const fs = require("node:fs");
+  if (!fs.existsSync(marker)) {
+    fs.writeFileSync(marker, "");
+    process.stderr.write("planted first-run failure (#236 falsifier)\\n");
+    process.exit(1);
+  }
 }
 const is = (...w) => a.length === w.length && w.every((x, i) => a[i] === x);
 if (is("collection", "show", "decisions")) {
@@ -112,9 +116,12 @@ describe.skipIf(process.platform !== "win32")("qmd.cmd on Windows", () => {
   beforeAll(() => {
     const env = { ...winEnv(), PATH: pathWith(npmBin()) };
     const cmd = qmdCommand(env);
-    if ("problem" in cmd) return;
+    if ("problem" in cmd) {
+      console.error(`#236 warm-up: ${cmd.problem}`);
+      return;
+    }
     const r = spawnSync(cmd.file, [...cmd.prefix, "collection", "show", "decisions"], { env, encoding: "utf8" });
-    if (r.status !== 0) console.error(`#236 warm-up: status=${r.status} signal=${r.signal} stderr=${r.stderr}`);
+    if (r.status !== 0) console.error(`#236 warm-up: status=${r.status} signal=${r.signal} error=${r.error?.message} stderr=${r.stderr}`);
   }, 30_000);
 
   test("no qmd on PATH still reports qmd not found on PATH", () => {
