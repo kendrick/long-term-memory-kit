@@ -1,4 +1,5 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
@@ -107,6 +108,15 @@ describe("npmShimTarget", () => {
 });
 
 describe.skipIf(process.platform !== "win32")("qmd.cmd on Windows", () => {
+  // #236: the first shim spawn on a cold runner takes seconds and can exit non-zero. Pay that here, in a hook with its own timeout, and ignore the result so no asserted spawn has to.
+  beforeAll(() => {
+    const env = { ...winEnv(), PATH: pathWith(npmBin()) };
+    const cmd = qmdCommand(env);
+    if ("problem" in cmd) return;
+    const r = spawnSync(cmd.file, [...cmd.prefix, "collection", "show", "decisions"], { env, encoding: "utf8" });
+    if (r.status !== 0) console.error(`#236 warm-up: status=${r.status} signal=${r.signal} stderr=${r.stderr}`);
+  }, 30_000);
+
   test("no qmd on PATH still reports qmd not found on PATH", () => {
     const empty = mkdtempSync(join(root, "empty-"));
     expect(qmdBackend(RECALL, bank, { ...winEnv(), PATH: empty }, noWarn).preflight()).toBe("qmd not found on PATH");
