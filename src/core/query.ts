@@ -65,10 +65,11 @@ function walkMarkdown(
 }
 
 // Git keeps symlinks, so a cloned Bank can link a type folder or its parent outside the
-// root. Each component is lstat'd and no link is followed, because Bun 1.3.13's real-path
-// resolver reads `\` as a separator: for a literal entry `q\z` it throws ENOENT, or returns
-// `<bank>/q/z` when that dir exists, while readdir and Node see the link's target. A
-// containment check built on it can't be trusted.
+// root. Each component is lstat'd and no link is followed, so containment never depends on
+// the runtime's real-path resolver. That resolver has been wrong before: Bun 1.3.13 read `\`
+// as a separator, so for a literal entry `q\z` it threw ENOENT, or returned `<bank>/q/z`
+// when that dir existed, while readdir and Node saw the link's target. The bug doesn't
+// reproduce on Bun 1.4.4 (checked on macOS).
 function folderIsWalkable(
   root: string,
   folderAbs: string,
