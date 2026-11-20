@@ -44,7 +44,7 @@ async function serveHttp(ctx: CommandContext, spec: string): Promise<0 | 1> {
     server = Bun.serve({
       hostname,
       port,
-      // 255s is Bun's max. The default 10s drops the connection while the first query is still cloning the Bank.
+      // 255s is Bun's max, kept as headroom for a slow first Bank clone behind Container Apps ingress. The 10s-default drop didn't reproduce locally on Bun 1.4.4 or 1.3.13 (#243).
       idleTimeout: 255,
       async fetch(req) {
         // The Host check stops a page in the developer's browser from reading the Bank through DNS rebinding. Off loopback the front door sets Host to its own FQDN, so the check would refuse every caller.
