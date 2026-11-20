@@ -156,6 +156,7 @@ The guides cover running a Bank day to day:
 - [Promotion](guide/promotion.md) moves a decision from a repo into a Bank.
 - [Maintenance](guide/maintenance.md) runs `ltm doctor` and acts on what it finds.
 - [M365 Copilot](guide/m365-copilot.md) renders a Digest of accepted Records and puts it where M365 Copilot can read it.
+- [Hosting](guide/hosting.md) serves a Bank's read tools over HTTP to Copilot Studio and declarative agents, behind Easy Auth.
 - [Formatters](guide/formatters.md) stops Prettier, oxfmt, and the Obsidian Linter from rewriting Record frontmatter.
 - [Evaluation](guide/evaluation.md) describes the evals that check the kit before each release.
 
