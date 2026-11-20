@@ -57,14 +57,18 @@ In bash or zsh, `read` and `printf` are shell builtins, so the URL reaches no ot
 read -rs BANK_URL
 ```
 
-Then run the rest as one block. The first `rm -f` clears any older `bank-url.txt`, because `umask` doesn't change the mode of a file that already exists, so the new file is readable by you alone. The last `rm` deletes it after `az keyvault secret set` runs, whether or not the upload worked. `--output none` keeps `az` from printing the stored value back to your terminal:
+Then run the rest as one block. The `if` refuses an empty or unset `BANK_URL`, which would otherwise upload an empty secret and exit 0. The first `rm -f` clears any older `bank-url.txt`, because `umask` doesn't change the mode of a file that already exists, so the new file is readable by you alone. The last `rm` deletes it after `az keyvault secret set` runs, whether or not the upload worked. `--output none` keeps `az` from printing the stored value back to your terminal:
 
 ```sh
-rm -f bank-url.txt
-(umask 077 && printf '%s' "$BANK_URL" > bank-url.txt)
-unset BANK_URL
-az keyvault secret set --vault-name <vault> --name bank-url --file bank-url.txt --output none
-rm bank-url.txt
+if [ -z "$BANK_URL" ]; then
+  echo 'BANK_URL is empty: run read -rs BANK_URL again' >&2
+else
+  rm -f bank-url.txt
+  (umask 077 && printf '%s' "$BANK_URL" > bank-url.txt)
+  unset BANK_URL
+  az keyvault secret set --vault-name <vault> --name bank-url --file bank-url.txt --output none
+  rm bank-url.txt
+fi
 ```
 
 If `az keyvault secret set` returns Forbidden, wait, then repeat both blocks starting from `read -rs BANK_URL`, because the second block has already cleared `BANK_URL` and deleted the file.
@@ -83,7 +87,7 @@ The `Key Vault Secrets User` assignment takes the same time to apply, so if the 
 
 To rotate the token, repeat both blocks starting from `read -rs BANK_URL`. The app uses a versionless secret URI, so it picks up the new version within 30 minutes and restarts any revision that reads the secret from an environment variable.
 
-This route adds a `Key Vault`, an identity, and two role assignments to the resource group. You need permission to write role assignments on the `Key Vault`, which Owner, User Access Administrator, and Role Based Access Control Administrator all grant. `Key Vault` Standard bills secret operations per 10,000 transactions with no setup fee, and the app reads one secret each time a revision starts.
+This route adds a `Key Vault`, an identity, and two role assignments to the resource group. You need permission to write role assignments on the `Key Vault`, which Owner, User Access Administrator, and Role Based Access Control Administrator all grant. `Key Vault` Standard bills secret operations per 10,000 transactions with no setup fee. Because the secret is versionless, the app [re-reads it within 30 minutes](https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets) to catch a new version, so it reads the secret on that schedule as well as when a revision starts, and the cost stays small.
 
 ## Deploy with az containerapp
 
