@@ -106,13 +106,17 @@ function commandHelp(cmd: Command): string {
   return lines.join("\n") + "\n";
 }
 
+// commands.ts imports mcp.ts, which reaches run() through server.ts, so a static import here throws a TDZ error whenever mcp.ts loads first.
+// require() would stay synchronous, but Bun 1.3.13, which CI pins, refuses to require() a module whose graph has a top-level await, and server.ts's graph has one.
+// The import starts when this module loads, so run() can read loadedCommands without an await. The accept race in fmt.test.ts needs run() to reach cmd.run with no await.
+let loadedCommands: Command[] | undefined;
+const commandsLoad = import("./commands.ts").then((m) => (loadedCommands = m.defaultCommands));
+
 export async function run(
   input: RunInput,
   commands?: Command[],
 ): Promise<RunResult> {
-  // commands.ts imports mcp.ts, which reaches run() through server.ts, so a static import here throws a TDZ error whenever mcp.ts loads first.
-  // require() keeps the load synchronous, because callers such as the accept race in fmt.test.ts need run() to reach cmd.run with no await.
-  commands ??= (require("./commands.ts") as typeof import("./commands.ts")).defaultCommands;
+  commands ??= loadedCommands ?? (await commandsLoad);
   const [head, ...rest] = input.argv;
 
   if (head === "--version") {
