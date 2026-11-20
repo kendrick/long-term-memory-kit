@@ -49,7 +49,9 @@ az role assignment create --role "Key Vault Secrets Officer" --scope "$VAULT_ID"
   --assignee-object-id "$(az ad signed-in-user show --query id --output tsv)" --assignee-principal-type User
 ```
 
-Then, in bash or zsh, paste the clone URL at the prompt. `read` and `printf` are shell builtins, so the URL reaches no other process's arguments, and nothing echoes while you paste. The file is readable by you alone and lasts only until the upload finishes. `--output none` stops `az` from printing the stored value back to your terminal:
+A new role assignment can take up to 10 minutes to apply. Until it does, the next block's `az keyvault secret set` returns Forbidden.
+
+In bash or zsh, `read` and `printf` are shell builtins, so the URL reaches no other process's arguments, and nothing echoes while you paste. The file is readable by you alone, and `rm` deletes it after `az keyvault secret set` runs, whether or not the upload worked. `--output none` keeps `az` from printing the stored value back to your terminal. Paste the clone URL at the prompt:
 
 ```sh
 read -rs BANK_URL
@@ -69,11 +71,13 @@ az role assignment create --role "Key Vault Secrets User" --scope "$VAULT_ID" \
   --assignee-principal-type ServicePrincipal
 ```
 
-A new role assignment can take up to 10 minutes to apply. If `az keyvault secret set` returns Forbidden, or the deploy below can't fetch the secret, wait and rerun the failed command.
+If `az keyvault secret set` returns Forbidden, wait, then repeat the whole block from `read -rs BANK_URL`, because that block has already cleared `BANK_URL` and deleted the file.
 
-To rotate the token, repeat the file steps and the `az keyvault secret set` command. The app uses a versionless secret URI, so it picks up the new version within 30 minutes and restarts any revision that reads the secret from an environment variable.
+The `Key Vault Secrets User` assignment takes the same time to apply, so if the deploy below can't fetch the secret, wait and rerun the deploy command.
 
-This route adds a `Key Vault`, an identity and two role assignments to the resource group. You need permission to write role assignments on the `Key Vault`, which Owner, User Access Administrator, and Role Based Access Control Administrator all grant. `Key Vault` Standard bills secret operations per 10,000 transactions with no setup fee, and the app reads one secret each time a revision starts, so the cost stays small. In return, the token never appears in a process list, and rotating it needs no redeploy.
+To rotate the token, repeat the same block from `read -rs BANK_URL`. The app uses a versionless secret URI, so it picks up the new version within 30 minutes and restarts any revision that reads the secret from an environment variable.
+
+This route adds a `Key Vault`, an identity, and two role assignments to the resource group. You need permission to write role assignments on the `Key Vault`, which Owner, User Access Administrator, and Role Based Access Control Administrator all grant. `Key Vault` Standard bills secret operations per 10,000 transactions with no setup fee, and the app reads one secret each time a revision starts.
 
 ## Deploy with az containerapp
 
