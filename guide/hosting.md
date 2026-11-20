@@ -12,7 +12,7 @@ In a container the server's working directory maps to no git repo, so a `query` 
 
 ## Who Can Read
 
-`ltm` validates no token and filters nothing by caller. Everyone the front door admits reads every Record in the Bank, so the agent's audience is the Bank's audience. A narrower audience needs a separate Bank and a separate server.
+Everyone the front door admits reads every Record in the Bank, so the agent's audience is the Bank's audience. A narrower audience needs a separate Bank and a separate server.
 
 ## Build the Image
 
@@ -55,13 +55,13 @@ Add `--registry-username` and `--registry-password` if the registry needs them. 
 
 ## Easy Auth
 
-Register an Entra app for the API, and give it an Application ID URI such as `api://<client-id>`. Then turn on the Microsoft provider for the container app, with the app registration's client id and secret and your tenant's issuer URL. `--allowed-audiences` lists the audience Copilot Studio's tokens carry:
+Register an Entra app for the API, give it an Application ID URI such as `api://<client-id>`, and expose a scope on it. Then open the app's manifest and set `requestedAccessTokenVersion` to `2`. Left null, it means 1, and a v1 token's issuer is `https://sts.windows.net/<tenant-id>/`, which Easy Auth rejects against the v2 issuer below. A v2 token's `aud` claim is the API's client id rather than its `api://` URI, so allow the client id. Now turn on the Microsoft provider for the container app:
 
 ```sh
 az containerapp auth microsoft update --name ltm-mcp --resource-group <group> \
   --client-id <client-id> --client-secret "$CLIENT_SECRET" \
   --issuer https://login.microsoftonline.com/<tenant-id>/v2.0 \
-  --allowed-audiences api://<client-id> --yes
+  --allowed-audiences <client-id> --yes
 ```
 
 Then require authentication and answer an unauthenticated request with 401 rather than a redirect to a login page, which an agent can't follow:
@@ -71,7 +71,7 @@ az containerapp auth update --name ltm-mcp --resource-group <group> \
   --enabled true --unauthenticated-client-action Return401 --yes
 ```
 
-A `curl -X POST https://<fqdn>/mcp` with no token should now return 401 from Easy Auth, and `ltm` never sees the request.
+A `curl -X POST https://<fqdn>/mcp` with no token should now return 401 from Easy Auth, and `ltm` never sees the request. Microsoft Learn doesn't document the token Copilot Studio presents. If a call that carries a token still gets 401, decode the token and compare its `iss` and `aud` with the issuer and audience above.
 
 ## Copilot Studio
 
