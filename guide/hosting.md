@@ -109,11 +109,35 @@ Add `--registry-username` and `--registry-password` if the registry needs them. 
 
 ## Easy Auth
 
-Register an Entra app for the API, give it an Application ID URI such as `api://<client-id>`, and expose a scope on it. Then open the app's manifest and set `requestedAccessTokenVersion` to `2`. Left null, it means 1, and a v1 token's issuer is `https://sts.windows.net/<tenant-id>/`, which Easy Auth rejects against the v2 issuer below. A v2 token's `aud` claim is the API's client id rather than its `api://` URI, so allow the client id. Now turn on the Microsoft provider for the container app:
+Register an Entra app for the API, give it an Application ID URI such as `api://<client-id>`, and expose a scope on it. Then open the app's manifest and set `requestedAccessTokenVersion` to `2`. Left null, it means 1, and a v1 token's issuer is `https://sts.windows.net/<tenant-id>/`, which Easy Auth rejects against the v2 issuer below. A v2 token's `aud` claim is the API's client id rather than its `api://` URI, so allow the client id. Last, add a client secret under the registration's Certificates & secrets and copy its value.
+
+Passing the value with `--client-secret` would put it in `az`'s process arguments, where any local user who can list processes can read it. Store the value in the same `Key Vault` instead, and give Easy Auth the name of a container app secret that reads it from there. Run these commands in the shell from [Keep the Clone URL Off the Command Line](#keep-the-clone-url-off-the-command-line), because they reuse `IDENTITY_ID`. As with the clone URL, run the `read` line on its own, paste the client secret, and press Enter:
 
 ```sh
+read -rs ENTRA_SECRET
+```
+
+Then run the block that writes it to the `Key Vault`, which follows the clone URL's block line for line:
+
+```sh
+if [ -z "$ENTRA_SECRET" ]; then
+  echo 'ENTRA_SECRET is empty: run read -rs ENTRA_SECRET again' >&2
+else
+  rm -f entra-secret.txt
+  (umask 077 && printf '%s' "$ENTRA_SECRET" > entra-secret.txt)
+  unset ENTRA_SECRET
+  az keyvault secret set --vault-name <vault> --name entra-client-secret --file entra-secret.txt --output none
+  rm entra-secret.txt
+fi
+```
+
+Next, add a container app secret that references the `Key Vault` secret through the app's identity, and turn on the Microsoft provider with `--client-secret-name` pointing at it. The `Key Vault Secrets User` assignment from earlier already covers the new secret:
+
+```sh
+az containerapp secret set --name ltm-mcp --resource-group <group> \
+  --secrets "entra-client-secret=keyvaultref:https://<vault>.vault.azure.net/secrets/entra-client-secret,identityref:$IDENTITY_ID"
 az containerapp auth microsoft update --name ltm-mcp --resource-group <group> \
-  --client-id <client-id> --client-secret "$CLIENT_SECRET" \
+  --client-id <client-id> --client-secret-name entra-client-secret \
   --issuer https://login.microsoftonline.com/<tenant-id>/v2.0 \
   --allowed-audiences <client-id> --yes
 ```
