@@ -32,19 +32,59 @@ The server clones the Bank on its first call, so it needs a credential that can 
 https://x-access-token:<token>@github.com/<org>/<bank>.git
 ```
 
-Store that URL as a Container Apps secret and never in the image or the app's plain environment. `ltm` redacts the credential from its errors, so a failed clone doesn't hand it to a caller.
+Store that URL in a `Key Vault` secret that the container app reads through a managed identity, and never in the image, the app's plain environment, or a command line. `ltm` redacts the credential from its errors, so a failed clone doesn't hand it to a caller.
 
 A read-only deploy key also works for a Bank on SSH, but the image ships no SSH client. The token is the supported route.
 
+## Keep the Clone URL Off the Command Line
+
+Passing the URL with `--secrets bank-url="$BANK_URL"` puts the token in `az`'s process arguments, where any local user who can list processes can read it. Instead, write the URL to a `Key Vault` secret from a file and let the container app read that secret through a user-assigned managed identity. Run this section and the next in one shell, because the deploy command reuses `IDENTITY_ID`.
+
+Create the `Key Vault` with role-based access, and give yourself the role that lets you write secrets to it:
+
+```sh
+az keyvault create --name <vault> --resource-group <group> --enable-rbac-authorization true
+VAULT_ID=$(az keyvault show --name <vault> --query id --output tsv)
+az role assignment create --role "Key Vault Secrets Officer" --scope "$VAULT_ID" \
+  --assignee-object-id "$(az ad signed-in-user show --query id --output tsv)" --assignee-principal-type User
+```
+
+Then, in bash or zsh, paste the clone URL at the prompt. `read` and `printf` are shell builtins, so the URL reaches no other process's arguments, and nothing echoes while you paste. The file is readable by you alone and lasts only until the upload finishes. `--output none` stops `az` from printing the stored value back to your terminal:
+
+```sh
+read -rs BANK_URL
+(umask 077 && printf '%s' "$BANK_URL" > bank-url.txt)
+unset BANK_URL
+az keyvault secret set --vault-name <vault> --name bank-url --file bank-url.txt --output none
+rm bank-url.txt
+```
+
+Next, create the identity the app uses and let it read secrets from the `Key Vault`:
+
+```sh
+az identity create --name ltm-mcp-id --resource-group <group>
+IDENTITY_ID=$(az identity show --name ltm-mcp-id --resource-group <group> --query id --output tsv)
+az role assignment create --role "Key Vault Secrets User" --scope "$VAULT_ID" \
+  --assignee-object-id "$(az identity show --name ltm-mcp-id --resource-group <group> --query principalId --output tsv)" \
+  --assignee-principal-type ServicePrincipal
+```
+
+A new role assignment can take up to 10 minutes to apply. If `az keyvault secret set` returns Forbidden, or the deploy below can't fetch the secret, wait and rerun the failed command.
+
+To rotate the token, repeat the file steps and the `az keyvault secret set` command. The app uses a versionless secret URI, so it picks up the new version within 30 minutes and restarts any revision that reads the secret from an environment variable.
+
+This route adds a `Key Vault`, an identity and two role assignments to the resource group. You need permission to write role assignments on the `Key Vault`, which Owner, User Access Administrator, and Role Based Access Control Administrator all grant. `Key Vault` Standard bills secret operations per 10,000 transactions with no setup fee, and the app reads one secret each time a revision starts, so the cost stays small. In return, the token never appears in a process list, and rotating it needs no redeploy.
+
 ## Deploy with az containerapp
 
-This creates the app with external ingress on port 8080. `--secrets` holds the clone URL, and `secretref:` points `LTM_BANK_URL` at it. The `ENTRYPOINT` leaves out `--trust-proxy-auth` on purpose, so a bare `docker run` refuses to start. Container Apps appends `--args` after the `ENTRYPOINT`, which is where the flag goes:
+This creates the app with external ingress on port 8080. `--secrets` holds a reference to the `Key Vault` secret, and `identityref:` names the identity that reads it. `secretref:` points `LTM_BANK_URL` at that secret. The `ENTRYPOINT` leaves out `--trust-proxy-auth` on purpose, so a bare `docker run` refuses to start. Container Apps appends `--args` after the `ENTRYPOINT`, which is where the flag goes:
 
 ```sh
 az containerapp create --name ltm-mcp --resource-group <group> --environment <environment> \
   --image <registry>/ltm-mcp:<version> --registry-server <registry> \
   --ingress external --target-port 8080 \
-  --secrets bank-url="$LTM_BANK_URL" \
+  --user-assigned "$IDENTITY_ID" \
+  --secrets "bank-url=keyvaultref:https://<vault>.vault.azure.net/secrets/bank-url,identityref:$IDENTITY_ID" \
   --env-vars LTM_BANK_URL=secretref:bank-url \
   --args "--trust-proxy-auth"
 ```
