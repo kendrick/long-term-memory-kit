@@ -51,15 +51,18 @@ az role assignment create --role "Key Vault Secrets Officer" --scope "$VAULT_ID"
 
 A new role assignment can take up to 10 minutes to apply. Until it does, the next block's `az keyvault secret set` returns Forbidden.
 
-In bash or zsh, `read` and `printf` are shell builtins, so the URL reaches no other process's arguments, and nothing echoes while you paste. The file is readable by you alone, and `rm` deletes it after `az keyvault secret set` runs, whether or not the upload worked. `--output none` keeps `az` from printing the stored value back to your terminal. Paste the clone URL at the prompt:
+In bash or zsh, `read` and `printf` are shell builtins, so the URL reaches no other process's arguments, and nothing echoes while you paste. The first `rm -f` clears any older `bank-url.txt`, because `umask` doesn't change the mode of a file that already exists, so the new file is readable by you alone. The last `rm` deletes it after `az keyvault secret set` runs, whether or not the upload worked. `--output none` keeps `az` from printing the stored value back to your terminal. Paste the clone URL at the prompt:
 
 ```sh
 read -rs BANK_URL
+rm -f bank-url.txt
 (umask 077 && printf '%s' "$BANK_URL" > bank-url.txt)
 unset BANK_URL
 az keyvault secret set --vault-name <vault> --name bank-url --file bank-url.txt --output none
 rm bank-url.txt
 ```
+
+If `az keyvault secret set` returns Forbidden, wait, then repeat the whole block from `read -rs BANK_URL`, because that block has already cleared `BANK_URL` and deleted the file.
 
 Next, create the identity the app uses and let it read secrets from the `Key Vault`:
 
@@ -70,8 +73,6 @@ az role assignment create --role "Key Vault Secrets User" --scope "$VAULT_ID" \
   --assignee-object-id "$(az identity show --name ltm-mcp-id --resource-group <group> --query principalId --output tsv)" \
   --assignee-principal-type ServicePrincipal
 ```
-
-If `az keyvault secret set` returns Forbidden, wait, then repeat the whole block from `read -rs BANK_URL`, because that block has already cleared `BANK_URL` and deleted the file.
 
 The `Key Vault Secrets User` assignment takes the same time to apply, so if the deploy below can't fetch the secret, wait and rerun the deploy command.
 
