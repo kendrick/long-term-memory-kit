@@ -8,8 +8,10 @@ const demo = new URL("../../fixtures/demo-bank", import.meta.url).pathname;
 // Pinned per call so a machine's global signing or identity config can't break the scratch commits.
 export const IDENTITY = ["-c", "user.name=ltm test", "-c", "user.email=ltm@example.invalid", "-c", "commit.gpgsign=false"];
 
+// Global and system git config stay out, so a developer's hooks, templates, and URL rewrites can't change the scratch repos. IDENTITY and the clone's own config supply the name and email that global config would have.
 export function git(dir: string, ...args: string[]): string {
-  const r = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+  const r = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8", env });
   if (r.status !== 0) throw new Error(`git ${args.join(" ")} in ${dir}: ${r.stderr.trim()}`);
   return r.stdout;
 }
