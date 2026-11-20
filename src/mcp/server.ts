@@ -35,9 +35,16 @@ const bankInput = z
   .optional()
   .describe("Name or path of the Bank to read. Refused while LTM_BANK_PATH or LTM_BANK_URL picks the Bank.");
 
-export function createServer(env: Env, cwd: string): McpServer {
+// `http` is set by `ltm mcp --http`: one Bank picked by the env, read tools only, and one locator shared across the per-request servers so the TTL holds per process, not per request.
+export function createServer(env: Env, cwd: string, http?: { locator: BankLocator }): McpServer {
   const server = new McpServer({ name: "ltm", version: pkg.version });
-  const locator = new BankLocator();
+  const locator = http?.locator ?? new BankLocator();
+
+  // HTTP callers can't pick a Bank, so `bank` leaves the schema there. zod then strips a stray one, and handlers read it as undefined.
+  const inputs = <S extends z.ZodRawShape>(shape: S) => {
+    const full = z.object({ ...shape, bank: bankInput });
+    return (http === undefined ? full : z.object(shape)) as typeof full;
+  };
 
   const pick = (bank: string | undefined) => locator.pickBank({ bank }, env, cwd);
 
@@ -129,7 +136,7 @@ export function createServer(env: Env, cwd: string): McpServer {
     "query",
     {
       description: "List Records by key=value filters, type, Facet, status, or text. Same rows as `ltm query --json`.",
-      inputSchema: z.object({
+      inputSchema: inputs({
         filters: z
           .record(z.string(), z.string())
           .optional()
@@ -140,7 +147,6 @@ export function createServer(env: Env, cwd: string): McpServer {
         text: z.string().optional().describe("Free text to rank Records by."),
         body: z.boolean().optional().describe("With text, also match words in each Record's body, ranked after title and summary matches."),
         all: z.boolean().optional().describe("Include Retired Records, whose status is superseded, deprecated, or rejected, and Exceptions past their effective_to."),
-        bank: bankInput,
       }),
     },
     async (input) => {
@@ -224,10 +230,9 @@ export function createServer(env: Env, cwd: string): McpServer {
     "head",
     {
       description: "Print one Record's frontmatter block, fences included, found by id or by Bank-relative path.",
-      inputSchema: z.object({
+      inputSchema: inputs({
         id: z.string().optional().describe(schemaDesc("id")),
         path: z.string().optional().describe("Bank-relative path of the Record file."),
-        bank: bankInput,
       }),
     },
     async (input) => {
@@ -250,10 +255,9 @@ export function createServer(env: Env, cwd: string): McpServer {
     "read",
     {
       description: "Print one Record file whole, frontmatter and body, found by id or by Bank-relative path.",
-      inputSchema: z.object({
+      inputSchema: inputs({
         id: z.string().optional().describe(schemaDesc("id")),
         path: z.string().optional().describe("Bank-relative path of the Record file."),
-        bank: bankInput,
       }),
     },
     async (input) => {
@@ -317,9 +321,8 @@ export function createServer(env: Env, cwd: string): McpServer {
     "facets",
     {
       description: "List every Facet in applies_to with its Record count. Same rows as `ltm facets --json`.",
-      inputSchema: z.object({
+      inputSchema: inputs({
         all: z.boolean().optional().describe("Count Retired Records too, whose status is superseded, deprecated, or rejected."),
-        bank: bankInput,
       }),
     },
     async (input) => {
@@ -329,6 +332,9 @@ export function createServer(env: Env, cwd: string): McpServer {
       return jsonTool(["facets", ...(input.all === true ? ["--all"] : [])], root, () => [namedRoot(root)], notes);
     },
   );
+
+  // Left unregistered, not disabled, so a call answers "Tool <name> not found". ADR 0007: a hosted server only reads.
+  if (http !== undefined) return server;
 
   server.registerTool(
     "validate",
