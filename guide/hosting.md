@@ -49,12 +49,17 @@ az role assignment create --role "Key Vault Secrets Officer" --scope "$VAULT_ID"
   --assignee-object-id "$(az ad signed-in-user show --query id --output tsv)" --assignee-principal-type User
 ```
 
-A new role assignment can take up to 10 minutes to apply. Until it does, the next block's `az keyvault secret set` returns Forbidden.
+A new role assignment can take up to 10 minutes to apply. Until it does, the `az keyvault secret set` command below returns Forbidden.
 
-In bash or zsh, `read` and `printf` are shell builtins, so the URL reaches no other process's arguments, and nothing echoes while you paste. The first `rm -f` clears any older `bank-url.txt`, because `umask` doesn't change the mode of a file that already exists, so the new file is readable by you alone. The last `rm` deletes it after `az keyvault secret set` runs, whether or not the upload worked. `--output none` keeps `az` from printing the stored value back to your terminal. Paste the clone URL at the prompt:
+In bash or zsh, `read` and `printf` are shell builtins, so the URL reaches no other process's arguments, and nothing echoes while you paste. Run the `read` line on its own, paste the clone URL, and press Enter. Pasted together with the lines after it, `read` takes the next line as the URL, and the URL you paste then runs at the shell prompt, which puts the token in your history:
 
 ```sh
 read -rs BANK_URL
+```
+
+Then run the rest as one block. The first `rm -f` clears any older `bank-url.txt`, because `umask` doesn't change the mode of a file that already exists, so the new file is readable by you alone. The last `rm` deletes it after `az keyvault secret set` runs, whether or not the upload worked. `--output none` keeps `az` from printing the stored value back to your terminal:
+
+```sh
 rm -f bank-url.txt
 (umask 077 && printf '%s' "$BANK_URL" > bank-url.txt)
 unset BANK_URL
@@ -62,7 +67,7 @@ az keyvault secret set --vault-name <vault> --name bank-url --file bank-url.txt 
 rm bank-url.txt
 ```
 
-If `az keyvault secret set` returns Forbidden, wait, then repeat the whole block from `read -rs BANK_URL`, because that block has already cleared `BANK_URL` and deleted the file.
+If `az keyvault secret set` returns Forbidden, wait, then repeat both blocks starting from `read -rs BANK_URL`, because the second block has already cleared `BANK_URL` and deleted the file.
 
 Next, create the identity the app uses and let it read secrets from the `Key Vault`:
 
@@ -76,7 +81,7 @@ az role assignment create --role "Key Vault Secrets User" --scope "$VAULT_ID" \
 
 The `Key Vault Secrets User` assignment takes the same time to apply, so if the deploy below can't fetch the secret, wait and rerun the deploy command.
 
-To rotate the token, repeat the same block from `read -rs BANK_URL`. The app uses a versionless secret URI, so it picks up the new version within 30 minutes and restarts any revision that reads the secret from an environment variable.
+To rotate the token, repeat both blocks starting from `read -rs BANK_URL`. The app uses a versionless secret URI, so it picks up the new version within 30 minutes and restarts any revision that reads the secret from an environment variable.
 
 This route adds a `Key Vault`, an identity, and two role assignments to the resource group. You need permission to write role assignments on the `Key Vault`, which Owner, User Access Administrator, and Role Based Access Control Administrator all grant. `Key Vault` Standard bills secret operations per 10,000 transactions with no setup fee, and the app reads one secret each time a revision starts.
 
