@@ -14,17 +14,20 @@ export function parseListen(spec: string): { hostname: string; port: number } | 
 export const isLoopback = (hostname: string): boolean => hostname === "localhost" || hostname === "::1" || /^127\.\d+\.\d+\.\d+$/.test(hostname);
 
 const urlHost = (hostname: string): string => (hostname.includes(":") ? `[${hostname}]` : hostname);
-const set = (v: string | undefined): boolean => v !== undefined && v !== "";
+const nonEmpty = (v: string | undefined): boolean => v !== undefined && v !== "";
 
-async function serveHttp(ctx: CommandContext, spec: string): Promise<1> {
-  const { hostname, port } = parseListen(spec) as { hostname: string; port: number };
+async function serveHttp(ctx: CommandContext, spec: string): Promise<0 | 1> {
+  const listen = parseListen(spec);
+  // checkArgs already rejected anything parseListen refuses; the guard only narrows the type.
+  if (listen === undefined) return 1;
+  const { hostname, port } = listen;
   const loopback = isLoopback(hostname);
   // ADR 0007: ltm checks no tokens, so a non-loopback host needs a front door that authenticates callers.
   if (!loopback && ctx.values["trust-proxy-auth"] !== true) {
     ctx.err(`ltm mcp: --http ${spec} is not a loopback host; put a front door that authenticates callers in front of it, then pass --trust-proxy-auth\n`);
     return 1;
   }
-  if (!set(ctx.env.LTM_BANK_URL) && !set(ctx.env.LTM_BANK_PATH)) {
+  if (!nonEmpty(ctx.env.LTM_BANK_URL) && !nonEmpty(ctx.env.LTM_BANK_PATH)) {
     ctx.err("ltm mcp: --http needs LTM_BANK_URL or LTM_BANK_PATH; one HTTP server serves one Bank\n");
     return 1;
   }
@@ -67,7 +70,7 @@ export const mcp: Command = {
   },
   checkArgs(_positionals, values) {
     if (values.http === undefined) return values["trust-proxy-auth"] === true ? "--trust-proxy-auth needs --http" : undefined;
-    return parseListen(String(values.http)) === undefined ? `--http '${String(values.http)}' is not [host:]port` : undefined;
+    return parseListen(String(values.http)) === undefined ? `invalid --http '${String(values.http)}' (expected [host:]port)` : undefined;
   },
   async run(ctx) {
     // Check before connecting. Once the transport owns stdout, a bad TTL could only surface as a per-request error.

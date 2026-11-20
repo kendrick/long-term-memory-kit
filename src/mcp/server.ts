@@ -35,7 +35,7 @@ const bankInput = z
   .optional()
   .describe("Name or path of the Bank to read. Refused while LTM_BANK_PATH or LTM_BANK_URL picks the Bank.");
 
-// `http` is set by `ltm mcp --http`: one Bank picked by the env, read tools only, and one locator shared across the per-request servers so the TTL holds per process, not per request.
+// HTTP mode shares one locator across its per-request servers so LTM_BANK_TTL holds per process, not per request.
 export function createServer(env: Env, cwd: string, http?: { locator: BankLocator }): McpServer {
   const server = new McpServer({ name: "ltm", version: pkg.version });
   const locator = http?.locator ?? new BankLocator();
