@@ -220,6 +220,101 @@ describe("ltm mcp --http", () => {
     MCP_TEST_TIMEOUT,
   );
 
+  // Each test compares against the `results` array `ltm query --json` prints, so a count or a key computed from the mapping can't pass by itself.
+  const cliResults = async (root: string, cwd: string, ...extra: string[]): Promise<Row[]> =>
+    JSON.parse((await run({ argv: ["query", "--json", `--bank=${root}`, ...extra], cwd, env: bankEnv(root) })).stdout).results;
+  type Row = { frontmatter: { applies_to?: string[] } };
+  const appliesTo = (r: Row) => r.frontmatter.applies_to ?? [];
+  const OBSERVABILITY = "system:observability";
+
+  test(
+    "LTM_CONSUMER_REPO maps a query from a non-repo cwd",
+    () =>
+      withDemoGitBank((root) =>
+        withConsumerRepo(async (consumer) => {
+          const env = { ...bankEnv(root), LTM_CONSUMER_REPO: "acme/order-service" };
+          const mapped = await cliResults(root, consumer);
+          const orgWide = await cliResults(root, tmpdir());
+          expect(mapped.length).toBeGreaterThan(orgWide.length);
+          await withHttpMcp(env, ["0"], async (client) => {
+            expect(resultsOf(await client.callTool({ name: "query", arguments: {} }))).toEqual(mapped);
+          });
+        }),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "LTM_CONSUMER_REPO maps text queries and ignores case",
+    () =>
+      withDemoGitBank((root) =>
+        withConsumerRepo(async (consumer) => {
+          const env = { ...bankEnv(root), LTM_CONSUMER_REPO: "ACME/Order-Service" };
+          const mapped = await cliResults(root, consumer, "--text=postgres");
+          expect(mapped.length).toBeGreaterThan(0);
+          await withHttpMcp(env, ["0"], async (client) => {
+            expect(resultsOf(await client.callTool({ name: "query", arguments: { text: "postgres" } }))).toEqual(mapped);
+          });
+        }),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "without LTM_CONSUMER_REPO a non-repo cwd gets Org-wide Records only",
+    () =>
+      withDemoGitBank(async (root) => {
+        const orgWide = await cliResults(root, tmpdir());
+        expect(orgWide.length).toBeGreaterThan(0);
+        for (const value of [undefined, ""]) {
+          await withHttpMcp({ ...bankEnv(root), LTM_CONSUMER_REPO: value }, ["0"], async (client) => {
+            const rows = resultsOf(await client.callTool({ name: "query", arguments: {} })) as Row[];
+            for (const row of rows) expect(appliesTo(row)).toEqual([]);
+            expect(rows).toEqual(orgWide);
+          });
+        }
+      }),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "explicit facets override LTM_CONSUMER_REPO",
+    () =>
+      withDemoGitBank(async (root) => {
+        const expected = await cliResults(root, tmpdir(), `--facet=${OBSERVABILITY}`);
+        // The facet's two tagged Records, plus the Org-wide ones that every Facet query also returns.
+        const tagged = expected.filter((r) => appliesTo(r).length > 0);
+        expect(tagged.length).toBe(2);
+        for (const row of tagged) expect(appliesTo(row)).toContain(OBSERVABILITY);
+        await withHttpMcp({ ...bankEnv(root), LTM_CONSUMER_REPO: "acme/order-service" }, ["0"], async (client) => {
+          expect(resultsOf(await client.callTool({ name: "query", arguments: { facets: [OBSERVABILITY] } }))).toEqual(expected);
+        });
+      }),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "LTM_CONSUMER_REPO wins over the cwd's origin",
+    () =>
+      withDemoGitBank((root) =>
+        withConsumerRepo(async (consumer) => {
+          const mapped = await cliResults(root, consumer);
+          const orgWide = await cliResults(root, tmpdir());
+          git(consumer, "remote", "set-url", "origin", "https://github.com/acme/other-service.git");
+          await withHttpMcp({ ...bankEnv(root), LTM_CONSUMER_REPO: "acme/order-service" }, ["0"], async (client) => {
+            expect(resultsOf(await client.callTool({ name: "query", arguments: {} }))).toEqual(mapped);
+          }, consumer);
+          // Falsifier: without the variable the same cwd is an unmapped repo, so the answer must differ from the mapped one.
+          await withHttpMcp({ ...bankEnv(root), LTM_CONSUMER_REPO: undefined }, ["0"], async (client) => {
+            const rows = resultsOf(await client.callTool({ name: "query", arguments: {} }));
+            expect(rows).toEqual(orgWide);
+            expect(rows).not.toEqual(mapped);
+          }, consumer);
+        }),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
   test("bad flags are usage errors", async () => {
     for (const argv of [["--http", "8080x"], ["--http", "host:"], ["--http", "70000"], ["--trust-proxy-auth"]]) {
       expect((await run({ argv: ["mcp", ...argv], cwd: tmpdir(), env: {} })).exitCode).toBe(2);
