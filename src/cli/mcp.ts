@@ -1,8 +1,8 @@
 import { hostHeaderValidationResponse, localhostAllowedHostnames, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createServer } from "../mcp/server.ts";
-import { stripGit } from "../core/resolve.ts";
 import { BankLocator, parseTtl } from "../mcp/bank.ts";
+import { stripGit } from "../core/resolve.ts";
 import type { Command, CommandContext } from "./run.ts";
 
 // Brackets come off an IPv6 host, because Bun.serve wants `::1`, not `[::1]`.
@@ -36,6 +36,7 @@ async function serveHttp(ctx: CommandContext, spec: string): Promise<0 | 1> {
   // `stripGit` drops a trailing `.git` here as it does for a checkout's origin, so a value copied from a clone URL keys the same as `ltm query` in that checkout.
   const rawConsumerRepo = nonEmpty(ctx.env.LTM_CONSUMER_REPO) ? ctx.env.LTM_CONSUMER_REPO : undefined;
   const consumerRepo = rawConsumerRepo === undefined ? undefined : stripGit(rawConsumerRepo);
+  // `acme/.git` passes the regex but strips to `acme/`, an empty repo that `identityFromPath` rejects from a checkout too.
   if (rawConsumerRepo !== undefined && (!/^[^\s/]+(?:\/[^\s/]+)+$/.test(rawConsumerRepo) || consumerRepo?.endsWith("/"))) {
     ctx.err(`ltm mcp: LTM_CONSUMER_REPO must be <org>/<repo>, got '${rawConsumerRepo}'\n`);
     return 1;
