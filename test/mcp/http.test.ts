@@ -208,7 +208,7 @@ describe("ltm mcp --http", () => {
         const loop = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
         try {
           // The newline is what a shell-built `--env-vars` leaves behind; it must be refused, not trimmed into a match.
-          for (const value of ["not-a-repo", "acme/order-service\n", "acme/order service", "/acme/x", "acme/x/", "acme//x"]) {
+          for (const value of ["not-a-repo", "acme/order-service\n", "acme/order service", "/acme/x", "acme/x/", "acme//x", "acme/.git"]) {
             const r = await run({ argv: ["mcp", "--http", String(loop.port)], cwd: root, env: { ...bankEnv(root), LTM_CONSUMER_REPO: value } });
             expect(r.exitCode).toBe(1);
             expect(r.stderr).toBe(`ltm mcp: LTM_CONSUMER_REPO must be <org>/<repo>, got '${value}'\n`);
@@ -238,6 +238,37 @@ describe("ltm mcp --http", () => {
           expect(mapped.length).toBeGreaterThan(orgWide.length);
           await withHttpMcp(env, ["0"], async (client) => {
             expect(resultsOf(await client.callTool({ name: "query", arguments: {} }))).toEqual(mapped);
+          });
+        }),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "LTM_CONSUMER_REPO strips a trailing .git",
+    () =>
+      withDemoGitBank((root) =>
+        withConsumerRepo(async (consumer) => {
+          const env = { ...bankEnv(root), LTM_CONSUMER_REPO: "acme/order-service.git" };
+          const expected = await cliResults(root, consumer);
+          expect(expected.length).toBeGreaterThan((await cliResults(root, tmpdir())).length);
+          await withHttpMcp(env, ["0"], async (client) => {
+            expect(resultsOf(await client.callTool({ name: "query", arguments: {} }))).toEqual(expected);
+          });
+        }),
+      ),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
+    "LTM_CONSUMER_REPO keeps other dotted suffixes",
+    () =>
+      withDemoGitBank((root) =>
+        withConsumerRepo(async (consumer) => {
+          const env = { ...bankEnv(root), LTM_CONSUMER_REPO: "acme/order-service.github" };
+          const expected = await cliResults(root, tmpdir());
+          await withHttpMcp(env, ["0"], async (client) => {
+            expect(resultsOf(await client.callTool({ name: "query", arguments: {} }))).toEqual(expected);
           });
         }),
       ),
