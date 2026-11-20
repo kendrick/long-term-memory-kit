@@ -263,15 +263,18 @@ describe("ltm mcp --http", () => {
   test(
     "LTM_CONSUMER_REPO keeps other dotted suffixes",
     () =>
-      withDemoGitBank((root) =>
-        withConsumerRepo(async (consumer) => {
-          const env = { ...bankEnv(root), LTM_CONSUMER_REPO: "acme/order-service.github" };
-          const expected = await cliResults(root, tmpdir());
-          await withHttpMcp(env, ["0"], async (client) => {
-            expect(resultsOf(await client.callTool({ name: "query", arguments: {} }))).toEqual(expected);
-          });
-        }),
-      ),
+      withDemoGitBank(async (root) => {
+        const env = { ...bankEnv(root), LTM_CONSUMER_REPO: "acme/order-service.github" };
+        const expected = await cliResults(root, tmpdir());
+        await withHttpMcp(env, ["0"], async (client) => {
+          const r = await client.callTool({ name: "query", arguments: {} });
+          expect(resultsOf(r)).toEqual(expected);
+          // The note names the key the server looked up, so it shows `stripGit` left `.github` alone.
+          expect((r.structuredContent as { notes: string[] }).notes).toEqual([
+            'acme/order-service.github is not mapped in Bank "acme"; showing org-wide Records only',
+          ]);
+        });
+      }),
     MCP_TEST_TIMEOUT,
   );
 
