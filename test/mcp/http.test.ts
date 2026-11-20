@@ -200,6 +200,26 @@ describe("ltm mcp --http", () => {
     MCP_TEST_TIMEOUT,
   );
 
+  test(
+    "a malformed LTM_CONSUMER_REPO refuses to start",
+    () =>
+      withDemoGitBank(async (root) => {
+        // A held port turns a bind attempted before the check into "can't listen", not the refusal under test.
+        const loop = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+        try {
+          // The newline is what a shell-built `--env-vars` leaves behind; it must be refused, not trimmed into a match.
+          for (const value of ["not-a-repo", "acme/order-service\n", "acme/order service"]) {
+            const r = await run({ argv: ["mcp", "--http", String(loop.port)], cwd: root, env: { ...bankEnv(root), LTM_CONSUMER_REPO: value } });
+            expect(r.exitCode).toBe(1);
+            expect(r.stderr).toBe(`ltm mcp: LTM_CONSUMER_REPO must be <org>/<repo>, got '${value}'\n`);
+          }
+        } finally {
+          loop.stop(true);
+        }
+      }),
+    MCP_TEST_TIMEOUT,
+  );
+
   test("bad flags are usage errors", async () => {
     for (const argv of [["--http", "8080x"], ["--http", "host:"], ["--http", "70000"], ["--trust-proxy-auth"]]) {
       expect((await run({ argv: ["mcp", ...argv], cwd: tmpdir(), env: {} })).exitCode).toBe(2);

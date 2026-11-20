@@ -31,6 +31,12 @@ async function serveHttp(ctx: CommandContext, spec: string): Promise<0 | 1> {
     ctx.err("ltm mcp: --http needs LTM_BANK_URL or LTM_BANK_PATH; one HTTP server serves one Bank\n");
     return 1;
   }
+  // GitHub's owner/repo charset. The value isn't trimmed, so a stray newline from a shell-built `--env-vars` stops the server and exposes the broken deploy config.
+  const consumerRepo = nonEmpty(ctx.env.LTM_CONSUMER_REPO) ? ctx.env.LTM_CONSUMER_REPO : undefined;
+  if (consumerRepo !== undefined && !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(consumerRepo)) {
+    ctx.err(`ltm mcp: LTM_CONSUMER_REPO must be <org>/<repo>, got '${consumerRepo}'\n`);
+    return 1;
+  }
   const locator = new BankLocator();
   const allowed = [...localhostAllowedHostnames(), urlHost(hostname)];
   let server: ReturnType<typeof Bun.serve>;
@@ -47,7 +53,7 @@ async function serveHttp(ctx: CommandContext, spec: string): Promise<0 | 1> {
         if (new URL(req.url).pathname !== "/mcp") return new Response("Not Found", { status: 404 });
         // A stateless transport throws on its second request, so each one gets its own server and transport.
         const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-        await createServer(ctx.env, ctx.cwd, { locator }).connect(transport);
+        await createServer(ctx.env, ctx.cwd, { locator, consumerRepo }).connect(transport);
         return transport.handleRequest(req);
       },
     });

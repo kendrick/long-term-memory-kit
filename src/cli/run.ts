@@ -7,6 +7,8 @@ export type RunInput = {
   argv: string[];
   cwd: string;
   env: Record<string, string | undefined>;
+  // Only `ltm mcp --http` sets this, from LTM_CONSUMER_REPO. Reading the var in query.ts would change CLI `ltm query` and stdio `ltm mcp` too.
+  consumerRepo?: string;
 };
 export type RunResult = { exitCode: 0 | 1 | 2; stdout: string; stderr: string };
 export type CommandContext = {
@@ -14,6 +16,7 @@ export type CommandContext = {
   positionals: string[];
   cwd: string;
   env: RunInput["env"];
+  consumerRepo?: string;
   out(text: string): void;
   err(text: string): void;
 };
@@ -186,6 +189,7 @@ export async function run(
     positionals: parsed.positionals,
     cwd: input.cwd,
     env: input.env,
+    consumerRepo: input.consumerRepo,
     out: (t) => {
       stdout += t;
     },
