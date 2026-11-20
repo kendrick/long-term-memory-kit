@@ -135,8 +135,11 @@ function runResolved(ctx: CommandContext, opts: QueryOptions): 0 | 1 {
     // A user's --facet is an explicit scope, so it overrides every Bank's mapping and
     // the not-mapped note would be noise.
     // On a hosted server cwd's origin belongs to the container, so consumerRepo replaces it.
-    const remote = opts.facets.length > 0 || ctx.consumerRepo !== undefined ? null : repoIdentity(ctx.cwd).remote;
-    const key = opts.facets.length > 0 ? null : (ctx.consumerRepo ?? (remote === null ? null : `${remote.org}/${remote.repo}`));
+    let key: string | null = null;
+    if (opts.facets.length === 0) {
+      const remote = ctx.consumerRepo === undefined ? repoIdentity(ctx.cwd).remote : null;
+      key = ctx.consumerRepo ?? (remote === null ? null : `${remote.org}/${remote.repo}`);
+    }
     for (const bank of banks) {
       let records = listRecords(bank.config, (path, reason) => {
         ctx.err(`ltm query: skipped ${path}: ${reason}\n`);

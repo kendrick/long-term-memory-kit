@@ -31,9 +31,9 @@ async function serveHttp(ctx: CommandContext, spec: string): Promise<0 | 1> {
     ctx.err("ltm mcp: --http needs LTM_BANK_URL or LTM_BANK_PATH; one HTTP server serves one Bank\n");
     return 1;
   }
-  // GitHub's owner/repo charset. The value isn't trimmed, so a stray newline from a shell-built `--env-vars` stops the server and exposes the broken deploy config.
+  // Accepts any key `identityFromPath` can build from a checkout's origin, including GitLab subgroups and dotted orgs, so a `consumers` key that works for `ltm query` in a checkout also works here. The value isn't trimmed, because a stray newline from a shell-built `--env-vars` should stop the server and show the broken deploy config.
   const consumerRepo = nonEmpty(ctx.env.LTM_CONSUMER_REPO) ? ctx.env.LTM_CONSUMER_REPO : undefined;
-  if (consumerRepo !== undefined && !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(consumerRepo)) {
+  if (consumerRepo !== undefined && !/^[^\s/]+(?:\/[^\s/]+)+$/.test(consumerRepo)) {
     ctx.err(`ltm mcp: LTM_CONSUMER_REPO must be <org>/<repo>, got '${consumerRepo}'\n`);
     return 1;
   }

@@ -208,7 +208,7 @@ describe("ltm mcp --http", () => {
         const loop = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
         try {
           // The newline is what a shell-built `--env-vars` leaves behind; it must be refused, not trimmed into a match.
-          for (const value of ["not-a-repo", "acme/order-service\n", "acme/order service"]) {
+          for (const value of ["not-a-repo", "acme/order-service\n", "acme/order service", "/acme/x", "acme/x/", "acme//x"]) {
             const r = await run({ argv: ["mcp", "--http", String(loop.port)], cwd: root, env: { ...bankEnv(root), LTM_CONSUMER_REPO: value } });
             expect(r.exitCode).toBe(1);
             expect(r.stderr).toBe(`ltm mcp: LTM_CONSUMER_REPO must be <org>/<repo>, got '${value}'\n`);
@@ -221,9 +221,9 @@ describe("ltm mcp --http", () => {
   );
 
   // Each test compares against the `results` array `ltm query --json` prints, so a count or a key computed from the mapping can't pass by itself.
+  type Row = { frontmatter: { applies_to?: string[] } };
   const cliResults = async (root: string, cwd: string, ...extra: string[]): Promise<Row[]> =>
     JSON.parse((await run({ argv: ["query", "--json", `--bank=${root}`, ...extra], cwd, env: bankEnv(root) })).stdout).results;
-  type Row = { frontmatter: { applies_to?: string[] } };
   const appliesTo = (r: Row) => r.frontmatter.applies_to ?? [];
   const OBSERVABILITY = "system:observability";
 
@@ -278,11 +278,24 @@ describe("ltm mcp --http", () => {
   );
 
   test(
+    "LTM_CONSUMER_REPO accepts a nested group path",
+    () =>
+      withDemoGitBank(async (root) => {
+        // A GitLab subgroup key that `ltm query` could build from a checkout; the demo Bank doesn't map it, so it falls back to Org-wide.
+        const orgWide = await cliResults(root, tmpdir());
+        await withHttpMcp({ ...bankEnv(root), LTM_CONSUMER_REPO: "group/sub/repo" }, ["0"], async (client) => {
+          expect(resultsOf(await client.callTool({ name: "query", arguments: {} }))).toEqual(orgWide);
+        });
+      }),
+    MCP_TEST_TIMEOUT,
+  );
+
+  test(
     "explicit facets override LTM_CONSUMER_REPO",
     () =>
       withDemoGitBank(async (root) => {
         const expected = await cliResults(root, tmpdir(), `--facet=${OBSERVABILITY}`);
-        // The facet's two tagged Records, plus the Org-wide ones that every Facet query also returns.
+        // The Facet's two tagged Records, plus the Org-wide ones that every Facet query also returns.
         const tagged = expected.filter((r) => appliesTo(r).length > 0);
         expect(tagged.length).toBe(2);
         for (const row of tagged) expect(appliesTo(row)).toContain(OBSERVABILITY);
