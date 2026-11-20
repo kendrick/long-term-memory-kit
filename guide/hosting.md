@@ -22,7 +22,7 @@ From a checkout of this repo, build the image against a release that includes `l
 docker build --build-arg LTM_VERSION=<version> -t ltm-mcp .
 ```
 
-`<version>` is a release tag such as `v0.3.0`. The build downloads that release's `ltm-linux-x64` binary and checks it against the release's `SHA256SUMS`. A binary whose checksum doesn't match fails the build. The image carries `git` for the Bank clone and no SSH client. Push the result to a registry the container app can pull from, such as Azure Container Registry.
+`<version>` is a release tag. `ltm mcp --http` first ships in the release after v0.4.0, so no earlier tag works. The build downloads that release's `ltm-linux-x64` binary and checks it against the release's `SHA256SUMS`. A binary whose checksum doesn't match fails the build. The image carries `git` for the Bank clone and no SSH client. Push the result to a registry the container app can pull from, such as Azure Container Registry.
 
 ## Read-Only Clone Credential
 
