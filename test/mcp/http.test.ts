@@ -4,9 +4,8 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-// run.ts first: it reaches mcp.ts through commands.ts, and mcp.ts loaded first would hit commands.ts mid-cycle with `mcp` still uninitialized.
-import { run } from "../../src/cli/run.ts";
 import { isLoopback, parseListen } from "../../src/cli/mcp.ts";
+import { run } from "../../src/cli/run.ts";
 import { git, IDENTITY, withGitBank } from "../helpers/git-bank.ts";
 import { withConsumerRepo } from "../helpers/consumer-repo.ts";
 import { withDemoGitBank, withMcp } from "../helpers/mcp.ts";
