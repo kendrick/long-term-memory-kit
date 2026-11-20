@@ -2,7 +2,6 @@ import type { ParseArgsConfig } from "node:util";
 import { parseArgs } from "node:util";
 import pkg from "../../package.json" with { type: "json" };
 import { SCHEMA_VERSIONS, versionJson } from "../core/schema-versions.ts";
-import { defaultCommands } from "./commands.ts";
 
 export type RunInput = {
   argv: string[];
@@ -109,8 +108,11 @@ function commandHelp(cmd: Command): string {
 
 export async function run(
   input: RunInput,
-  commands: Command[] = defaultCommands,
+  commands?: Command[],
 ): Promise<RunResult> {
+  // commands.ts imports mcp.ts, which reaches run() through server.ts, so a static import here throws a TDZ error whenever mcp.ts loads first.
+  // require() keeps the load synchronous, because callers such as the accept race in fmt.test.ts need run() to reach cmd.run with no await.
+  commands ??= (require("./commands.ts") as typeof import("./commands.ts")).defaultCommands;
   const [head, ...rest] = input.argv;
 
   if (head === "--version") {
