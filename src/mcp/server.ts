@@ -36,7 +36,7 @@ const bankInput = z
   .describe("Name or path of the Bank to read. Refused while LTM_BANK_PATH or LTM_BANK_URL picks the Bank.");
 
 // HTTP mode shares one locator across its per-request servers so LTM_BANK_TTL holds per process, not per request.
-export function createServer(env: Env, cwd: string, http?: { locator: BankLocator }): McpServer {
+export function createServer(env: Env, cwd: string, http?: { locator: BankLocator; consumerRepo?: string }): McpServer {
   const server = new McpServer({ name: "ltm", version: pkg.version });
   const locator = http?.locator ?? new BankLocator();
 
@@ -67,7 +67,7 @@ export function createServer(env: Env, cwd: string, http?: { locator: BankLocato
   };
 
   // Records are read only through run(), so the MCP and CLI routes can't drift. Two exceptions: relOf's id lookup, because `ltm head` takes only a path, and read, which reads the file itself so the pinned retry can tie its bytes to one commit.
-  const cli = (argv: string[], at: string) => run({ argv, cwd: at, env });
+  const cli = (argv: string[], at: string) => run({ argv, cwd: at, env, consumerRepo: http?.consumerRepo });
 
   // A read counts only when HEAD held still across it, so bank_commits names the commit the data came from.
   // `accept` also vets the output. A writer such as `git merge --ff-only` rewrites worktree files before it moves the ref, so HEAD can hold still while the bytes already belong to the next commit.

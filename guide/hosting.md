@@ -8,7 +8,7 @@ Copilot Studio agents and declarative agents can't run `ltm` or read a Bank chec
 
 A Copilot Studio agent that calls `query` can filter by Facet and status, which the Digest in [M365 Copilot](m365-copilot.md) can't do. Its answers match what `ltm query` prints, and [Retrieval](retrieval.md) describes the filters.
 
-In a container the server's working directory maps to no git repo, so a `query` with no Facet or filter returns only Org-wide Records. Callers should pass `facets`, the Facets in a Record's `applies_to`, to see a repo's Records. Tell the agent that in its instructions.
+In a container the server's working directory maps to no git repo, so `ltm` can't tell which repo's Records a `query` wants. Set `LTM_CONSUMER_REPO=<org>/<repo>`, and a `query` with no `facets` returns the rows `ltm query` prints from a checkout of that repo, whatever the server's working directory. The server refuses to start when the value isn't in `<org>/<repo>` form. A `query` that passes `facets`, the Facets in a Record's `applies_to`, gets those Facets' Records instead. A team with several Consumer repos can run one server per repo, or leave the variable unset and tell its agents, in their instructions, to pass `facets`. [ADR 0010](../docs/adr/0010-a-hosted-ltm-takes-its-consumer-repo-from-the-environment.md) records why.
 
 ## Who Can Read
 
@@ -99,7 +99,7 @@ az containerapp create --name ltm-mcp --resource-group <group> --environment <en
   --ingress external --target-port 8080 \
   --user-assigned "$IDENTITY_ID" \
   --secrets "bank-url=keyvaultref:https://<vault>.vault.azure.net/secrets/bank-url,identityref:$IDENTITY_ID" \
-  --env-vars LTM_BANK_URL=secretref:bank-url \
+  --env-vars LTM_BANK_URL=secretref:bank-url LTM_CONSUMER_REPO=<org>/<repo> \
   --args "--trust-proxy-auth"
 ```
 
