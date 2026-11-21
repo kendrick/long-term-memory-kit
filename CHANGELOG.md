@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/kendrick/long-term-memory-kit/compare/v0.4.0...v0.5.0) (2026-11-21)
+
+
+### Features
+
+* **mcp:** serve the read tools over HTTP for Copilot Studio with ltm mcp --http ([#239](https://github.com/kendrick/long-term-memory-kit/issues/239)) ([c84a9fc](https://github.com/kendrick/long-term-memory-kit/commit/c84a9fcd07defeb248e93eba94db06bde9a4ce78))
+* **mcp:** take a hosted server's Consumer repo from LTM_CONSUMER_REPO ([#253](https://github.com/kendrick/long-term-memory-kit/issues/253)) ([592e4c2](https://github.com/kendrick/long-term-memory-kit/commit/592e4c2b0a3d03b78769dc79a7ffa795c6892a5a)), closes [#242](https://github.com/kendrick/long-term-memory-kit/issues/242)
+
+
+### Bug Fixes
+
+* **mcp:** strip a trailing .git from LTM_CONSUMER_REPO like a checkout's origin ([#257](https://github.com/kendrick/long-term-memory-kit/issues/257)) ([ad0ad2b](https://github.com/kendrick/long-term-memory-kit/commit/ad0ad2bea6e6149246d3c33e2a5f0b485daab8bb)), closes [#254](https://github.com/kendrick/long-term-memory-kit/issues/254)
+
 ## [0.4.0](https://github.com/kendrick/long-term-memory-kit/compare/v0.3.0...v0.4.0) (2026-11-20)
 
 
