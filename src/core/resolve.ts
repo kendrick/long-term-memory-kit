@@ -36,7 +36,7 @@ export type LoadedUserConfig = { path: string; config: UserConfig | null };
 const REPO_CONFIG = ".ltm.yaml";
 const BANK_CONFIG = "memory-bank.yaml";
 
-const stripGit = (s: string): string => (s.endsWith(".git") ? s.slice(0, -4) : s);
+export const stripGit = (s: string): string => (s.endsWith(".git") ? s.slice(0, -4) : s);
 
 function identityFromPath(host: string, path: string): RemoteIdentity | null {
   // GitLab subgroups nest arbitrarily deep, so org is every segment before the repo. Keyed on path shape only: any host may nest.
